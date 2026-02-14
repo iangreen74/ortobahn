@@ -139,11 +139,13 @@ class Database:
             "brand_voice",
             "website",
             "active",
+            "status",
             "products",
             "competitive_positioning",
             "key_messages",
             "content_pillars",
             "company_story",
+            "monthly_budget",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
@@ -302,6 +304,17 @@ class Database:
             (new_text, post_id),
         )
         self.conn.commit()
+
+    def get_approved_posts(self, client_id: str | None = None) -> list[dict]:
+        """Get posts in 'approved' status ready for publishing."""
+        query = "SELECT * FROM posts WHERE status='approved'"
+        params: list = []
+        if client_id:
+            query += " AND client_id=?"
+            params.append(client_id)
+        query += " ORDER BY created_at ASC"
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
 
     def get_all_posts(
         self, client_id: str | None = None, status: str | None = None, platform: str | None = None, limit: int = 50
@@ -474,6 +487,25 @@ class Database:
             best_post=best,
             worst_post=worst,
         )
+
+    def get_current_month_spend(self, client_id: str) -> float:
+        """Calculate total API cost for a client in the current calendar month."""
+        row = self.conn.execute(
+            """SELECT COALESCE(SUM(total_input_tokens), 0) as input_tok,
+                      COALESCE(SUM(total_output_tokens), 0) as output_tok
+               FROM pipeline_runs
+               WHERE client_id=? AND started_at >= date('now', 'start of month')""",
+            (client_id,),
+        ).fetchone()
+        # Sonnet pricing: $3/M input, $15/M output
+        input_cost = row["input_tok"] / 1_000_000 * 3
+        output_cost = row["output_tok"] / 1_000_000 * 15
+        return input_cost + output_cost
+
+    def pause_client(self, client_id: str) -> None:
+        """Set client status to paused (budget exceeded)."""
+        self.conn.execute("UPDATE clients SET status='paused' WHERE id=?", (client_id,))
+        self.conn.commit()
 
     def get_public_stats(self) -> dict:
         clients = self.conn.execute("SELECT COUNT(*) as c FROM clients WHERE active=1").fetchone()

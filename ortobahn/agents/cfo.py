@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.models import CFOReport
+
+logger = logging.getLogger("ortobahn.cfo")
 
 
 class CFOAgent(BaseAgent):
@@ -77,10 +80,27 @@ Pipeline runs: {len(recent_runs)}
         except (json.JSONDecodeError, KeyError):
             report.summary = response.text[:500]
 
+        # Per-client budget enforcement
+        all_clients = self.db.conn.execute("SELECT * FROM clients WHERE active=1").fetchall()
+        paused_clients = []
+        for client_row in all_clients:
+            c = dict(client_row)
+            budget = c.get("monthly_budget") or 0
+            if budget > 0:
+                spend = self.db.get_current_month_spend(c["id"])
+                if spend >= budget:
+                    self.db.pause_client(c["id"])
+                    paused_clients.append(c["name"])
+                    logger.warning(f"Client {c['name']} paused: spend ${spend:.2f} >= budget ${budget:.2f}")
+
+        if paused_clients:
+            report.recommendations = report.recommendations or []
+            report.recommendations.append(f"Paused over-budget clients: {', '.join(paused_clients)}")
+
         self.log_decision(
             run_id=run_id,
             input_summary=f"${total_cost:.4f} spent, {total_posts} posts, {total_engagements} engagements",
-            output_summary=f"Cost/post: ${cost_per_post:.4f}, ROI: {roi:.1f} eng/$",
+            output_summary=f"Cost/post: ${cost_per_post:.4f}, ROI: {roi:.1f} eng/$, paused: {len(paused_clients)}",
             reasoning=f"Budget: {report.budget_status}",
             llm_response=response,
         )

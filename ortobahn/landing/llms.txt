@@ -1,21 +1,31 @@
 # Ortobahn
 
-> Autonomous AI marketing engine by Vaultscaler
+> The world's first autonomous marketing company, by Vaultscaler
 
 ## What is Ortobahn?
 
-Ortobahn is an autonomous marketing engine that generates, optimizes, and publishes content across social media platforms using a pipeline of specialized AI agents. No humans in the loop.
+Ortobahn is the world's first autonomous marketing company — where every role from CEO to publisher is an AI agent. It autonomously generates strategy, creates platform-native content, and publishes across social media platforms with no humans in the loop.
 
 ## How it works
 
-Ortobahn runs a 5-agent pipeline every cycle:
+Ortobahn runs a 9-agent pipeline every cycle:
+
+### The Content Pipeline
 1. **Analytics Agent** — analyzes past post performance (engagement, reach, trends)
 2. **CEO Agent** — sets high-level strategy (themes, tone, goals, platform priorities)
 3. **Strategist Agent** — turns strategy into specific content ideas with hooks and angles
 4. **Creator Agent** — writes platform-native content (respecting char limits, conventions)
 5. **Publisher Agent** — confidence-gates posts and publishes to connected platforms
 
-Additional operational agents: SRE (system health), CFO (cost tracking), Ops (client management).
+### The Operations Layer
+6. **SRE Agent** — monitors system health, pipeline reliability, platform API status
+7. **CFO Agent** — tracks costs, ROI per post, budget efficiency, enforces spending limits
+8. **Ops Agent** — manages client onboarding, profile enrichment, resource allocation
+9. **Marketing Agent** — generates marketing content for Ortobahn itself using real metrics
+
+## What makes Ortobahn different
+
+AI marketing tools (Jasper, Buffer, etc.) are tools for humans — they help people write copy or schedule posts. Ortobahn is fundamentally different: it is the marketing company itself. There is no human marketing team. The AI agents autonomously set strategy, create content, manage budgets, and publish.
 
 ## Supported platforms
 

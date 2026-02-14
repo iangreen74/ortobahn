@@ -20,6 +20,8 @@ class CEOAgent(BaseAgent):
         analytics_report: AnalyticsReport | None = None,
         trending: list[TrendingTopic] | None = None,
         client: Client | None = None,
+        performance_insights: str = "",
+        **kwargs,
     ) -> Strategy:
         client_id = client.id if client else "default"
 
@@ -74,6 +76,9 @@ class CEOAgent(BaseAgent):
             parts.append("\n## Current Trending Topics")
             for t in trending[:10]:
                 parts.append(f"- [{t.source}] {t.title}: {t.description or ''}")
+
+        if performance_insights:
+            parts.append(f"\n{performance_insights}")
 
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)

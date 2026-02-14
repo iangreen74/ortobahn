@@ -48,7 +48,7 @@ class TestMigrations:
             );
         """)
         version = run_migrations(raw_conn)
-        assert version == 4
+        assert version == 6
 
         # Verify clients table exists (migration 001)
         row = raw_conn.execute("SELECT * FROM clients WHERE id='default'").fetchone()
@@ -95,7 +95,7 @@ class TestMigrations:
         """)
         v1 = run_migrations(raw_conn)
         v2 = run_migrations(raw_conn)
-        assert v1 == v2 == 4
+        assert v1 == v2 == 6
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         from ortobahn.db import Database

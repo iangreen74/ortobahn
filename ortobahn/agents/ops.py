@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.models import OpsAction, OpsReport
+
+logger = logging.getLogger("ortobahn.ops")
 
 
 class OpsAgent(BaseAgent):
@@ -38,6 +41,29 @@ class OpsAgent(BaseAgent):
                 ]
             )
             if has_profile:
+                # Auto-enrich profile if key fields are empty
+                needs_enrichment = not client.get("products") and not client.get("content_pillars")
+                if needs_enrichment:
+                    try:
+                        from ortobahn.agents.enrichment import EnrichmentAgent
+
+                        enrichment_agent = EnrichmentAgent(
+                            db=self.db, api_key=self.api_key, model=self.model
+                        )
+                        enrichment = enrichment_agent.run(run_id=run_id, client_data=client)
+                        if enrichment:
+                            self.db.update_client(client["id"], enrichment)
+                            actions.append(
+                                OpsAction(
+                                    action="enrich_client",
+                                    target=client["name"],
+                                    status="completed",
+                                    detail=f"Auto-enriched {len(enrichment)} profile fields for {client['name']}",
+                                )
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to enrich client {client.get('name')}: {e}")
+
                 self.db.conn.execute(
                     "UPDATE clients SET status='active', active=1 WHERE id=?",
                     (client["id"],),

@@ -87,6 +87,7 @@ class Pipeline:
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
             confidence_threshold=settings.post_confidence_threshold,
+            post_delay_seconds=settings.post_delay_seconds,
         )
         self.sre = SREAgent(
             db=self.db,
@@ -147,6 +148,40 @@ class Pipeline:
         logger.info(f"Gathered {len(topics)} trending topics")
         return topics
 
+    def publish_approved_drafts(self, client_id: str = "default") -> int:
+        """Publish any posts in 'approved' status. Returns count published."""
+        approved = self.db.get_approved_posts(client_id=client_id)
+        if not approved:
+            return 0
+
+        published_count = 0
+        for post in approved:
+            platform_str = post.get("platform", "generic")
+            try:
+                platform = Platform(platform_str)
+            except ValueError:
+                platform = Platform.GENERIC
+
+            publisher_client = self.publisher._get_publisher(platform)
+            if publisher_client is None:
+                logger.info(f"No publisher for {platform_str}, skipping approved post {post['id'][:8]}")
+                continue
+
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would publish approved post {post['id'][:8]}")
+                continue
+
+            try:
+                uri, platform_id = publisher_client.post(post["text"])
+                self.db.update_post_published(post["id"], uri, platform_id)
+                published_count += 1
+                logger.info(f"Published approved post {post['id'][:8]} to {platform_str}")
+            except Exception as e:
+                self.db.update_post_failed(post["id"], str(e))
+                logger.error(f"Failed to publish approved post {post['id'][:8]}: {e}")
+
+        return published_count
+
     def run_cycle(
         self,
         client_id: str = "default",
@@ -171,12 +206,29 @@ class Pipeline:
         client = Client(**client_data) if client_data else None
         platforms = target_platforms or [Platform.GENERIC]
 
+        # Budget guard: skip paused clients
+        if client_data and client_data.get("status") == "paused":
+            logger.info(f"Client {client_id} is paused (budget exceeded). Skipping cycle.")
+            self.db.complete_pipeline_run(run_id, posts_published=0, errors=["client_paused"])
+            return {"run_id": run_id, "posts_published": 0, "total_drafts": 0, "input_tokens": 0, "output_tokens": 0, "errors": ["client_paused"]}
+
         logger.info(f"=== Pipeline cycle {run_id[:8]} started (client={client_id}) ===")
+
+        # Backup database before cycle
+        if self.settings.backup_enabled:
+            from ortobahn.backup import backup_database
+
+            backup_database(self.settings.db_path, self.settings.backup_dir, self.settings.backup_max_count)
+
+        # Publish any previously approved drafts first
+        approved_published = self.publish_approved_drafts(client_id=client_id)
+        if approved_published:
+            logger.info(f"Published {approved_published} previously approved drafts")
 
         try:
             # 0. SRE Agent (system health check - runs first)
             logger.info("[0/9] SRE Agent checking system health...")
-            sre_report = self.sre.run(run_id)
+            sre_report = self.sre.run(run_id, slack_webhook_url=self.settings.slack_webhook_url)
             logger.info(f"  -> Health: {sre_report.health_status}, Alerts: {len(sre_report.alerts)}")
 
             # 1. Analytics
@@ -188,9 +240,20 @@ class Pipeline:
             logger.info("[2/9] Gathering trending topics...")
             trending = self.gather_trends()
 
+            # 2.5. Performance insights for CEO (prompt tuner)
+            from ortobahn.prompt_tuner import get_performance_insights
+
+            performance_insights = get_performance_insights(self.db, client_id=client_id)
+
             # 3. CEO
             logger.info("[3/9] CEO Agent setting strategy...")
-            strategy = self.ceo.run(run_id, analytics_report=analytics_report, trending=trending, client=client)
+            strategy = self.ceo.run(
+                run_id,
+                analytics_report=analytics_report,
+                trending=trending,
+                client=client,
+                performance_insights=performance_insights,
+            )
             logger.info(f"  -> Themes: {strategy.themes}")
 
             # 4. Strategist

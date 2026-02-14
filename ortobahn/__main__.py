@@ -143,10 +143,28 @@ def cmd_schedule(args):
             cycle_num += 1
             console.print(f"\n[cyan]--- Cycle {cycle_num} ---[/cyan]")
             try:
-                result = pipeline.run_cycle(
-                    client_id=args.client or settings.default_client_id,
-                )
-                console.print(f"[green]Published {result['posts_published']} posts[/green]")
+                if args.client:
+                    # Single-client mode (explicit --client flag)
+                    clients_to_run = [{"id": args.client, "name": args.client}]
+                else:
+                    # All active, non-paused clients
+                    rows = pipeline.db.conn.execute(
+                        "SELECT id, name FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
+                    ).fetchall()
+                    clients_to_run = [dict(r) for r in rows] if rows else [{"id": settings.default_client_id, "name": settings.default_client_id}]
+
+                total_published = 0
+                for client in clients_to_run:
+                    cid = client["id"]
+                    console.print(f"  [dim]Running for client: {client.get('name', cid)}[/dim]")
+                    try:
+                        result = pipeline.run_cycle(client_id=cid)
+                        total_published += result["posts_published"]
+                        console.print(f"    Published {result['posts_published']} posts for {client.get('name', cid)}")
+                    except Exception as e:
+                        console.print(f"    [red]Failed for {client.get('name', cid)}: {e}[/red]")
+
+                console.print(f"[green]Cycle complete: {total_published} total posts published[/green]")
             except Exception as e:
                 console.print(f"[red]Cycle failed: {e}[/red]")
 

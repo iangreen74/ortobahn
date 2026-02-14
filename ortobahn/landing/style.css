@@ -139,10 +139,19 @@ nav {
     margin-bottom: 20px;
 }
 
+.hero-eyebrow {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--primary);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
 .hero-sub {
     font-size: clamp(1.1rem, 2.5vw, 1.35rem);
     color: var(--text-muted);
-    max-width: 640px;
+    max-width: 680px;
     margin: 0 auto 36px;
     line-height: 1.5;
 }
@@ -186,6 +195,28 @@ section h2 {
 }
 
 /* Pipeline */
+.pipeline-group {
+    margin-bottom: 48px;
+}
+.pipeline-group:last-child {
+    margin-bottom: 0;
+}
+.pipeline-group-label {
+    text-align: center;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--primary);
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.ops-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
 .pipeline {
     display: flex;
     align-items: flex-start;
@@ -294,6 +325,60 @@ section h2 {
     color: var(--text-muted);
     font-size: 0.95rem;
     line-height: 1.5;
+}
+
+/* Comparison / Why Different */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.comparison-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+}
+.comparison-card h3 {
+    font-size: 1.3rem;
+    margin-bottom: 8px;
+}
+.comparison-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+}
+.comparison-card ul {
+    list-style: none;
+    margin-bottom: 20px;
+}
+.comparison-card li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+.comparison-card li:last-child {
+    border-bottom: none;
+}
+.comparison-them {
+    opacity: 0.7;
+}
+.comparison-us {
+    border-color: var(--primary);
+    box-shadow: 0 0 24px var(--primary-glow);
+}
+.comparison-verdict {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-top: 8px;
+}
+.comparison-us .comparison-verdict {
+    color: var(--primary);
 }
 
 /* Live Proof */
@@ -491,6 +576,14 @@ footer {
         padding: 8px 0;
     }
 
+    .ops-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .comparison-grid {
+        grid-template-columns: 1fr;
+    }
+
     .form-grid {
         grid-template-columns: 1fr;
     }
@@ -503,4 +596,8 @@ footer {
 @media (max-width: 480px) {
     .hero { padding: 120px 0 60px; }
     section { padding: 60px 0; }
+
+    .ops-grid {
+        grid-template-columns: 1fr;
+    }
 }

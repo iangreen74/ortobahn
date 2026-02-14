@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
 from ortobahn.agents.base import BaseAgent
@@ -26,12 +27,14 @@ class PublisherAgent(BaseAgent):
         twitter_client=None,
         linkedin_client=None,
         confidence_threshold: float = 0.7,
+        post_delay_seconds: int = 0,
     ):
         super().__init__(db, api_key, model, max_tokens)
         self.bluesky = bluesky_client
         self.twitter = twitter_client
         self.linkedin = linkedin_client
         self.confidence_threshold = confidence_threshold
+        self.post_delay = post_delay_seconds
 
     def _get_publisher(self, platform: Platform):
         """Return the client for a platform, or None if not configured."""
@@ -111,6 +114,9 @@ class PublisherAgent(BaseAgent):
                     )
                     published_count += 1
                     logger.info(f"Published to {draft.platform.value}: {draft.text[:50]}...")
+                    if self.post_delay > 0:
+                        logger.info(f"Rate limiting: waiting {self.post_delay}s before next post")
+                        time.sleep(self.post_delay)
                 except Exception as e:
                     self.db.update_post_failed(post_id, str(e))
                     results.append(

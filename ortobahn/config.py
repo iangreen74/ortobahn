@@ -57,6 +57,20 @@ class Settings:
     # Logging
     log_level: str = "INFO"
 
+    # Budget enforcement
+    default_monthly_budget: float = 0.0  # 0 = unlimited
+
+    # Rate limiting
+    post_delay_seconds: int = 30
+
+    # Slack alerting
+    slack_webhook_url: str = ""
+
+    # Backups
+    backup_enabled: bool = True
+    backup_dir: Path = Path("data/backups")
+    backup_max_count: int = 10
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -135,4 +149,10 @@ def load_settings() -> Settings:
         web_host=os.environ.get("WEB_HOST", "127.0.0.1"),
         web_port=int(os.environ.get("WEB_PORT", "8000")),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        default_monthly_budget=float(os.environ.get("DEFAULT_MONTHLY_BUDGET", "0")),
+        post_delay_seconds=int(os.environ.get("POST_DELAY_SECONDS", "30")),
+        slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
+        backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
+        backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),
+        backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),
     )

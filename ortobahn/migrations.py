@@ -109,11 +109,40 @@ def _migration_004_add_client_enrichment(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_005_add_monthly_budget(conn: sqlite3.Connection) -> None:
+    """Add monthly_budget column to clients for CFO enforcement."""
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN monthly_budget REAL DEFAULT 0",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.commit()
+
+
+def _migration_006_add_ab_testing(conn: sqlite3.Connection) -> None:
+    """Add A/B testing columns to posts."""
+    for stmt in [
+        "ALTER TABLE posts ADD COLUMN ab_group TEXT DEFAULT NULL",
+        "ALTER TABLE posts ADD COLUMN ab_pair_id TEXT DEFAULT NULL",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
     3: _migration_003_add_client_onboarding,
     4: _migration_004_add_client_enrichment,
+    5: _migration_005_add_monthly_budget,
+    6: _migration_006_add_ab_testing,
 }
 
 

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - {{ client.name }}{% endblock %}
+{% block content %}
+<h1>{{ client.name }}</h1>
+
+<div class="grid">
+    <article>
+        <header>Company Info</header>
+        <p><strong>Industry:</strong> {{ client.industry or 'Not set' }}</p>
+        <p><strong>Target Audience:</strong> {{ client.target_audience or 'Not set' }}</p>
+        <p><strong>Brand Voice:</strong> {{ client.brand_voice or 'Not set' }}</p>
+        {% if client.website %}
+        <p><strong>Website:</strong> <a href="{{ client.website }}">{{ client.website }}</a></p>
+        {% endif %}
+        {% if client.description %}
+        <p>{{ client.description }}</p>
+        {% endif %}
+    </article>
+
+    <article>
+        <header>Active Strategy</header>
+        {% if strategy %}
+        <p><strong>Themes:</strong> {{ strategy.themes|join(', ') }}</p>
+        <p><strong>Tone:</strong> {{ strategy.tone }}</p>
+        <p><small>Valid until: {{ strategy.valid_until }}</small></p>
+        {% else %}
+        <p>No active strategy for this client.</p>
+        {% endif %}
+    </article>
+</div>
+
+<h2>Recent Content</h2>
+{% if posts %}
+<table>
+    <thead>
+        <tr>
+            <th>Platform</th>
+            <th>Type</th>
+            <th>Text</th>
+            <th>Status</th>
+            <th>Confidence</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in posts %}
+        <tr>
+            <td>{{ p.platform }}</td>
+            <td>{{ p.content_type }}</td>
+            <td>{{ p.text[:80] }}{% if p.text|length > 80 %}...{% endif %}</td>
+            <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
+            <td>{{ "%.2f"|format(p.confidence) if p.confidence else '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No content generated yet. <a href="/pipeline/">Run the pipeline</a> to generate content.</p>
+{% endif %}
+{% endblock %}

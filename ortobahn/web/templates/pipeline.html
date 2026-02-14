@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Pipeline{% endblock %}
+{% block content %}
+<h1>Pipeline</h1>
+
+<article>
+    <header>Generate Content</header>
+    <form method="post" action="/pipeline/run">
+        <div class="grid">
+            <div>
+                <label for="client_id">Client</label>
+                <select id="client_id" name="client_id">
+                    {% for c in clients %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="platforms">Platforms (comma-separated)</label>
+                <input type="text" id="platforms" name="platforms" value="twitter,linkedin,google_ads">
+            </div>
+        </div>
+        <label>
+            <input type="checkbox" name="publish" value="true">
+            Auto-publish (skip draft review)
+        </label>
+        <button type="submit">Generate Content</button>
+        <small>Runs in background. Drafts will appear in Content Review unless auto-publish is enabled.</small>
+    </form>
+</article>
+
+{% if runs %}
+<h2>Run History</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Status</th>
+            <th>Posts</th>
+            <th>Tokens (in/out)</th>
+            <th>Started</th>
+            <th>Completed</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td><code>{{ run.id[:8] }}</code></td>
+            <td>
+                <span class="badge {{ run.status }}">{{ run.status }}</span>
+            </td>
+            <td>{{ run.posts_published }}</td>
+            <td>{{ run.total_input_tokens or 0 }} / {{ run.total_output_tokens or 0 }}</td>
+            <td>{{ run.started_at }}</td>
+            <td>{{ run.completed_at or '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No pipeline runs yet.</p>
+{% endif %}
+{% endblock %}

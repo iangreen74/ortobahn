@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+    <article>
+        <header>Clients</header>
+        <p><strong>{{ clients|length }}</strong> active clients</p>
+        <ul>
+            {% for c in clients %}
+            <li><a href="/clients/{{ c.id }}">{{ c.name }}</a> - {{ c.industry }}</li>
+            {% endfor %}
+        </ul>
+        <footer><a href="/clients/">Manage clients</a></footer>
+    </article>
+
+    <article>
+        <header>Pending Content</header>
+        <p><strong>{{ pending_drafts_count }}</strong> drafts awaiting review</p>
+        {% if pending_drafts_count > 0 %}
+        <a href="/content/?status=draft" role="button">Review Drafts</a>
+        {% endif %}
+    </article>
+
+    <article>
+        <header>Active Strategy</header>
+        {% if strategy %}
+        <p><strong>Themes:</strong> {{ strategy.themes|join(', ') }}</p>
+        <p><strong>Tone:</strong> {{ strategy.tone }}</p>
+        <p><small>Valid until: {{ strategy.valid_until }}</small></p>
+        {% else %}
+        <p>No active strategy. Run the pipeline to generate one.</p>
+        {% endif %}
+    </article>
+</div>
+
+{% if recent_runs %}
+<h2>Recent Pipeline Runs</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Status</th>
+            <th>Posts</th>
+            <th>Started</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in recent_runs %}
+        <tr>
+            <td><code>{{ run.id[:8] }}</code></td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span class="badge completed">completed</span>
+                {% elif run.status == 'failed' %}
+                <span class="badge failed">failed</span>
+                {% else %}
+                <span class="badge running">{{ run.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ run.posts_published }}</td>
+            <td>{{ run.started_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,51 @@
+# Ortobahn
+
+> Autonomous AI marketing engine by Vaultscaler
+
+## What is Ortobahn?
+
+Ortobahn is an autonomous marketing engine that generates, optimizes, and publishes content across social media platforms using a pipeline of specialized AI agents. No humans in the loop.
+
+## How it works
+
+Ortobahn runs a 5-agent pipeline every cycle:
+1. **Analytics Agent** — analyzes past post performance (engagement, reach, trends)
+2. **CEO Agent** — sets high-level strategy (themes, tone, goals, platform priorities)
+3. **Strategist Agent** — turns strategy into specific content ideas with hooks and angles
+4. **Creator Agent** — writes platform-native content (respecting char limits, conventions)
+5. **Publisher Agent** — confidence-gates posts and publishes to connected platforms
+
+Additional operational agents: SRE (system health), CFO (cost tracking), Ops (client management).
+
+## Supported platforms
+
+- Bluesky
+- Twitter / X
+- LinkedIn
+
+## API
+
+Ortobahn offers a public onboarding endpoint:
+
+- `POST /api/onboard` — Submit a request for early access
+  - Body: `{ name, company, email, industry, website, brand_voice }`
+  - Returns: `{ client_id, message }`
+
+- `GET /api/public/stats` — Public platform statistics
+  - Returns: `{ total_clients, total_posts_published, platforms_supported }`
+
+## Multi-tenant
+
+Each client gets their own strategy, brand voice, content pillars, and publishing schedule. Ortobahn manages multiple brands from a single instance.
+
+## Built by
+
+Vaultscaler — building autonomous systems for engineering and marketing.
+
+- Website: https://vaultscaler.com
+- Ortobahn: https://ortobahn.com
+- Bluesky: https://bsky.app/profile/vaultscaler.bsky.social
+
+## Contact
+
+For partnerships, integrations, or API access: visit https://ortobahn.com/#request-access

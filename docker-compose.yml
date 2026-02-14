@@ -1,0 +1,30 @@
+services:
+  ortobahn-scheduler:
+    build: .
+    container_name: ortobahn-scheduler
+    env_file: .env
+    environment:
+      - DB_PATH=/app/data/ortobahn.db
+      - AUTONOMOUS_MODE=true
+    volumes:
+      - ortobahn-data:/app/data
+    restart: unless-stopped
+    command: ["python", "-m", "ortobahn", "schedule", "--client", "vaultscaler"]
+
+  ortobahn-web:
+    build: .
+    container_name: ortobahn-web
+    env_file: .env
+    environment:
+      - DB_PATH=/app/data/ortobahn.db
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8000
+    volumes:
+      - ortobahn-data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    command: ["python", "-m", "ortobahn", "web", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  ortobahn-data:

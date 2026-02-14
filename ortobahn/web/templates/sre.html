@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - System Health{% endblock %}
+{% block content %}
+<h1>System Health</h1>
+
+<div class="grid">
+    <article>
+        <header>Overall Health</header>
+        <p>
+            {% if health == 'healthy' %}
+            <span class="badge completed">HEALTHY</span>
+            {% elif health == 'degraded' %}
+            <span class="badge running">DEGRADED</span>
+            {% elif health == 'critical' %}
+            <span class="badge failed">CRITICAL</span>
+            {% else %}
+            <span class="badge">UNKNOWN</span>
+            {% endif %}
+        </p>
+        <p>Pipeline success rate: <strong>{{ success_rate }}%</strong></p>
+        <p><small>{{ total_runs }} runs, {{ failed_runs }} failed</small></p>
+    </article>
+
+    <article>
+        <header>Token Usage</header>
+        <p>Input: <strong>{{ "{:,}".format(total_input_tokens) }}</strong></p>
+        <p>Output: <strong>{{ "{:,}".format(total_output_tokens) }}</strong></p>
+        <p>Estimated cost: <strong>${{ estimated_cost }}</strong></p>
+    </article>
+
+    <article>
+        <header>Platform Health</header>
+        {% for platform, status in platform_health.items() %}
+        <p>{{ platform | capitalize }}:
+            {% if status == 'healthy' %}
+            <span class="badge completed">healthy</span>
+            {% elif status == 'failing' %}
+            <span class="badge failed">failing</span>
+            {% else %}
+            <span class="badge">no data</span>
+            {% endif %}
+        </p>
+        {% endfor %}
+    </article>
+</div>
+
+{% if recent_runs %}
+<h2>Recent Pipeline Runs</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Status</th>
+            <th>Posts</th>
+            <th>Tokens</th>
+            <th>Started</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in recent_runs %}
+        <tr>
+            <td><code>{{ run.id[:8] }}</code></td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span class="badge completed">completed</span>
+                {% elif run.status == 'failed' %}
+                <span class="badge failed">failed</span>
+                {% else %}
+                <span class="badge running">{{ run.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ run.posts_published }}</td>
+            <td>{{ "{:,}".format((run.total_input_tokens or 0) + (run.total_output_tokens or 0)) }}</td>
+            <td>{{ run.started_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if agent_logs %}
+<h2>Recent Agent Activity</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Agent</th>
+            <th>Input</th>
+            <th>Output</th>
+            <th>Tokens</th>
+            <th>Time</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in agent_logs %}
+        <tr>
+            <td><strong>{{ log.agent_name }}</strong></td>
+            <td>{{ log.input_summary[:60] }}</td>
+            <td>{{ log.output_summary[:60] }}</td>
+            <td>{{ (log.input_tokens or 0) + (log.output_tokens or 0) }}</td>
+            <td>{{ log.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

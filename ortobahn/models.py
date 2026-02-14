@@ -1,0 +1,244 @@
+"""Pydantic data models - the contracts between agents."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel, Field
+
+# --- Enums ---
+
+
+class PostType(str, Enum):
+    HOT_TAKE = "hot_take"
+    INSIGHT = "insight"
+    QUESTION = "question"
+    THREAD_STARTER = "thread_starter"
+    COMMENTARY = "commentary"
+
+
+class Platform(str, Enum):
+    BLUESKY = "bluesky"
+    TWITTER = "twitter"
+    LINKEDIN = "linkedin"
+    GOOGLE_ADS = "google_ads"
+    INSTAGRAM = "instagram"
+    GENERIC = "generic"
+
+
+class ContentType(str, Enum):
+    SOCIAL_POST = "social_post"
+    AD_HEADLINE = "ad_headline"
+    AD_DESCRIPTION = "ad_description"
+
+
+class ContentStatus(str, Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    PUBLISHED = "published"
+    REJECTED = "rejected"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+# --- Platform constraints (used by Creator to enforce limits) ---
+
+PLATFORM_CONSTRAINTS: dict[str, dict] = {
+    Platform.BLUESKY: {"max_chars": 300, "hashtags": False, "tone": "casual-professional"},
+    Platform.TWITTER: {"max_chars": 280, "hashtags": True, "tone": "punchy"},
+    Platform.LINKEDIN: {"max_chars": 3000, "hashtags": True, "tone": "professional"},
+    Platform.GOOGLE_ADS: {"max_chars": 90, "hashtags": False, "tone": "action-oriented"},
+    Platform.INSTAGRAM: {"max_chars": 2200, "hashtags": True, "tone": "visual-friendly"},
+    Platform.GENERIC: {"max_chars": 500, "hashtags": False, "tone": "neutral"},
+}
+
+
+# --- Client model ---
+
+
+class Client(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    industry: str = ""
+    target_audience: str = ""
+    brand_voice: str = ""
+    website: str = ""
+    active: bool = True
+    products: str = ""
+    competitive_positioning: str = ""
+    key_messages: str = ""
+    content_pillars: str = ""
+    company_story: str = ""
+
+
+# --- Trending data (fed into Strategist) ---
+
+
+class TrendingTopic(BaseModel):
+    title: str
+    source: str  # "newsapi", "google_trends", "rss"
+    description: str | None = None
+    url: str | None = None
+
+
+# --- CEO output ---
+
+
+class Strategy(BaseModel):
+    themes: list[str] = Field(..., min_length=1, max_length=5)
+    tone: str
+    goals: list[str]
+    content_guidelines: str
+    posting_frequency: str
+    valid_until: datetime
+    target_platforms: list[Platform] = Field(default_factory=lambda: [Platform.GENERIC])
+    client_id: str = "default"
+
+
+# --- Strategist output ---
+
+
+class PostIdea(BaseModel):
+    topic: str
+    angle: str
+    hook: str
+    content_type: PostType
+    priority: int = Field(ge=1, le=5)
+    trending_source: str | None = None
+    target_platforms: list[Platform] = Field(default_factory=lambda: [Platform.GENERIC])
+
+
+class ContentPlan(BaseModel):
+    posts: list[PostIdea]
+
+
+# --- Creator output ---
+
+
+class DraftPost(BaseModel):
+    text: str
+    source_idea: str
+    reasoning: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    platform: Platform = Platform.GENERIC
+    content_type: ContentType = ContentType.SOCIAL_POST
+
+
+class DraftPosts(BaseModel):
+    posts: list[DraftPost]
+
+
+# --- Publisher output ---
+
+
+class PublishedPost(BaseModel):
+    text: str
+    uri: str | None = None
+    cid: str | None = None
+    published_at: datetime | None = None
+    status: str  # "published", "failed", "skipped", "draft"
+    error: str | None = None
+    platform: Platform = Platform.GENERIC
+
+
+class PublishedPosts(BaseModel):
+    posts: list[PublishedPost]
+
+
+# --- Analytics output ---
+
+
+class PostPerformance(BaseModel):
+    text: str
+    uri: str
+    like_count: int = 0
+    repost_count: int = 0
+    reply_count: int = 0
+    total_engagement: int = 0
+
+
+class AnalyticsReport(BaseModel):
+    period: str = "last 7 days"
+    total_posts: int = 0
+    total_likes: int = 0
+    total_reposts: int = 0
+    total_replies: int = 0
+    avg_engagement_per_post: float = 0.0
+    best_post: PostPerformance | None = None
+    worst_post: PostPerformance | None = None
+    top_themes: list[str] = Field(default_factory=list)
+    summary: str = "No data yet."
+    recommendations: list[str] = Field(default_factory=list)
+
+
+# --- SRE Agent output ---
+
+
+class SREAlert(BaseModel):
+    severity: str  # "critical", "warning", "info"
+    component: str  # "pipeline", "platform_api", "database", "tokens"
+    message: str
+
+
+class SREReport(BaseModel):
+    health_status: str = "unknown"  # "healthy", "degraded", "critical", "unknown"
+    pipeline_success_rate: float = 0.0
+    avg_confidence_trend: str = "stable"  # "rising", "falling", "stable"
+    total_tokens_24h: int = 0
+    estimated_cost_24h: float = 0.0
+    platform_health: dict[str, str] = Field(default_factory=dict)
+    alerts: list[SREAlert] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+# --- CFO Agent output ---
+
+
+class CFOReport(BaseModel):
+    total_spend_24h: float = 0.0
+    cost_per_post: float = 0.0
+    cost_per_engagement: float = 0.0
+    total_engagements_24h: int = 0
+    roi_estimate: float = 0.0  # engagements per dollar
+    budget_status: str = "within_budget"  # "within_budget", "over_budget", "under_utilized"
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = "No cost data yet."
+
+
+# --- Ops Agent output ---
+
+
+class OpsAction(BaseModel):
+    action: str
+    target: str
+    status: str  # "completed", "pending", "failed"
+    detail: str = ""
+
+
+class OpsReport(BaseModel):
+    pending_clients: int = 0
+    active_clients: int = 0
+    actions_taken: list[OpsAction] = Field(default_factory=list)
+    pending_items: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = "No operational data yet."
+
+
+# --- Marketing Agent output ---
+
+
+class MarketingIdea(BaseModel):
+    angle: str
+    hook: str
+    target_platform: str = "bluesky"
+    content_type: str = "social_post"
+
+
+class MarketingReport(BaseModel):
+    content_ideas: list[MarketingIdea] = Field(default_factory=list)
+    draft_posts: list[str] = Field(default_factory=list)
+    metrics_highlights: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = "No marketing data yet."

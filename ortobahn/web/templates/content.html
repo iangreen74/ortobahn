@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Content{% endblock %}
+{% block content %}
+<h1>Content Review</h1>
+
+<form method="get" action="/content/" class="filter-form">
+    <div class="grid">
+        <select name="client">
+            <option value="">All Clients</option>
+            {% for c in clients %}
+            <option value="{{ c.id }}" {% if filter_client == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="platform">
+            <option value="">All Platforms</option>
+            <option value="twitter" {% if filter_platform == 'twitter' %}selected{% endif %}>Twitter</option>
+            <option value="linkedin" {% if filter_platform == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+            <option value="google_ads" {% if filter_platform == 'google_ads' %}selected{% endif %}>Google Ads</option>
+            <option value="bluesky" {% if filter_platform == 'bluesky' %}selected{% endif %}>Bluesky</option>
+            <option value="instagram" {% if filter_platform == 'instagram' %}selected{% endif %}>Instagram</option>
+            <option value="generic" {% if filter_platform == 'generic' %}selected{% endif %}>Generic</option>
+        </select>
+        <select name="status">
+            <option value="">All Statuses</option>
+            <option value="draft" {% if filter_status == 'draft' %}selected{% endif %}>Draft</option>
+            <option value="approved" {% if filter_status == 'approved' %}selected{% endif %}>Approved</option>
+            <option value="published" {% if filter_status == 'published' %}selected{% endif %}>Published</option>
+            <option value="rejected" {% if filter_status == 'rejected' %}selected{% endif %}>Rejected</option>
+        </select>
+        <button type="submit">Filter</button>
+    </div>
+</form>
+
+{% if posts %}
+<table>
+    <thead>
+        <tr>
+            <th>Platform</th>
+            <th>Type</th>
+            <th>Text</th>
+            <th>Confidence</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in posts %}
+        <tr id="post-{{ p.id }}">
+            <td>{{ p.platform }}</td>
+            <td>{{ p.content_type }}</td>
+            <td class="content-text">{{ p.text }}</td>
+            <td>{{ "%.2f"|format(p.confidence) if p.confidence else '-' }}</td>
+            <td id="status-{{ p.id }}">
+                <span class="badge {{ p.status }}">{{ p.status }}</span>
+            </td>
+            <td>
+                {% if p.status == 'draft' %}
+                <div class="action-buttons">
+                    <button class="outline"
+                            hx-post="/content/{{ p.id }}/approve"
+                            hx-target="#status-{{ p.id }}"
+                            hx-swap="innerHTML">
+                        Approve
+                    </button>
+                    <button class="outline secondary"
+                            hx-post="/content/{{ p.id }}/reject"
+                            hx-target="#status-{{ p.id }}"
+                            hx-swap="innerHTML">
+                        Reject
+                    </button>
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No content found. Try adjusting filters or <a href="/pipeline/">run the pipeline</a>.</p>
+{% endif %}
+{% endblock %}

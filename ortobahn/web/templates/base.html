@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ortobahn{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="container">
+        <ul>
+            <li><strong><a href="/">Ortobahn</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/clients/">Clients</a></li>
+            <li><a href="/content/">Content</a></li>
+            <li><a href="/pipeline/">Pipeline</a></li>
+            <li><a href="/sre/">System Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="container">
+        <p><small>Ortobahn - Autonomous AI Marketing Engine by <a href="https://vaultscaler.com">Vaultscaler</a></small></p>
+    </footer>
+</body>
+</html>

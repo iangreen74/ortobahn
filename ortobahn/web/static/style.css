@@ -1,0 +1,42 @@
+/* Ortobahn custom styles */
+
+.badge {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.badge.draft { background: #4a4a0a; color: #e6e600; }
+.badge.approved { background: #0a3a0a; color: #4caf50; }
+.badge.published { background: #0a2a4a; color: #42a5f5; }
+.badge.rejected { background: #4a0a0a; color: #ef5350; }
+.badge.failed { background: #4a0a0a; color: #ef5350; }
+.badge.completed { background: #0a3a0a; color: #4caf50; }
+.badge.running { background: #3a3a0a; color: #ffb74d; }
+.badge.skipped { background: #2a2a2a; color: #999; }
+
+.content-text {
+    max-width: 400px;
+    word-wrap: break-word;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5em;
+}
+
+.action-buttons button {
+    margin: 0;
+    padding: 0.3em 0.8em;
+    font-size: 0.85em;
+}
+
+.filter-form {
+    margin-bottom: 1em;
+}
+
+table td, table th {
+    padding: 0.5em 0.75em;
+}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Clients{% endblock %}
+{% block content %}
+<h1>Clients</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Industry</th>
+            <th>Target Audience</th>
+            <th>Website</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in clients %}
+        <tr>
+            <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+            <td>{{ c.industry }}</td>
+            <td>{{ c.target_audience[:50] }}{% if c.target_audience|length > 50 %}...{% endif %}</td>
+            <td>{% if c.website %}<a href="{{ c.website }}">{{ c.website }}</a>{% endif %}</td>
+            <td><a href="/clients/{{ c.id }}">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<details>
+    <summary>Add New Client</summary>
+    <form method="post" action="/clients/">
+        <label for="name">Company Name *</label>
+        <input type="text" id="name" name="name" required>
+
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="2"></textarea>
+
+        <label for="industry">Industry</label>
+        <input type="text" id="industry" name="industry">
+
+        <label for="target_audience">Target Audience</label>
+        <input type="text" id="target_audience" name="target_audience">
+
+        <label for="brand_voice">Brand Voice</label>
+        <input type="text" id="brand_voice" name="brand_voice">
+
+        <label for="website">Website</label>
+        <input type="url" id="website" name="website">
+
+        <button type="submit">Create Client</button>
+    </form>
+</details>
+{% endblock %}

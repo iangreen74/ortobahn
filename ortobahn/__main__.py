@@ -111,6 +111,7 @@ def cmd_generate(args):
 def cmd_schedule(args):
     """Run pipeline on a schedule."""
     from ortobahn.config import load_settings
+    from ortobahn.models import Platform
     from ortobahn.orchestrator import Pipeline
 
     settings = load_settings()
@@ -135,6 +136,9 @@ def cmd_schedule(args):
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    # Parse platforms
+    platforms = [Platform(p.strip()) for p in args.platforms.split(",") if p.strip()]
+
     pipeline = Pipeline(settings, dry_run=dry_run)
     cycle_num = 0
 
@@ -158,7 +162,7 @@ def cmd_schedule(args):
                     cid = client["id"]
                     console.print(f"  [dim]Running for client: {client.get('name', cid)}[/dim]")
                     try:
-                        result = pipeline.run_cycle(client_id=cid)
+                        result = pipeline.run_cycle(client_id=cid, target_platforms=platforms)
                         total_published += result["posts_published"]
                         console.print(f"    Published {result['posts_published']} posts for {client.get('name', cid)}")
                     except Exception as e:
@@ -552,6 +556,7 @@ def main():
     sched_parser.add_argument("--interval", type=float, help="Hours between cycles (default: 6)")
     sched_parser.add_argument("--dry-run", action="store_true", help="Don't publish to platforms")
     sched_parser.add_argument("--client", type=str, help="Client ID (default: from config)")
+    sched_parser.add_argument("--platforms", type=str, default="bluesky", help="Comma-separated platforms (default: bluesky)")
     sched_parser.set_defaults(func=cmd_schedule)
 
     # dashboard

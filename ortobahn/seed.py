@@ -69,12 +69,30 @@ def seed_vaultscaler(db: Database) -> str:
 
 
 def seed_ortobahn(db: Database) -> str:
-    """Create the Ortobahn self-marketing client if it doesn't exist."""
+    """Create the Ortobahn self-marketing client if it doesn't exist.
+
+    Migration 001 creates a 'default' client named 'Ortobahn'. We update it
+    in-place rather than creating a duplicate.
+    """
     existing = db.get_client("ortobahn")
     if existing:
         db.conn.execute("UPDATE clients SET internal=1 WHERE id='ortobahn'")
         db.conn.commit()
         return "ortobahn"
+
+    # Check if the 'default' client is already named Ortobahn (from migration 001)
+    default = db.get_client("default")
+    if default and default.get("name") == "Ortobahn":
+        # Update the default client with full ortobahn profile
+        for key in ("description", "industry", "target_audience", "brand_voice",
+                     "website", "products", "competitive_positioning",
+                     "key_messages", "content_pillars", "company_story"):
+            if key in ORTOBAHN_CLIENT:
+                db.conn.execute(f"UPDATE clients SET {key}=? WHERE id='default'", (ORTOBAHN_CLIENT[key],))
+        db.conn.execute("UPDATE clients SET internal=1 WHERE id='default'")
+        db.conn.commit()
+        return "default"
+
     cid = db.create_client(ORTOBAHN_CLIENT)
     db.conn.execute("UPDATE clients SET internal=1 WHERE id=?", (cid,))
     db.conn.commit()

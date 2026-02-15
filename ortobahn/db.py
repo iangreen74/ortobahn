@@ -581,5 +581,92 @@ class Database:
         self.conn.commit()
         return True
 
+    # --- Engineering Tasks (CTO Agent) ---
+
+    def create_engineering_task(self, data: dict) -> str:
+        tid = data.get("id") or str(uuid.uuid4())
+        self.conn.execute(
+            """INSERT INTO engineering_tasks (id, title, description, priority, status,
+               category, estimated_complexity, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                tid,
+                data["title"],
+                data["description"],
+                data.get("priority", 3),
+                data.get("status", "backlog"),
+                data.get("category", "feature"),
+                data.get("estimated_complexity", "medium"),
+                data.get("created_by", "human"),
+            ),
+        )
+        self.conn.commit()
+        return tid
+
+    def get_next_engineering_task(self) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM engineering_tasks WHERE status='backlog' ORDER BY priority ASC, created_at ASC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_engineering_tasks(self, status: str | None = None, limit: int = 20) -> list[dict]:
+        query = "SELECT * FROM engineering_tasks"
+        params: list = []
+        if status:
+            query += " WHERE status=?"
+            params.append(status)
+        query += " ORDER BY priority ASC, created_at ASC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_engineering_task(self, task_id: str, data: dict) -> None:
+        allowed = {
+            "title", "description", "priority", "status", "category",
+            "started_at", "completed_at", "assigned_run_id", "branch_name",
+            "files_changed", "error", "blocked_reason", "estimated_complexity",
+        }
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        values = list(updates.values()) + [task_id]
+        self.conn.execute(f"UPDATE engineering_tasks SET {set_clause} WHERE id=?", values)
+        self.conn.commit()
+
+    def log_code_change(self, task_id: str, run_id: str, file_path: str,
+                        change_type: str, diff_summary: str = "") -> str:
+        cid = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO code_changes (id, task_id, run_id, file_path, change_type, diff_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (cid, task_id, run_id, file_path, change_type, diff_summary),
+        )
+        self.conn.commit()
+        return cid
+
+    def start_cto_run(self, run_id: str, task_id: str) -> None:
+        self.conn.execute(
+            "INSERT INTO cto_runs (id, task_id, status) VALUES (?, ?, 'running')",
+            (run_id, task_id),
+        )
+        self.conn.commit()
+
+    def complete_cto_run(self, run_id: str, status: str, **kwargs) -> None:
+        fields = ["status=?", "completed_at=CURRENT_TIMESTAMP"]
+        values: list = [status]
+        for key in ("thinking_summary", "files_read", "files_written",
+                     "tests_passed", "tests_failed", "commit_sha", "error",
+                     "total_input_tokens", "total_output_tokens"):
+            if key in kwargs:
+                fields.append(f"{key}=?")
+                val = kwargs[key]
+                values.append(json.dumps(val) if isinstance(val, (list, dict)) else val)
+        values.append(run_id)
+        self.conn.execute(
+            f"UPDATE cto_runs SET {', '.join(fields)} WHERE id=?", values
+        )
+        self.conn.commit()
+
     def close(self):
         self.conn.close()

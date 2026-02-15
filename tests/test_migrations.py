@@ -48,7 +48,7 @@ class TestMigrations:
             );
         """)
         version = run_migrations(raw_conn)
-        assert version == 8
+        assert version == 9
 
         # Verify clients table exists (migration 001)
         row = raw_conn.execute("SELECT * FROM clients WHERE id='default'").fetchone()
@@ -87,6 +87,11 @@ class TestMigrations:
         # Verify stripe_events table (migration 008)
         raw_conn.execute("SELECT id, event_type, processed_at FROM stripe_events LIMIT 1")
 
+        # Verify engineering tables (migration 009)
+        raw_conn.execute("SELECT id, title, description, priority, status, category FROM engineering_tasks LIMIT 1")
+        raw_conn.execute("SELECT id, task_id, run_id, file_path, change_type FROM code_changes LIMIT 1")
+        raw_conn.execute("SELECT id, task_id, status, commit_sha, total_input_tokens FROM cto_runs LIMIT 1")
+
     def test_idempotent(self, raw_conn):
         raw_conn.executescript("""
             CREATE TABLE IF NOT EXISTS strategies (
@@ -107,7 +112,7 @@ class TestMigrations:
         """)
         v1 = run_migrations(raw_conn)
         v2 = run_migrations(raw_conn)
-        assert v1 == v2 == 8
+        assert v1 == v2 == 9
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         from ortobahn.db import Database

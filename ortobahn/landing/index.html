@@ -127,7 +127,7 @@
                 <li><a href="#how-it-works">How It Works</a></li>
                 <li><a href="#features">Features</a></li>
                 <li><a href="#proof">Live Proof</a></li>
-                <li><a href="#request-access" class="btn btn-sm">Request Access</a></li>
+                <li><a href="#request-access" class="btn btn-sm">Create Account</a></li>
             </ul>
         </div>
     </nav>
@@ -281,8 +281,8 @@
         <!-- Request Access -->
         <section id="request-access">
             <div class="container">
-                <h2>Request Early Access</h2>
-                <p class="section-sub">Ortobahn is onboarding its first customers. Tell us about your brand and we'll get you set up.</p>
+                <h2>Create Your Account</h2>
+                <p class="section-sub">Set up your autonomous marketing engine in 30 seconds. You'll get an API key and dashboard access immediately.</p>
 
                 <form id="onboard-form" class="access-form" action="/api/onboard" method="POST">
                     <div class="form-grid">
@@ -311,7 +311,7 @@
                             <textarea id="brand_voice" name="brand_voice" rows="3" placeholder="Professional but approachable, focus on innovation..."></textarea>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg">Request Access</button>
+                    <button type="submit" class="btn btn-primary btn-lg">Create Account</button>
                     <div id="form-status" class="form-status" aria-live="polite"></div>
                 </form>
             </div>
@@ -340,7 +340,7 @@
                     <ul>
                         <li><a href="https://bsky.app/profile/vaultscaler.bsky.social" target="_blank" rel="noopener">Bluesky</a></li>
                         <li><a href="https://vaultscaler.com" target="_blank" rel="noopener">Vaultscaler</a></li>
-                        <li><a href="#request-access">Request Access</a></li>
+                        <li><a href="#request-access">Create Account</a></li>
                     </ul>
                 </div>
             </div>
@@ -359,7 +359,7 @@
         const data = Object.fromEntries(new FormData(this));
 
         btn.disabled = true;
-        btn.textContent = 'Submitting...';
+        btn.textContent = 'Creating account...';
         status.textContent = '';
         status.className = 'form-status';
 
@@ -371,9 +371,14 @@
             });
             const result = await resp.json();
             if (resp.ok) {
-                status.textContent = 'Request received! We\'ll be in touch soon.';
+                status.innerHTML = '<strong>Account created!</strong> Save your API key — it cannot be retrieved again:<br>'
+                    + '<code style="display:inline-block;margin:0.5rem 0;padding:0.5rem 1rem;background:#1a1a2e;border-radius:4px;font-size:1rem;user-select:all">'
+                    + result.api_key + '</code><br>'
+                    + '<a href="/login" style="color:#00d4aa">Go to dashboard &rarr;</a>';
                 status.className = 'form-status success';
                 this.reset();
+                btn.textContent = 'Account Created';
+                return;
             } else {
                 status.textContent = result.detail || 'Something went wrong. Please try again.';
                 status.className = 'form-status error';
@@ -383,7 +388,7 @@
             status.className = 'form-status error';
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Request Access';
+            if (btn.textContent === 'Creating account...') btn.textContent = 'Create Account';
         }
     });
     </script>

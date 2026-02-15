@@ -43,7 +43,9 @@ class TestOnboardEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "client_id" in data
-        assert "received" in data["message"].lower()
+        assert "api_key" in data
+        assert data["api_key"].startswith("otb_")
+        assert "created" in data["message"].lower()
 
     @pytest.mark.asyncio
     async def test_duplicate_email_rejected(self, client):

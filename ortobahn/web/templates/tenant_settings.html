@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<p><a href="/my/dashboard">&larr; Back to dashboard</a></p>
+
+<h2>Brand Profile</h2>
+<article>
+    <form method="post" action="/my/settings">
+        <label for="name">Company Name</label>
+        <input type="text" id="name" name="name" value="{{ client.name }}" required>
+
+        <label for="industry">Industry</label>
+        <input type="text" id="industry" name="industry" value="{{ client.industry or '' }}">
+
+        <label for="target_audience">Target Audience</label>
+        <input type="text" id="target_audience" name="target_audience" value="{{ client.target_audience or '' }}">
+
+        <label for="brand_voice">Brand Voice</label>
+        <textarea id="brand_voice" name="brand_voice" rows="3">{{ client.brand_voice or '' }}</textarea>
+
+        <label for="website">Website</label>
+        <input type="url" id="website" name="website" value="{{ client.website or '' }}">
+
+        <label for="products">Products / Services</label>
+        <textarea id="products" name="products" rows="2">{{ client.products or '' }}</textarea>
+
+        <label for="competitive_positioning">Competitive Positioning</label>
+        <textarea id="competitive_positioning" name="competitive_positioning" rows="2">{{ client.competitive_positioning or '' }}</textarea>
+
+        <label for="key_messages">Key Messages</label>
+        <textarea id="key_messages" name="key_messages" rows="2">{{ client.key_messages or '' }}</textarea>
+
+        <label for="content_pillars">Content Pillars</label>
+        <textarea id="content_pillars" name="content_pillars" rows="2">{{ client.content_pillars or '' }}</textarea>
+
+        <label for="company_story">Company Story</label>
+        <textarea id="company_story" name="company_story" rows="3">{{ client.company_story or '' }}</textarea>
+
+        <button type="submit">Save Profile</button>
+    </form>
+</article>
+
+<h2>Platform Credentials</h2>
+<p><small>Credentials are encrypted at rest. Only provide fields relevant to each platform.</small></p>
+
+<article>
+    <header>Bluesky {% if "bluesky" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/bluesky">
+        <label for="bs_handle">Handle</label>
+        <input type="text" id="bs_handle" name="handle" placeholder="you.bsky.social">
+        <label for="bs_password">App Password</label>
+        <input type="password" id="bs_password" name="app_password" placeholder="xxxx-xxxx-xxxx-xxxx">
+        <button type="submit" class="outline">Save Bluesky</button>
+    </form>
+</article>
+
+<article>
+    <header>Twitter / X {% if "twitter" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/twitter">
+        <div class="grid">
+            <div>
+                <label for="tw_api_key">API Key</label>
+                <input type="password" id="tw_api_key" name="api_key">
+            </div>
+            <div>
+                <label for="tw_api_secret">API Secret</label>
+                <input type="password" id="tw_api_secret" name="api_secret">
+            </div>
+        </div>
+        <div class="grid">
+            <div>
+                <label for="tw_access_token">Access Token</label>
+                <input type="password" id="tw_access_token" name="access_token">
+            </div>
+            <div>
+                <label for="tw_access_token_secret">Access Token Secret</label>
+                <input type="password" id="tw_access_token_secret" name="access_token_secret">
+            </div>
+        </div>
+        <button type="submit" class="outline">Save Twitter</button>
+    </form>
+</article>
+
+<article>
+    <header>LinkedIn {% if "linkedin" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/linkedin">
+        <label for="li_access_token">Access Token</label>
+        <input type="password" id="li_access_token" name="access_token">
+        <label for="li_person_urn">Person URN</label>
+        <input type="text" id="li_person_urn" name="person_urn" placeholder="urn:li:person:...">
+        <button type="submit" class="outline">Save LinkedIn</button>
+    </form>
+</article>
+
+<h2>API Keys</h2>
+<article>
+    <table>
+        <thead>
+            <tr>
+                <th>Prefix</th>
+                <th>Name</th>
+                <th>Created</th>
+                <th>Last Used</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in api_keys %}
+            <tr>
+                <td><code>{{ key.key_prefix }}...</code></td>
+                <td>{{ key.name }}</td>
+                <td>{{ key.created_at }}</td>
+                <td>{{ key.last_used_at or "never" }}</td>
+                <td>{% if key.active %}Yes{% else %}Revoked{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+{% endblock %}

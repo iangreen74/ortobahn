@@ -252,3 +252,43 @@ class MarketingReport(BaseModel):
     metrics_highlights: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     summary: str = "No marketing data yet."
+
+
+# --- CTO Agent models ---
+
+
+class TaskStatus(str, Enum):
+    BACKLOG = "backlog"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+
+
+class TaskCategory(str, Enum):
+    FEATURE = "feature"
+    BUGFIX = "bugfix"
+    REFACTOR = "refactor"
+    TEST = "test"
+    INFRA = "infra"
+    DOCS = "docs"
+
+
+class EngineeringTask(BaseModel):
+    id: str = ""
+    title: str
+    description: str
+    priority: int = Field(default=3, ge=1, le=5)
+    status: TaskStatus = TaskStatus.BACKLOG
+    category: TaskCategory = TaskCategory.FEATURE
+    estimated_complexity: str = "medium"
+
+
+class CTOResult(BaseModel):
+    task_id: str
+    status: str  # "success", "failed", "skipped"
+    branch_name: str = ""
+    commit_sha: str = ""
+    files_changed: list[str] = Field(default_factory=list)
+    summary: str = ""
+    error: str = ""

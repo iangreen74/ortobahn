@@ -18,6 +18,13 @@ from ortobahn.auth import (
 router = APIRouter()
 
 
+@router.get("/login")
+async def login_page(request: Request):
+    """Render the login page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
 class LoginRequest(BaseModel):
     api_key: str
 

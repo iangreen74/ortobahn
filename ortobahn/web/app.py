@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
             "https://ortobahn.com",
             "https://www.ortobahn.com",
             "https://ortobahn.vaultscaler.com",
+            "https://app.ortobahn.com",
             "http://localhost:8000",
         ],
         allow_methods=["GET", "POST"],
@@ -43,14 +44,27 @@ def create_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    from ortobahn.web.routes import auth, clients, content, dashboard, onboard, payments, pipeline, sre
+    from ortobahn.web.routes import (
+        auth,
+        clients,
+        content,
+        dashboard,
+        onboard,
+        payments,
+        pipeline,
+        sre,
+        tenant_dashboard,
+    )
 
     # Public routes (no auth required)
     app.include_router(onboard.router, prefix="/api")
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(payments.router, prefix="/api/payments")
 
-    # Protected routes (auth dependency on each router)
+    # Tenant self-service routes (per-client auth)
+    app.include_router(tenant_dashboard.router)
+
+    # Protected routes (admin auth dependency on each router)
     app.include_router(dashboard.router)
     app.include_router(clients.router, prefix="/clients")
     app.include_router(content.router, prefix="/content")

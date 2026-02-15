@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Login{% endblock %}
+{% block content %}
+<h1>Login</h1>
+
+<article>
+    <header>Sign in with your API key</header>
+    <form id="login-form">
+        <label for="api_key">API Key</label>
+        <input type="password" id="api_key" name="api_key" placeholder="otb_..." required>
+        <small>Enter the API key you received when you created your account.</small>
+
+        <div id="login-error" style="display:none; color: var(--pico-del-color); margin-top: 0.5rem;"></div>
+
+        <button type="submit">Login</button>
+    </form>
+</article>
+
+<script>
+document.getElementById("login-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById("login-error");
+    errorEl.style.display = "none";
+
+    const apiKey = document.getElementById("api_key").value.trim();
+    if (!apiKey) return;
+
+    try {
+        const resp = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({api_key: apiKey}),
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            window.location.href = "/my/dashboard";
+        } else {
+            errorEl.textContent = data.detail || "Login failed. Check your API key.";
+            errorEl.style.display = "block";
+        }
+    } catch (err) {
+        errorEl.textContent = "Network error. Please try again.";
+        errorEl.style.display = "block";
+    }
+});
+</script>
+{% endblock %}

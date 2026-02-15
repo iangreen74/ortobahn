@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - My Dashboard{% endblock %}
+{% block content %}
+<h1>{{ client.name }}</h1>
+
+<div class="grid">
+    <article>
+        <header>Published Posts</header>
+        <p><strong>{{ total_published }}</strong></p>
+    </article>
+    <article>
+        <header>Drafts Pending</header>
+        <p><strong>{{ total_drafts }}</strong></p>
+    </article>
+    <article>
+        <header>Status</header>
+        <p><strong>{{ client.status or "active" }}</strong></p>
+    </article>
+</div>
+
+{% if strategy %}
+<h2>Active Strategy</h2>
+<article>
+    <p><strong>Themes:</strong> {{ strategy.themes|join(', ') }}</p>
+    <p><strong>Tone:</strong> {{ strategy.tone }}</p>
+    <p><strong>Posting frequency:</strong> {{ strategy.posting_frequency }}</p>
+    <p><small>Valid until: {{ strategy.valid_until }}</small></p>
+</article>
+{% else %}
+<article>
+    <p>No active strategy yet. Your first pipeline run will generate one.</p>
+</article>
+{% endif %}
+
+{% if posts %}
+<h2>Recent Posts</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Text</th>
+            <th>Status</th>
+            <th>Platform</th>
+            <th>Likes</th>
+            <th>Reposts</th>
+            <th>Replies</th>
+            <th>Published</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in posts %}
+        <tr>
+            <td>{{ p.text[:80] }}{% if p.text|length > 80 %}...{% endif %}</td>
+            <td>
+                {% if p.status == 'published' %}
+                <span class="badge completed">published</span>
+                {% elif p.status == 'draft' %}
+                <span class="badge running">draft</span>
+                {% elif p.status == 'failed' %}
+                <span class="badge failed">failed</span>
+                {% else %}
+                <span class="badge">{{ p.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ p.platform or "generic" }}</td>
+            <td>{{ p.like_count or 0 }}</td>
+            <td>{{ p.repost_count or 0 }}</td>
+            <td>{{ p.reply_count or 0 }}</td>
+            <td>{{ p.published_at or "-" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<article>
+    <p>No posts yet. Content will appear here after your first pipeline run.</p>
+</article>
+{% endif %}
+
+{% if recent_runs %}
+<h2>Recent Pipeline Runs</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Status</th>
+            <th>Posts</th>
+            <th>Started</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in recent_runs %}
+        <tr>
+            <td><code>{{ run.id[:8] }}</code></td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span class="badge completed">completed</span>
+                {% elif run.status == 'failed' %}
+                <span class="badge failed">failed</span>
+                {% else %}
+                <span class="badge running">{{ run.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ run.posts_published }}</td>
+            <td>{{ run.started_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<p><a href="/my/settings" role="button" class="outline">Settings</a></p>
+{% endblock %}

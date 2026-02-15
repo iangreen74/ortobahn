@@ -124,9 +124,91 @@ def seed_vaultscaler_credentials(db: Database, settings) -> None:
             )
 
 
+CTO_BACKLOG_TASKS = [
+    {
+        "title": "Add health check endpoint for ALB",
+        "description": "Add a /healthz endpoint that returns 200 OK with basic system status "
+        "(db connectivity, uptime). This is needed for the AWS ALB health checks.",
+        "priority": 1,
+        "category": "infra",
+        "estimated_complexity": "low",
+    },
+    {
+        "title": "Add rate limiting to API endpoints",
+        "description": "Implement rate limiting on the web API endpoints to prevent abuse. "
+        "Use a sliding-window approach with configurable limits per client/IP. "
+        "Store counters in the database or in-memory.",
+        "priority": 2,
+        "category": "feature",
+        "estimated_complexity": "medium",
+    },
+    {
+        "title": "Add password-based login",
+        "description": "Implement password-based authentication for the web dashboard. "
+        "Add user registration, login, and session management. "
+        "Hash passwords with bcrypt. Add login/logout endpoints.",
+        "priority": 2,
+        "category": "feature",
+        "estimated_complexity": "high",
+    },
+    {
+        "title": "Add /api/content JSON endpoint",
+        "description": "Add a public JSON API endpoint at /api/content that returns "
+        "recent published content for a client. Support pagination, filtering by platform, "
+        "and date range. Include engagement metrics where available.",
+        "priority": 3,
+        "category": "feature",
+        "estimated_complexity": "low",
+    },
+    {
+        "title": "Improve test coverage for auth module",
+        "description": "Write comprehensive tests for ortobahn/auth.py covering "
+        "API key generation, hashing, validation, and edge cases. "
+        "Target at least 90% coverage for the auth module.",
+        "priority": 3,
+        "category": "test",
+        "estimated_complexity": "medium",
+    },
+    {
+        "title": "Add database backup to S3",
+        "description": "Implement automated database backup to S3. Add a backup_to_s3() function "
+        "that uploads the SQLite database file to a configured S3 bucket. "
+        "Include configurable schedule and retention policy.",
+        "priority": 3,
+        "category": "infra",
+        "estimated_complexity": "medium",
+    },
+    {
+        "title": "Add OpenAPI documentation customization",
+        "description": "Customize the FastAPI auto-generated OpenAPI docs with proper descriptions, "
+        "examples, and tags for all endpoints. Add request/response examples "
+        "and group endpoints by functionality.",
+        "priority": 4,
+        "category": "docs",
+        "estimated_complexity": "low",
+    },
+]
+
+
+def seed_cto_backlog(db: Database) -> list[str]:
+    """Seed the CTO engineering backlog with initial tasks. Returns list of task IDs."""
+    task_ids: list[str] = []
+    existing = db.get_engineering_tasks(limit=100)
+    existing_titles = {t["title"] for t in existing}
+
+    for task_data in CTO_BACKLOG_TASKS:
+        if task_data["title"] in existing_titles:
+            continue
+        tid = db.create_engineering_task(task_data)
+        task_ids.append(tid)
+
+    return task_ids
+
+
 def seed_all(db: Database, settings=None) -> list[str]:
     """Seed all known clients and optionally migrate credentials."""
     ids = [seed_vaultscaler(db), seed_ortobahn(db)]
     if settings:
         seed_vaultscaler_credentials(db, settings)
+    seed_cto_backlog(db)
     return ids

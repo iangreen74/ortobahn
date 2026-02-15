@@ -188,6 +188,58 @@ def _migration_008_add_stripe_events(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
+    """Add engineering task backlog and CTO agent tracking tables."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS engineering_tasks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 3,
+            status TEXT NOT NULL DEFAULT 'backlog',
+            category TEXT NOT NULL DEFAULT 'feature',
+            estimated_complexity TEXT NOT NULL DEFAULT 'medium',
+            created_by TEXT NOT NULL DEFAULT 'human',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            assigned_run_id TEXT,
+            branch_name TEXT,
+            files_changed TEXT,
+            error TEXT,
+            blocked_reason TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS code_changes (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES engineering_tasks(id),
+            run_id TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            diff_summary TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS cto_runs (
+            id TEXT PRIMARY KEY,
+            task_id TEXT REFERENCES engineering_tasks(id),
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'running',
+            thinking_summary TEXT,
+            files_read TEXT,
+            files_written TEXT,
+            tests_passed INTEGER,
+            tests_failed INTEGER,
+            commit_sha TEXT,
+            error TEXT,
+            total_input_tokens INTEGER DEFAULT 0,
+            total_output_tokens INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -197,6 +249,7 @@ MIGRATIONS = {
     6: _migration_006_add_ab_testing,
     7: _migration_007_add_auth_and_credentials,
     8: _migration_008_add_stripe_events,
+    9: _migration_009_add_engineering_tasks,
 }
 
 

@@ -169,6 +169,30 @@ def cmd_schedule(args):
                         console.print(f"    [red]Failed for {client.get('name', cid)}: {e}[/red]")
 
                 console.print(f"[green]Cycle complete: {total_published} total posts published[/green]")
+
+                # Run CTO agent every other cycle
+                if cycle_num % 2 == 0:
+                    try:
+                        import uuid as _uuid
+
+                        from ortobahn.agents.cto import CTOAgent
+
+                        cto_run_id = str(_uuid.uuid4())
+                        cto_agent = CTOAgent(
+                            db=pipeline.db,
+                            api_key=settings.anthropic_api_key,
+                            model=settings.claude_model,
+                        )
+                        console.print("  [dim]Running CTO agent...[/dim]")
+                        cto_result = cto_agent.run(run_id=cto_run_id)
+                        if cto_result.status == "success":
+                            console.print(f"  [green]CTO: completed task on branch {cto_result.branch_name}[/green]")
+                        elif cto_result.status == "skipped":
+                            console.print("  [dim]CTO: no backlog tasks[/dim]")
+                        else:
+                            console.print(f"  [yellow]CTO: {cto_result.status} - {cto_result.error[:80]}[/yellow]")
+                    except Exception as e:
+                        console.print(f"  [red]CTO agent failed: {e}[/red]")
             except Exception as e:
                 console.print(f"[red]Cycle failed: {e}[/red]")
 
@@ -509,6 +533,119 @@ def cmd_api_key(args):
     db.close()
 
 
+def cmd_cto(args):
+    """Run the CTO agent to pick up one engineering task."""
+    import uuid
+
+    from ortobahn.agents.cto import CTOAgent
+    from ortobahn.config import load_settings
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+
+    if not settings.anthropic_api_key:
+        console.print("[red]ANTHROPIC_API_KEY is required for the CTO agent[/red]")
+        sys.exit(1)
+
+    db = Database(settings.db_path)
+    run_id = str(uuid.uuid4())
+
+    agent = CTOAgent(
+        db=db,
+        api_key=settings.anthropic_api_key,
+        model=settings.claude_model,
+    )
+
+    console.print("\n[bold cyan]ORTOBAHN CTO[/bold cyan] - Autonomous Engineering Agent")
+    console.print("=" * 50)
+
+    result = agent.run(run_id=run_id)
+
+    if result.status == "skipped":
+        console.print("[yellow]No backlog tasks to work on[/yellow]")
+    elif result.status == "success":
+        console.print(f"[green]Task completed successfully![/green]")
+        console.print(f"  Branch: {result.branch_name}")
+        console.print(f"  Commit: {result.commit_sha[:12]}")
+        console.print(f"  Files changed: {', '.join(result.files_changed)}")
+        console.print(f"  Summary: {result.summary}")
+    else:
+        console.print(f"[red]Task failed: {result.error}[/red]")
+
+    db.close()
+
+
+def cmd_cto_add(args):
+    """Add an engineering task to the CTO backlog."""
+    from ortobahn.config import load_settings
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    db = Database(settings.db_path)
+
+    task_data = {
+        "title": args.title,
+        "description": args.description or args.title,
+        "priority": args.priority,
+        "category": args.category,
+        "estimated_complexity": args.complexity,
+        "created_by": "human",
+    }
+
+    tid = db.create_engineering_task(task_data)
+    console.print(f"[green]Task created: {args.title} (id={tid[:8]})[/green]")
+    console.print(f"  Priority: P{args.priority} | Category: {args.category} | Complexity: {args.complexity}")
+    db.close()
+
+
+def cmd_cto_backlog(args):
+    """List engineering tasks in the CTO backlog."""
+    from ortobahn.config import load_settings
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    db = Database(settings.db_path)
+
+    tasks = db.get_engineering_tasks(status=args.status or None)
+
+    if not tasks:
+        console.print("[yellow]No engineering tasks found[/yellow]")
+        db.close()
+        return
+
+    table = Table(title=f"Engineering Tasks ({len(tasks)})")
+    table.add_column("ID", max_width=8)
+    table.add_column("P", max_width=2)
+    table.add_column("Status", max_width=12)
+    table.add_column("Category", max_width=10)
+    table.add_column("Title", max_width=50)
+    table.add_column("Complexity", max_width=8)
+
+    status_colors = {
+        "backlog": "dim",
+        "in_progress": "yellow",
+        "completed": "green",
+        "failed": "red",
+        "blocked": "magenta",
+    }
+
+    for t in tasks:
+        status = t.get("status", "backlog")
+        color = status_colors.get(status, "white")
+        table.add_row(
+            t["id"][:8],
+            str(t.get("priority", 3)),
+            f"[{color}]{status}[/{color}]",
+            t.get("category", "?"),
+            t["title"],
+            t.get("estimated_complexity", "?"),
+        )
+
+    console.print(table)
+    db.close()
+
+
 def cmd_web(args):
     """Start the web dashboard."""
     from ortobahn.config import load_settings
@@ -630,6 +767,28 @@ def main():
     ak_list = apikey_sub.add_parser("list", help="List API keys for a client")
     ak_list.add_argument("--client", required=True, help="Client ID")
     apikey_parser.set_defaults(func=cmd_api_key)
+
+    # cto
+    cto_parser = subparsers.add_parser("cto", help="Run CTO agent (picks up one engineering task)")
+    cto_parser.set_defaults(func=cmd_cto)
+
+    # cto-add
+    cto_add_parser = subparsers.add_parser("cto-add", help="Add an engineering task to the CTO backlog")
+    cto_add_parser.add_argument("title", help="Task title")
+    cto_add_parser.add_argument("-d", "--description", type=str, help="Task description")
+    cto_add_parser.add_argument("-p", "--priority", type=int, default=3, help="Priority (1=highest, 5=lowest)")
+    cto_add_parser.add_argument("-c", "--category", type=str, default="feature",
+                                choices=["feature", "bugfix", "refactor", "test", "infra", "docs"],
+                                help="Task category")
+    cto_add_parser.add_argument("--complexity", type=str, default="medium",
+                                choices=["low", "medium", "high"],
+                                help="Estimated complexity")
+    cto_add_parser.set_defaults(func=cmd_cto_add)
+
+    # cto-backlog
+    cto_backlog_parser = subparsers.add_parser("cto-backlog", help="List engineering tasks")
+    cto_backlog_parser.add_argument("--status", type=str, help="Filter by status (backlog, in_progress, completed, failed)")
+    cto_backlog_parser.set_defaults(func=cmd_cto_backlog)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

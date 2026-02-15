@@ -136,6 +136,58 @@ def _migration_006_add_ab_testing(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_007_add_auth_and_credentials(conn: sqlite3.Connection) -> None:
+    """Add API keys, sessions, and encrypted platform credentials."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES clients(id),
+            key_hash TEXT NOT NULL UNIQUE,
+            key_prefix TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT 'default',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP,
+            active INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS platform_credentials (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES clients(id),
+            platform TEXT NOT NULL,
+            credentials_encrypted TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(client_id, platform)
+        );
+    """)
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN internal INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN stripe_customer_id TEXT",
+        "ALTER TABLE clients ADD COLUMN stripe_subscription_id TEXT",
+        "ALTER TABLE clients ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'none'",
+        "ALTER TABLE clients ADD COLUMN subscription_plan TEXT NOT NULL DEFAULT ''",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.execute("UPDATE clients SET internal=1 WHERE id IN ('default', 'vaultscaler', 'ortobahn')")
+    conn.commit()
+
+
+def _migration_008_add_stripe_events(conn: sqlite3.Connection) -> None:
+    """Add stripe events log for idempotent webhook processing."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS stripe_events (
+            id TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -143,6 +195,8 @@ MIGRATIONS = {
     4: _migration_004_add_client_enrichment,
     5: _migration_005_add_monthly_budget,
     6: _migration_006_add_ab_testing,
+    7: _migration_007_add_auth_and_credentials,
+    8: _migration_008_add_stripe_events,
 }
 
 

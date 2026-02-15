@@ -212,6 +212,24 @@ class Pipeline:
             self.db.complete_pipeline_run(run_id, posts_published=0, errors=["client_paused"])
             return {"run_id": run_id, "posts_published": 0, "total_drafts": 0, "input_tokens": 0, "output_tokens": 0, "errors": ["client_paused"]}
 
+        # Subscription guard: skip non-internal clients without active subscription
+        if client_data and not client_data.get("internal") and client_data.get("subscription_status") not in ("active", "trialing"):
+            logger.info(f"Client {client_id} has no active subscription (status={client_data.get('subscription_status')}). Skipping.")
+            self.db.complete_pipeline_run(run_id, posts_published=0, errors=["no_active_subscription"])
+            return {"run_id": run_id, "posts_published": 0, "total_drafts": 0, "input_tokens": 0, "output_tokens": 0, "errors": ["no_active_subscription"]}
+
+        # Per-tenant credentials: resolve platform clients for this client
+        if self.settings.secret_key:
+            from ortobahn.credentials import build_platform_clients
+
+            tenant_clients = build_platform_clients(self.db, client_id, self.settings.secret_key, self.settings)
+            self.publisher.bluesky = tenant_clients["bluesky"] or self.bluesky
+            self.publisher.twitter = tenant_clients["twitter"] or self.twitter
+            self.publisher.linkedin = tenant_clients["linkedin"] or self.linkedin
+            self.analytics.bluesky = tenant_clients["bluesky"] or self.bluesky
+            self.analytics.twitter = tenant_clients["twitter"] or self.twitter
+            self.analytics.linkedin = tenant_clients["linkedin"] or self.linkedin
+
         logger.info(f"=== Pipeline cycle {run_id[:8]} started (client={client_id}) ===")
 
         # Backup database before cycle

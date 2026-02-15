@@ -43,13 +43,18 @@ def create_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    from ortobahn.web.routes import clients, content, dashboard, onboard, pipeline, sre
+    from ortobahn.web.routes import auth, clients, content, dashboard, onboard, payments, pipeline, sre
 
+    # Public routes (no auth required)
+    app.include_router(onboard.router, prefix="/api")
+    app.include_router(auth.router, prefix="/api/auth")
+    app.include_router(payments.router, prefix="/api/payments")
+
+    # Protected routes (auth dependency on each router)
     app.include_router(dashboard.router)
     app.include_router(clients.router, prefix="/clients")
     app.include_router(content.router, prefix="/content")
     app.include_router(pipeline.router, prefix="/pipeline")
     app.include_router(sre.router, prefix="/sre")
-    app.include_router(onboard.router, prefix="/api")
 
     return app

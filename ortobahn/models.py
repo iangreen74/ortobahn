@@ -42,6 +42,14 @@ class ContentStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+class SubscriptionStatus(str, Enum):
+    NONE = "none"
+    ACTIVE = "active"
+    TRIALING = "trialing"
+    PAST_DUE = "past_due"
+    CANCELLED = "cancelled"
+
+
 # --- Platform constraints (used by Creator to enforce limits) ---
 
 PLATFORM_CONSTRAINTS: dict[str, dict] = {
@@ -71,6 +79,8 @@ class Client(BaseModel):
     key_messages: str = ""
     content_pillars: str = ""
     company_story: str = ""
+    internal: bool = False
+    subscription_status: str = "none"
 
 
 # --- Trending data (fed into Strategist) ---

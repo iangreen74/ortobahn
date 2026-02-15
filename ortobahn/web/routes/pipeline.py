@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
+from ortobahn.auth import get_admin_client
 from ortobahn.models import Platform
 
 logger = logging.getLogger("ortobahn.web.pipeline")
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_admin_client)])
 
 
 def _run_pipeline(settings, client_id: str, platforms: list[Platform], publish: bool = False):

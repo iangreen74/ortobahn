@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
-router = APIRouter()
+from ortobahn.auth import get_admin_client
+
+router = APIRouter(dependencies=[Depends(get_admin_client)])
 
 
 @router.get("/")

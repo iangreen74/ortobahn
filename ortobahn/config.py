@@ -71,6 +71,16 @@ class Settings:
     backup_dir: Path = Path("data/backups")
     backup_max_count: int = 10
 
+    # Authentication
+    secret_key: str = ""
+    admin_api_key: str = ""
+
+    # Stripe
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id: str = ""
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -155,4 +165,10 @@ def load_settings() -> Settings:
         backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
         backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),
         backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),
+        secret_key=os.environ.get("ORTOBAHN_SECRET_KEY", ""),
+        admin_api_key=os.environ.get("ADMIN_API_KEY", ""),
+        stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
+        stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
+        stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        stripe_price_id=os.environ.get("STRIPE_PRICE_ID", ""),
     )

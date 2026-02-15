@@ -22,6 +22,7 @@ def test_settings():
         claude_model="claude-sonnet-4-5-20250929",
         post_confidence_threshold=0.7,
         max_posts_per_cycle=4,
+        secret_key="test-secret-key-for-jwt-and-fernet-00",
     )
 
 
@@ -47,6 +48,33 @@ def mock_llm_response():
         )
 
     return _make
+
+
+@pytest.fixture
+def test_api_key(test_db):
+    """Create a test API key and return (raw_key, client_id)."""
+    from ortobahn.auth import generate_api_key, hash_api_key, key_prefix
+
+    # Ensure a client exists
+    client = test_db.get_client("default")
+    if not client:
+        test_db.create_client({"id": "default", "name": "Test Default"})
+    # Mark as internal so it passes admin checks
+    test_db.conn.execute("UPDATE clients SET internal=1 WHERE id='default'")
+    test_db.conn.commit()
+
+    raw_key = generate_api_key()
+    hashed = hash_api_key(raw_key)
+    prefix = key_prefix(raw_key)
+    test_db.create_api_key("default", hashed, prefix, "test")
+    return raw_key, "default"
+
+
+@pytest.fixture
+def auth_headers(test_api_key):
+    """Headers dict with a valid API key for authenticated requests."""
+    raw_key, _ = test_api_key
+    return {"X-API-Key": raw_key}
 
 
 @pytest.fixture

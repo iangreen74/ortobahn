@@ -146,6 +146,9 @@ class Database:
             "content_pillars",
             "company_story",
             "monthly_budget",
+            "internal",
+            "subscription_status",
+            "subscription_plan",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
@@ -518,6 +521,65 @@ class Database:
             "total_posts_published": posts["c"],
             "platforms_supported": platforms["c"],
         }
+
+    # --- API Keys ---
+
+    def create_api_key(self, client_id: str, key_hash: str, key_prefix: str, name: str = "default") -> str:
+        kid = str(uuid.uuid4())
+        self.conn.execute(
+            "INSERT INTO api_keys (id, client_id, key_hash, key_prefix, name) VALUES (?, ?, ?, ?, ?)",
+            (kid, client_id, key_hash, key_prefix, name),
+        )
+        self.conn.commit()
+        return kid
+
+    def get_api_keys_for_client(self, client_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, key_prefix, name, created_at, last_used_at, active FROM api_keys WHERE client_id=?",
+            (client_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def revoke_api_key(self, key_id: str) -> None:
+        self.conn.execute("UPDATE api_keys SET active=0 WHERE id=?", (key_id,))
+        self.conn.commit()
+
+    # --- Subscriptions ---
+
+    def update_subscription(
+        self,
+        client_id: str,
+        stripe_customer_id: str = "",
+        stripe_subscription_id: str = "",
+        subscription_status: str = "none",
+        subscription_plan: str = "",
+    ) -> None:
+        self.conn.execute(
+            """UPDATE clients SET stripe_customer_id=?, stripe_subscription_id=?,
+               subscription_status=?, subscription_plan=? WHERE id=?""",
+            (stripe_customer_id, stripe_subscription_id, subscription_status, subscription_plan, client_id),
+        )
+        self.conn.commit()
+
+    def get_client_by_stripe_customer(self, stripe_customer_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM clients WHERE stripe_customer_id=?", (stripe_customer_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def record_stripe_event(self, event_id: str, event_type: str) -> bool:
+        """Record a Stripe event. Returns False if already processed."""
+        existing = self.conn.execute(
+            "SELECT id FROM stripe_events WHERE id=?", (event_id,)
+        ).fetchone()
+        if existing:
+            return False
+        self.conn.execute(
+            "INSERT INTO stripe_events (id, event_type) VALUES (?, ?)",
+            (event_id, event_type),
+        )
+        self.conn.commit()
+        return True
 
     def close(self):
         self.conn.close()

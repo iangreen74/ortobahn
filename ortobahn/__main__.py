@@ -309,9 +309,12 @@ def cmd_seed(args):
 
     settings = load_settings()
     db = Database(settings.db_path)
-    client_ids = seed_all(db)
+    client_ids = seed_all(db, settings=settings)
     for cid in client_ids:
-        console.print(f"[green]Client ready (id={cid})[/green]")
+        client = db.get_client(cid)
+        internal = client.get("internal") if client else False
+        label = " (internal)" if internal else ""
+        console.print(f"[green]Client ready (id={cid}){label}[/green]")
     db.close()
 
 
@@ -402,6 +405,103 @@ def cmd_reject(args):
 
     db.reject_post(match["id"])
     console.print(f"[yellow]Rejected: {match['text'][:60]}...[/yellow]")
+    db.close()
+
+
+def cmd_credentials(args):
+    """Set platform credentials for a client."""
+    from ortobahn.config import load_settings
+    from ortobahn.credentials import save_platform_credentials
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    if not settings.secret_key:
+        console.print("[red]ORTOBAHN_SECRET_KEY must be set for credential encryption[/red]")
+        sys.exit(1)
+
+    db = Database(settings.db_path)
+    client = db.get_client(args.client)
+    if not client:
+        console.print(f"[red]Client '{args.client}' not found[/red]")
+        db.close()
+        sys.exit(1)
+
+    creds = {}
+    if args.platform == "bluesky":
+        if not args.handle or not args.password:
+            console.print("[red]Bluesky requires --handle and --password[/red]")
+            db.close()
+            sys.exit(1)
+        creds = {"handle": args.handle, "app_password": args.password}
+    elif args.platform == "twitter":
+        if not all([args.api_key, args.api_secret, args.access_token, args.access_token_secret]):
+            console.print("[red]Twitter requires --api-key, --api-secret, --access-token, --access-token-secret[/red]")
+            db.close()
+            sys.exit(1)
+        creds = {
+            "api_key": args.api_key,
+            "api_secret": args.api_secret,
+            "access_token": args.access_token,
+            "access_token_secret": args.access_token_secret,
+        }
+    elif args.platform == "linkedin":
+        if not args.access_token or not args.person_urn:
+            console.print("[red]LinkedIn requires --access-token and --person-urn[/red]")
+            db.close()
+            sys.exit(1)
+        creds = {"access_token": args.access_token, "person_urn": args.person_urn}
+
+    save_platform_credentials(db, args.client, args.platform, creds, settings.secret_key)
+    console.print(f"[green]Credentials saved for {args.client}/{args.platform}[/green]")
+    db.close()
+
+
+def cmd_api_key(args):
+    """Create or list API keys."""
+    from ortobahn.auth import generate_api_key, hash_api_key, key_prefix
+    from ortobahn.config import load_settings
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    db = Database(settings.db_path)
+
+    if args.apikey_action == "create":
+        client = db.get_client(args.client)
+        if not client:
+            console.print(f"[red]Client '{args.client}' not found[/red]")
+            db.close()
+            sys.exit(1)
+        raw_key = generate_api_key()
+        hashed = hash_api_key(raw_key)
+        prefix = key_prefix(raw_key)
+        db.create_api_key(args.client, hashed, prefix, args.name)
+        console.print(f"[green]API key created for {args.client}:[/green]")
+        console.print(f"  [bold]{raw_key}[/bold]")
+        console.print("[yellow]Save this key now — it cannot be retrieved again.[/yellow]")
+
+    elif args.apikey_action == "list":
+        keys = db.get_api_keys_for_client(args.client)
+        if not keys:
+            console.print(f"[yellow]No API keys for {args.client}[/yellow]")
+        else:
+            from rich.table import Table
+
+            table = Table(title=f"API Keys for {args.client}")
+            table.add_column("Prefix")
+            table.add_column("Name")
+            table.add_column("Created")
+            table.add_column("Last Used")
+            table.add_column("Active")
+            for k in keys:
+                table.add_row(
+                    k["key_prefix"], k["name"],
+                    k["created_at"] or "", k["last_used_at"] or "never",
+                    "yes" if k["active"] else "no",
+                )
+            console.print(table)
+    else:
+        console.print("[red]Usage: ortobahn api-key create|list --client X[/red]")
+
     db.close()
 
 
@@ -500,6 +600,31 @@ def main():
     reject_parser = subparsers.add_parser("reject", help="Reject a draft post")
     reject_parser.add_argument("post_id", help="Post ID (or prefix)")
     reject_parser.set_defaults(func=cmd_reject)
+
+    # credentials
+    creds_parser = subparsers.add_parser("credentials", help="Manage per-tenant platform credentials")
+    creds_sub = creds_parser.add_subparsers(dest="creds_action")
+    set_parser = creds_sub.add_parser("set", help="Set credentials for a client+platform")
+    set_parser.add_argument("--client", required=True, help="Client ID")
+    set_parser.add_argument("--platform", required=True, choices=["bluesky", "twitter", "linkedin"])
+    set_parser.add_argument("--handle", help="Bluesky handle")
+    set_parser.add_argument("--password", help="Bluesky app password")
+    set_parser.add_argument("--api-key", help="Twitter API key")
+    set_parser.add_argument("--api-secret", help="Twitter API secret")
+    set_parser.add_argument("--access-token", help="Access token (Twitter or LinkedIn)")
+    set_parser.add_argument("--access-token-secret", help="Twitter access token secret")
+    set_parser.add_argument("--person-urn", help="LinkedIn person URN")
+    creds_parser.set_defaults(func=cmd_credentials)
+
+    # api-key
+    apikey_parser = subparsers.add_parser("api-key", help="Manage API keys")
+    apikey_sub = apikey_parser.add_subparsers(dest="apikey_action")
+    ak_create = apikey_sub.add_parser("create", help="Create API key for a client")
+    ak_create.add_argument("--client", required=True, help="Client ID")
+    ak_create.add_argument("--name", default="default", help="Key name/label")
+    ak_list = apikey_sub.add_parser("list", help="List API keys for a client")
+    ak_list.add_argument("--client", required=True, help="Client ID")
+    apikey_parser.set_defaults(func=cmd_api_key)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

@@ -105,15 +105,20 @@ class TestCallLLM:
         mock_response.content = [thinking_block, text_block]
         mock_response.usage.input_tokens = 200
         mock_response.usage.output_tokens = 500
-        mock_client.messages.create.return_value = mock_response
+        # Thinking path uses streaming
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.get_final_message.return_value = mock_response
+        mock_client.messages.stream.return_value = mock_stream
 
         result = call_llm("system", "user", api_key="sk-ant-test", thinking_budget=5000)
         assert result.text == '{"result": "deep thought"}'
         assert result.thinking == "Let me reason about this..."
         assert result.input_tokens == 200
 
-        # Verify thinking was passed to API
-        call_kwargs = mock_client.messages.create.call_args
+        # Verify thinking was passed to API via stream
+        call_kwargs = mock_client.messages.stream.call_args
         assert call_kwargs.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 5000}
         assert call_kwargs.kwargs["max_tokens"] == 4096 + 5000
 

@@ -53,9 +53,16 @@ def call_llm(
     else:
         kwargs["system"] = system_prompt
 
+    # Use streaming for extended thinking (required for long requests)
+    use_stream = thinking_budget > 0
+
     for attempt in range(retries):
         try:
-            response = client.messages.create(**kwargs)
+            if use_stream:
+                with client.messages.stream(**kwargs) as stream:
+                    response = stream.get_final_message()
+            else:
+                response = client.messages.create(**kwargs)
 
             # Parse response blocks
             text_parts = []

@@ -58,9 +58,7 @@ async def onboard(request: Request, body: OnboardRequest):
 
     # Register user in Cognito
     try:
-        cognito_sub = request.app.state.cognito.sign_up(
-            body.email, body.password, client_id
-        )
+        cognito_sub = request.app.state.cognito.sign_up(body.email, body.password, client_id)
     except CognitoError as exc:
         log.warning("Cognito sign-up failed for %s: %s", body.email, exc)
         # Rollback: remove the client record we just created

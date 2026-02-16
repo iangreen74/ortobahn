@@ -47,6 +47,20 @@
     </form>
 </article>
 
+<h2>Automation</h2>
+<article>
+    <form method="post" action="/my/auto-publish">
+        <label>
+            <input type="checkbox" name="auto_publish" value="on" {% if client.auto_publish %}checked{% endif %}>
+            Enable auto-publish (the scheduler will publish content automatically every 6 hours)
+        </label>
+        <label for="target_platforms">Target Platforms</label>
+        <input type="text" id="target_platforms" name="target_platforms" value="{{ client.target_platforms or 'bluesky' }}" placeholder="bluesky,twitter,linkedin">
+        <small>Comma-separated list of platforms for autonomous content generation.</small>
+        <button type="submit" class="outline">Save Automation Settings</button>
+    </form>
+</article>
+
 <h2>Platform Credentials</h2>
 <p><small>Credentials are encrypted at rest. Only provide fields relevant to each platform.</small></p>
 

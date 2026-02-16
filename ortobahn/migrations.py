@@ -370,6 +370,22 @@ def _migration_011_add_ci_fix_tracking(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_012_add_auto_publish(conn: sqlite3.Connection) -> None:
+    """Add per-client auto_publish toggle and target_platforms."""
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN auto_publish INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN target_platforms TEXT NOT NULL DEFAULT 'bluesky'",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    # Enable auto_publish for existing internal clients
+    conn.execute("UPDATE clients SET auto_publish=1, target_platforms='bluesky' WHERE internal=1")
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -382,6 +398,7 @@ MIGRATIONS = {
     9: _migration_009_add_engineering_tasks,
     10: _migration_010_add_intelligence_system,
     11: _migration_011_add_ci_fix_tracking,
+    12: _migration_012_add_auto_publish,
 }
 
 

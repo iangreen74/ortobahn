@@ -2,13 +2,36 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import RedirectResponse
 
 from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
+from ortobahn.models import Platform
+
+logger = logging.getLogger("ortobahn.web.tenant")
 
 router = APIRouter(prefix="/my")
+
+
+def _run_tenant_pipeline(settings, client_id: str, platforms: list[Platform], publish: bool = False):
+    """Run pipeline in background for a tenant."""
+    from ortobahn.orchestrator import Pipeline
+
+    pipeline = Pipeline(settings, dry_run=not publish)
+    try:
+        result = pipeline.run_cycle(
+            client_id=client_id,
+            target_platforms=platforms,
+            generate_only=not publish,
+        )
+        logger.info(f"Tenant pipeline complete for {client_id}: {result['posts_published']} published")
+    except Exception as e:
+        logger.error(f"Tenant pipeline failed for {client_id}: {e}")
+    finally:
+        pipeline.close()
 
 
 @router.get("/dashboard")
@@ -25,6 +48,16 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     total_published = len([p for p in posts if p.get("status") == "published"])
     total_drafts = len(db.get_drafts_for_review(client_id=client["id"]))
 
+    # Check connected platforms
+    connected_platforms = []
+    for platform in ("bluesky", "twitter", "linkedin"):
+        row = db.conn.execute(
+            "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
+            (client["id"], platform),
+        ).fetchone()
+        if row:
+            connected_platforms.append(platform)
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -35,8 +68,46 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "recent_runs": client_runs,
             "total_published": total_published,
             "total_drafts": total_drafts,
+            "connected_platforms": connected_platforms,
+            "auto_publish": client.get("auto_publish", 0),
         },
     )
+
+
+@router.post("/generate")
+async def tenant_generate(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    client: AuthClient,
+    platforms: str = Form("bluesky"),
+    auto_publish: str = Form(""),
+):
+    """Trigger a pipeline run for this tenant."""
+    settings = request.app.state.settings
+    platform_list = [Platform(p.strip()) for p in platforms.split(",") if p.strip()]
+    do_publish = auto_publish == "true"
+
+    background_tasks.add_task(_run_tenant_pipeline, settings, client["id"], platform_list, do_publish)
+
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
+@router.post("/auto-publish")
+async def tenant_toggle_auto_publish(
+    request: Request,
+    client: AuthClient,
+    auto_publish: str = Form(""),
+    target_platforms: str = Form("bluesky"),
+):
+    """Toggle auto-publish setting for this tenant."""
+    db = request.app.state.db
+    enabled = 1 if auto_publish == "on" else 0
+    db.conn.execute(
+        "UPDATE clients SET auto_publish=?, target_platforms=? WHERE id=?",
+        (enabled, target_platforms, client["id"]),
+    )
+    db.conn.commit()
+    return RedirectResponse("/my/settings", status_code=303)
 
 
 @router.get("/settings")

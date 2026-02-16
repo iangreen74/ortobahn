@@ -226,7 +226,11 @@ class Pipeline:
                        True = drafts only, False = publish.
         """
         if generate_only is None:
-            generate_only = not self.settings.autonomous_mode
+            # Per-client auto_publish overrides global setting
+            if client_id and (cd := self.db.get_client(client_id)):
+                generate_only = not cd.get("auto_publish", 0)
+            else:
+                generate_only = not self.settings.autonomous_mode
         run_id = str(uuid.uuid4())
         self.db.start_pipeline_run(run_id, mode="single", client_id=client_id)
         errors = []

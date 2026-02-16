@@ -21,8 +21,45 @@
     <article>
         <header>Status</header>
         <p><strong>{{ client.status or "active" }}</strong></p>
+        {% if auto_publish %}
+        <small>Auto-publish: enabled</small>
+        {% else %}
+        <small>Auto-publish: off (drafts only)</small>
+        {% endif %}
     </article>
 </div>
+
+<h2>Generate Content</h2>
+<article>
+    <form method="post" action="/my/generate">
+        <div class="grid">
+            <div>
+                <label for="platforms">Platforms</label>
+                <select id="platforms" name="platforms">
+                    <option value="bluesky" selected>Bluesky</option>
+                    <option value="bluesky,twitter">Bluesky + Twitter</option>
+                    <option value="bluesky,twitter,linkedin">All Platforms</option>
+                </select>
+            </div>
+            <div>
+                <label>
+                    <input type="checkbox" name="auto_publish" value="true" {% if auto_publish %}checked{% endif %}>
+                    Auto-publish (skip draft review)
+                </label>
+            </div>
+        </div>
+        <button type="submit">Generate Content</button>
+    </form>
+    <small>Runs in background. {% if not auto_publish %}Drafts will appear below for review.{% else %}Posts will be published automatically.{% endif %}</small>
+</article>
+
+{% if connected_platforms %}
+<p><small>Connected platforms: {{ connected_platforms | join(', ') }}</small></p>
+{% else %}
+<article>
+    <p>No platforms connected yet. <a href="/my/settings">Connect a platform</a> to start publishing.</p>
+</article>
+{% endif %}
 
 {% if strategy %}
 <h2>Active Strategy</h2>
@@ -31,10 +68,6 @@
     <p><strong>Tone:</strong> {{ strategy.tone }}</p>
     <p><strong>Posting frequency:</strong> {{ strategy.posting_frequency }}</p>
     <p><small>Valid until: {{ strategy.valid_until }}</small></p>
-</article>
-{% else %}
-<article>
-    <p>No active strategy yet. Your first pipeline run will generate one.</p>
 </article>
 {% endif %}
 
@@ -48,7 +81,6 @@
             <th>Platform</th>
             <th>Likes</th>
             <th>Reposts</th>
-            <th>Replies</th>
             <th>Published</th>
         </tr>
     </thead>
@@ -70,7 +102,6 @@
             <td>{{ p.platform or "generic" }}</td>
             <td>{{ p.like_count or 0 }}</td>
             <td>{{ p.repost_count or 0 }}</td>
-            <td>{{ p.reply_count or 0 }}</td>
             <td>{{ p.published_at or "-" }}</td>
         </tr>
         {% endfor %}
@@ -78,7 +109,7 @@
 </table>
 {% else %}
 <article>
-    <p>No posts yet. Content will appear here after your first pipeline run.</p>
+    <p>No posts yet. Click "Generate Content" above to create your first content.</p>
 </article>
 {% endif %}
 
@@ -113,6 +144,4 @@
     </tbody>
 </table>
 {% endif %}
-
-<p><a href="/my/settings" role="button" class="outline">Settings</a></p>
 {% endblock %}

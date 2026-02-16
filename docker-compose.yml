@@ -9,7 +9,7 @@ services:
     volumes:
       - ortobahn-data:/app/data
     restart: unless-stopped
-    command: ["python", "-m", "ortobahn", "schedule", "--client", "vaultscaler"]
+    command: ["python", "-m", "ortobahn", "schedule", "--platforms", "bluesky"]
 
   ortobahn-web:
     build: .

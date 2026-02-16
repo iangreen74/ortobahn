@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -16,7 +18,11 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("BLUESKY_APP_PASSWORD", "")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.chdir(tmp_path)
-    return create_app()
+    application = create_app()
+    cognito = MagicMock()
+    cognito.sign_up.return_value = "mock-cognito-sub"
+    application.state.cognito = cognito
+    return application
 
 
 @pytest_asyncio.fixture
@@ -38,6 +44,7 @@ class TestOnboardEndpoint:
                 "industry": "SaaS",
                 "website": "https://acme.com",
                 "brand_voice": "Professional",
+                "password": "TestPass123",
             },
         )
         assert resp.status_code == 200
@@ -46,6 +53,7 @@ class TestOnboardEndpoint:
         assert "api_key" in data
         assert data["api_key"].startswith("otb_")
         assert "created" in data["message"].lower()
+        assert data["needs_confirmation"] is True
 
     @pytest.mark.asyncio
     async def test_duplicate_email_rejected(self, client):
@@ -54,6 +62,7 @@ class TestOnboardEndpoint:
             "company": "AcmeCorp",
             "email": "jane@acme.com",
             "industry": "SaaS",
+            "password": "TestPass123",
         }
         await client.post("/api/onboard", json=payload)
         resp = await client.post("/api/onboard", json=payload)
@@ -79,6 +88,7 @@ class TestOnboardEndpoint:
                 "company": "AcmeCorp",
                 "email": "not-an-email",
                 "industry": "SaaS",
+                "password": "TestPass123",
             },
         )
         assert resp.status_code == 422

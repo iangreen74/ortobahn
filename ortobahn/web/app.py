@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ortobahn.auth import _LoginRedirect
+from ortobahn.cognito import CognitoClient
 from ortobahn.config import load_settings
 from ortobahn.db import Database
 
@@ -30,6 +31,15 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.db = Database(settings.db_path)
     app.state.templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    if settings.cognito_user_pool_id and settings.cognito_client_id:
+        app.state.cognito = CognitoClient(
+            settings.cognito_user_pool_id,
+            settings.cognito_client_id,
+            settings.cognito_region,
+        )
+    else:
+        app.state.cognito = None
 
     app.add_middleware(
         CORSMiddleware,

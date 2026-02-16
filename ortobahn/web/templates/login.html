@@ -8,16 +8,19 @@
 <h1>Login</h1>
 
 <article>
-    <header>Sign in with your API key</header>
+    <header>Sign in with your email and password</header>
     <form id="login-form">
-        <label for="api_key">API Key</label>
-        <input type="password" id="api_key" name="api_key" placeholder="otb_..." required>
-        <small>Enter the API key you received when you created your account.</small>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@company.com" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
 
         <div id="login-error" style="display:none; color: var(--pico-del-color); margin-top: 0.5rem;"></div>
 
         <button type="submit">Login</button>
     </form>
+    <p><small><a href="/api/auth/forgot-password">Forgot password?</a></small></p>
 </article>
 
 <script>
@@ -26,21 +29,24 @@ document.getElementById("login-form").addEventListener("submit", async function(
     const errorEl = document.getElementById("login-error");
     errorEl.style.display = "none";
 
-    const apiKey = document.getElementById("api_key").value.trim();
-    if (!apiKey) return;
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    if (!email || !password) return;
 
     try {
         const resp = await fetch("/api/auth/login", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({api_key: apiKey}),
+            body: JSON.stringify({email, password}),
         });
         const data = await resp.json();
 
         if (resp.ok) {
             window.location.href = "{{ next_url | default('/my/dashboard') }}";
+        } else if (data.needs_confirmation) {
+            window.location.href = "/api/auth/confirm?email=" + encodeURIComponent(email);
         } else {
-            errorEl.textContent = data.detail || "Login failed. Check your API key.";
+            errorEl.textContent = data.detail || "Login failed.";
             errorEl.style.display = "block";
         }
     } catch (err) {

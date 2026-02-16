@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Confirm Email{% endblock %}
+{% block nav_home %}/api/auth/login{% endblock %}
+{% block nav_links %}
+<li><a href="https://ortobahn.com">Home</a></li>
+{% endblock %}
+{% block content %}
+<h1>Confirm Your Email</h1>
+
+<article>
+    <header>Enter the 6-digit code sent to <strong>{{ email }}</strong></header>
+    <form id="confirm-form">
+        <label for="code">Confirmation Code</label>
+        <input type="text" id="code" name="code" placeholder="123456" maxlength="6" pattern="\d{6}" inputmode="numeric" autocomplete="one-time-code" required>
+        <small>Check your inbox (and spam folder) for the verification email.</small>
+
+        <div id="confirm-error" style="display:none; color: var(--pico-del-color); margin-top: 0.5rem;"></div>
+
+        <button type="submit">Confirm</button>
+    </form>
+</article>
+
+<script>
+document.getElementById("confirm-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById("confirm-error");
+    errorEl.style.display = "none";
+
+    const code = document.getElementById("code").value.trim();
+    if (!code) return;
+
+    try {
+        const resp = await fetch("/api/auth/confirm", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({email: "{{ email }}", code}),
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            window.location.href = "/api/auth/login";
+        } else {
+            errorEl.textContent = data.detail || "Confirmation failed.";
+            errorEl.style.display = "block";
+        }
+    } catch (err) {
+        errorEl.textContent = "Network error. Please try again.";
+        errorEl.style.display = "block";
+    }
+});
+</script>
+{% endblock %}

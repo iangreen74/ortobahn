@@ -1,10 +1,10 @@
-"""Authentication routes: login, API key management."""
+"""Authentication routes: login, confirmation, password reset, API key management."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from ortobahn.auth import (
     AdminClient,
@@ -14,8 +14,14 @@ from ortobahn.auth import (
     hash_api_key,
     key_prefix,
 )
+from ortobahn.cognito import CognitoError
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Login
+# ---------------------------------------------------------------------------
 
 
 @router.get("/login")
@@ -26,26 +32,37 @@ async def login_page(request: Request, next: str = "/my/dashboard"):
 
 
 class LoginRequest(BaseModel):
-    api_key: str
+    email: EmailStr
+    password: str
 
 
 @router.post("/login")
 async def login(request: Request, body: LoginRequest):
-    """Exchange an API key for a JWT session token."""
+    """Authenticate with email and password via Cognito, then issue a session JWT."""
     db = request.app.state.db
+    cognito = request.app.state.cognito
     secret_key = request.app.state.settings.secret_key
 
-    hashed = hash_api_key(body.api_key)
-    row = db.conn.execute("SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    try:
+        cognito.login(body.email, body.password)
+    except CognitoError as exc:
+        if exc.code == "UserNotConfirmedException":
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": exc.message,
+                    "needs_confirmation": True,
+                    "email": body.email,
+                },
+            )
+        raise HTTPException(status_code=401, detail=exc.message) from None
 
-    client = db.get_client(row["client_id"])
+    client = db.get_client_by_email(body.email)
     if not client:
         raise HTTPException(status_code=401, detail="Client not found")
 
-    token = create_session_token(row["client_id"], secret_key)
-    response = JSONResponse({"token": token, "client_id": row["client_id"], "client_name": client["name"]})
+    token = create_session_token(client["id"], secret_key)
+    response = JSONResponse({"token": token, "client_id": client["id"], "client_name": client["name"]})
     response.set_cookie(
         key="session",
         value=token,
@@ -56,12 +73,112 @@ async def login(request: Request, body: LoginRequest):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Logout
+# ---------------------------------------------------------------------------
+
+
 @router.post("/logout")
 async def logout():
     """Clear session cookie."""
     response = JSONResponse({"message": "Logged out"})
     response.delete_cookie("session")
     return response
+
+
+# ---------------------------------------------------------------------------
+# Email confirmation
+# ---------------------------------------------------------------------------
+
+
+@router.get("/confirm")
+async def confirm_page(request: Request, email: str = ""):
+    """Render the email confirmation page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("confirm.html", {"request": request, "email": email})
+
+
+class ConfirmRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+@router.post("/confirm")
+async def confirm(request: Request, body: ConfirmRequest):
+    """Confirm a user's email with the verification code."""
+    cognito = request.app.state.cognito
+
+    try:
+        cognito.confirm_sign_up(body.email, body.code)
+    except CognitoError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from None
+
+    return {"message": "Email confirmed. You may now log in."}
+
+
+# ---------------------------------------------------------------------------
+# Forgot password
+# ---------------------------------------------------------------------------
+
+
+@router.get("/forgot-password")
+async def forgot_password_page(request: Request):
+    """Render the forgot-password page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: Request, body: ForgotPasswordRequest):
+    """Initiate the forgot-password flow (sends a code to the user's email)."""
+    cognito = request.app.state.cognito
+
+    try:
+        cognito.forgot_password(body.email)
+    except CognitoError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from None
+
+    return {"message": "If that email is registered, a reset code has been sent."}
+
+
+# ---------------------------------------------------------------------------
+# Reset password
+# ---------------------------------------------------------------------------
+
+
+@router.get("/reset-password")
+async def reset_password_page(request: Request, email: str = ""):
+    """Render the reset-password page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("reset_password.html", {"request": request, "email": email})
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+@router.post("/reset-password")
+async def reset_password(request: Request, body: ResetPasswordRequest):
+    """Complete the password reset with a verification code and new password."""
+    cognito = request.app.state.cognito
+
+    try:
+        cognito.confirm_forgot_password(body.email, body.code, body.new_password)
+    except CognitoError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from None
+
+    return {"message": "Password has been reset. You may now log in."}
+
+
+# ---------------------------------------------------------------------------
+# API key management
+# ---------------------------------------------------------------------------
 
 
 class CreateApiKeyRequest(BaseModel):

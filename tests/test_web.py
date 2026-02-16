@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
 from ortobahn.auth import generate_api_key, hash_api_key, key_prefix
@@ -30,6 +32,13 @@ def _create_test_app(tmp_path):
     prefix = key_prefix(raw_key)
     db.create_api_key("default", hashed, prefix, "test-admin")
     app.state._test_admin_key = raw_key
+
+    # Mock Cognito client
+    mock_cognito = MagicMock()
+    mock_cognito.sign_up.return_value = "mock-sub"
+    mock_cognito.login.return_value = {"IdToken": "x", "AccessToken": "x", "RefreshToken": "x"}
+    mock_cognito.confirm_sign_up.return_value = None
+    app.state.cognito = mock_cognito
 
     return app
 

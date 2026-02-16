@@ -386,6 +386,20 @@ def _migration_012_add_auto_publish(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_013_add_cognito_sub(conn: sqlite3.Connection) -> None:
+    """Add cognito_sub column to clients for Cognito user mapping."""
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN cognito_sub TEXT",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_clients_cognito_sub ON clients(cognito_sub)")
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -399,6 +413,7 @@ MIGRATIONS = {
     10: _migration_010_add_intelligence_system,
     11: _migration_011_add_ci_fix_tracking,
     12: _migration_012_add_auto_publish,
+    13: _migration_013_add_cognito_sub,
 }
 
 

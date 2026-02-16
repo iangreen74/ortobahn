@@ -126,6 +126,14 @@ class Database:
         row = self.conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
         return dict(row) if row else None
 
+    def get_client_by_email(self, email: str) -> dict | None:
+        row = self.conn.execute("SELECT * FROM clients WHERE email=?", (email,)).fetchone()
+        return dict(row) if row else None
+
+    def get_client_by_cognito_sub(self, cognito_sub: str) -> dict | None:
+        row = self.conn.execute("SELECT * FROM clients WHERE cognito_sub=?", (cognito_sub,)).fetchone()
+        return dict(row) if row else None
+
     def get_all_clients(self) -> list[dict]:
         rows = self.conn.execute("SELECT * FROM clients WHERE active=1 ORDER BY name").fetchall()
         return [dict(r) for r in rows]
@@ -149,6 +157,7 @@ class Database:
             "internal",
             "subscription_status",
             "subscription_plan",
+            "cognito_sub",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:

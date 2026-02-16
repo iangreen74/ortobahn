@@ -78,6 +78,22 @@ def auth_headers(test_api_key):
 
 
 @pytest.fixture
+def mock_cognito():
+    """Mock CognitoClient that never hits AWS."""
+    client = MagicMock()
+    client.sign_up.return_value = "mock-cognito-sub"
+    client.login.return_value = {
+        "IdToken": "mock-id-token",
+        "AccessToken": "mock-access-token",
+        "RefreshToken": "mock-refresh-token",
+    }
+    client.confirm_sign_up.return_value = None
+    client.forgot_password.return_value = None
+    client.confirm_forgot_password.return_value = None
+    return client
+
+
+@pytest.fixture
 def mock_bluesky_client():
     """Mock BlueskyClient that never hits the network."""
     from ortobahn.integrations.bluesky import PostMetrics

@@ -75,6 +75,11 @@ class Settings:
     secret_key: str = ""
     admin_api_key: str = ""
 
+    # Cognito
+    cognito_user_pool_id: str = ""
+    cognito_client_id: str = ""
+    cognito_region: str = "us-west-2"
+
     # Intelligence system
     thinking_budget_reflection: int = 8_000
     enable_self_critique: bool = True
@@ -199,4 +204,7 @@ def load_settings() -> Settings:
         stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
         stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
         stripe_price_id=os.environ.get("STRIPE_PRICE_ID", ""),
+        cognito_user_pool_id=os.environ.get("COGNITO_USER_POOL_ID", ""),
+        cognito_client_id=os.environ.get("COGNITO_CLIENT_ID", ""),
+        cognito_region=os.environ.get("COGNITO_REGION", "us-west-2"),
     )

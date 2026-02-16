@@ -283,7 +283,7 @@
         <section id="request-access">
             <div class="container">
                 <h2>Create Your Account</h2>
-                <p class="section-sub">Set up your autonomous marketing engine in 30 seconds. You'll get an API key and dashboard access immediately.</p>
+                <p class="section-sub">Set up your autonomous marketing engine in 30 seconds. You'll get dashboard access immediately.</p>
 
                 <form id="onboard-form" class="access-form" action="https://app.ortobahn.com/api/onboard" method="POST">
                     <div class="form-grid">
@@ -302,6 +302,10 @@
                         <div class="form-group">
                             <label for="industry">Industry</label>
                             <input type="text" id="industry" name="industry" required placeholder="SaaS, Finance, Healthcare...">
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" required minlength="8" placeholder="Min 8 chars, include a number">
                         </div>
                         <div class="form-group form-full">
                             <label for="website">Website</label>
@@ -374,10 +378,11 @@
             });
             const result = await resp.json();
             if (resp.ok) {
-                status.innerHTML = '<strong>Account created!</strong> Save your API key — it cannot be retrieved again:<br>'
-                    + '<code style="display:inline-block;margin:0.5rem 0;padding:0.5rem 1rem;background:#1a1a2e;border-radius:4px;font-size:1rem;user-select:all">'
-                    + result.api_key + '</code><br>'
-                    + '<a href="https://app.ortobahn.com/my/dashboard" style="color:#00d4aa">Go to Dashboard &rarr;</a>';
+                const email = data.email || document.getElementById('email').value;
+                status.innerHTML = '<strong>Account created!</strong> Check your email for a verification code.<br>'
+                    + (result.api_key ? '<small>Save your API key for programmatic access: <code style="display:inline-block;margin:0.5rem 0;padding:0.25rem 0.5rem;background:#1a1a2e;border-radius:4px;user-select:all">'
+                    + result.api_key + '</code></small><br>' : '')
+                    + '<a href="https://app.ortobahn.com/api/auth/confirm?email=' + encodeURIComponent(email) + '" style="color:#00d4aa">Enter Verification Code &rarr;</a>';
                 status.className = 'form-status success';
                 this.reset();
                 btn.textContent = 'Account Created';

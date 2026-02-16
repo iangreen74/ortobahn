@@ -9,7 +9,7 @@
   },
   "api": {
     "type": "openapi",
-    "url": "https://ortobahn.com/openapi.json"
+    "url": "https://app.ortobahn.com/openapi.json"
   },
   "logo_url": "https://ortobahn.com/favicon.svg",
   "contact_email": "hello@vaultscaler.com",

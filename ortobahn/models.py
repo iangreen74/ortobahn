@@ -292,3 +292,87 @@ class CTOResult(BaseModel):
     files_changed: list[str] = Field(default_factory=list)
     summary: str = ""
     error: str = ""
+
+
+# --- Intelligence System models ---
+
+
+class MemoryType(str, Enum):
+    OBSERVATION = "observation"  # Raw fact: "posts about X got 2x engagement"
+    LESSON = "lesson"  # Derived insight: "our audience prefers contrarian takes"
+    PREFERENCE = "preference"  # Learned preference: "avoid corporate jargon"
+    GOAL_STATE = "goal_state"  # Current KPI state: "engagement trending up 15%"
+
+
+class MemoryCategory(str, Enum):
+    CONTENT_PATTERN = "content_pattern"
+    AUDIENCE_BEHAVIOR = "audience_behavior"
+    TIMING = "timing"
+    THEME_PERFORMANCE = "theme_performance"
+    CALIBRATION = "calibration"
+    PLATFORM_SPECIFIC = "platform_specific"
+
+
+class AgentMemory(BaseModel):
+    id: str = ""
+    agent_name: str
+    client_id: str = "default"
+    memory_type: MemoryType
+    category: MemoryCategory
+    content: dict = Field(default_factory=dict)
+    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    source_run_id: str = ""
+    source_post_ids: list[str] = Field(default_factory=list)
+    times_reinforced: int = 1
+    times_contradicted: int = 0
+
+
+class ContentPatterns(BaseModel):
+    high_performers: list[dict] = Field(default_factory=list)
+    low_performers: list[dict] = Field(default_factory=list)
+    winning_attributes: list[str] = Field(default_factory=list)
+    losing_attributes: list[str] = Field(default_factory=list)
+
+
+class ReflectionReport(BaseModel):
+    confidence_accuracy: float = 0.0
+    confidence_bias: str = "neutral"  # "overconfident", "underconfident", "neutral"
+    strategy_effectiveness: dict = Field(default_factory=dict)
+    content_patterns: ContentPatterns | None = None
+    ab_test_updates: list[dict] = Field(default_factory=list)
+    goal_progress: list[dict] = Field(default_factory=list)
+    new_memories: list[AgentMemory] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class DraftIteration(BaseModel):
+    iteration: int
+    text: str
+    self_critique: str
+    improvements_made: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ABExperiment(BaseModel):
+    id: str = ""
+    client_id: str = "default"
+    hypothesis: str
+    variable: str
+    variant_a_description: str
+    variant_b_description: str
+    status: str = "active"
+    winner: str | None = None
+    pair_count: int = 0
+    min_pairs_required: int = 5
+
+
+class AgentGoal(BaseModel):
+    id: str = ""
+    agent_name: str
+    client_id: str = "default"
+    metric_name: str
+    target_value: float
+    current_value: float = 0.0
+    trend: str = "stable"
+    measurement_window_days: int = 7

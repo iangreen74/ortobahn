@@ -72,7 +72,8 @@ async def onboard(request: Request, body: OnboardRequest):
         key="session",
         value=session_token,
         httponly=True,
-        samesite="lax",
+        secure=True,
+        samesite="none",
         max_age=86400,
     )
     return response

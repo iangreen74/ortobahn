@@ -12,6 +12,7 @@ from ortobahn.agents.creator import CreatorAgent
 from ortobahn.agents.marketing import MarketingAgent
 from ortobahn.agents.ops import OpsAgent
 from ortobahn.agents.publisher import PublisherAgent
+from ortobahn.agents.reflection import ReflectionAgent
 from ortobahn.agents.sre import SREAgent
 from ortobahn.agents.strategist import StrategistAgent
 from ortobahn.config import Settings
@@ -22,6 +23,8 @@ from ortobahn.integrations.newsapi_client import get_trending_headlines
 from ortobahn.integrations.rss import fetch_feeds
 from ortobahn.integrations.trends import get_trending_searches
 from ortobahn.integrations.twitter import TwitterClient
+from ortobahn.learning import LearningEngine
+from ortobahn.memory import MemoryStore
 from ortobahn.models import Client, Platform, TrendingTopic
 
 logger = logging.getLogger("ortobahn.pipeline")
@@ -109,6 +112,14 @@ class Pipeline:
             api_key=settings.anthropic_api_key,
             model=settings.claude_model,
         )
+        self.reflection = ReflectionAgent(
+            db=self.db,
+            api_key=settings.anthropic_api_key,
+            model=settings.claude_model,
+        )
+        self.reflection.thinking_budget = settings.thinking_budget_reflection
+        self.memory_store = MemoryStore(self.db)
+        self.learning_engine = LearningEngine(self.db, self.memory_store)
 
     def gather_trends(self) -> list[TrendingTopic]:
         """Gather trending topics from all sources."""
@@ -274,48 +285,60 @@ class Pipeline:
             analytics_report = self.analytics.run(run_id)
             logger.info(f"  -> {analytics_report.total_posts} posts analyzed")
 
-            # 2. Gather trends (parallel-safe, no LLM)
-            logger.info("[2/9] Gathering trending topics...")
+            # 2. Reflection Agent (analyze past performance, build memories)
+            logger.info("[2/11] Reflection Agent analyzing patterns...")
+            reflection_report = self.reflection.run(run_id, client_id=client_id)
+            logger.info(
+                f"  -> Calibration: {reflection_report.confidence_bias}, "
+                f"{len(reflection_report.new_memories)} new memories, "
+                f"{len(reflection_report.recommendations)} recommendations"
+            )
+
+            # 3. Gather trends (parallel-safe, no LLM)
+            logger.info("[3/11] Gathering trending topics...")
             trending = self.gather_trends()
 
-            # 2.5. Performance insights for CEO (prompt tuner)
+            # 3.5. Performance insights for CEO (prompt tuner)
             from ortobahn.prompt_tuner import get_performance_insights
 
             performance_insights = get_performance_insights(self.db, client_id=client_id)
 
-            # 3. CEO
-            logger.info("[3/9] CEO Agent setting strategy...")
+            # 4. CEO
+            logger.info("[4/11] CEO Agent setting strategy...")
             strategy = self.ceo.run(
                 run_id,
                 analytics_report=analytics_report,
                 trending=trending,
                 client=client,
                 performance_insights=performance_insights,
+                reflection_report=reflection_report,
             )
             logger.info(f"  -> Themes: {strategy.themes}")
 
-            # 4. Strategist
-            logger.info("[4/9] Strategist Agent planning content...")
+            # 5. Strategist
+            logger.info("[5/11] Strategist Agent planning content...")
             content_plan = self.strategist.run(run_id, strategy=strategy, trending=trending, client=client)
             # Limit to max_posts_per_cycle
             content_plan.posts = content_plan.posts[: self.settings.max_posts_per_cycle]
             logger.info(f"  -> {len(content_plan.posts)} post ideas")
 
-            # 5. Creator
-            logger.info("[5/9] Creator Agent writing posts...")
+            # 6. Creator
+            logger.info("[6/11] Creator Agent writing posts...")
             drafts = self.creator.run(
                 run_id,
                 content_plan=content_plan,
                 strategy=strategy,
                 client=client,
                 target_platforms=platforms,
+                enable_self_critique=self.settings.enable_self_critique,
+                critique_threshold=self.settings.creator_critique_threshold,
             )
             logger.info(f"  -> {len(drafts.posts)} drafts written")
 
-            # 6. Publisher (skip if generate_only)
+            # 7. Publisher (skip if generate_only)
             posts_published = 0
             if generate_only:
-                logger.info("[6/5] Saving drafts for review (generate-only mode)...")
+                logger.info("[7/11] Saving drafts for review (generate-only mode)...")
                 active_strategy = self.db.get_active_strategy(client_id=client_id)
                 strategy_id = active_strategy["id"] if active_strategy else None
                 for draft in drafts.posts:
@@ -334,7 +357,7 @@ class Pipeline:
                         )
                 logger.info(f"  -> {len(drafts.posts)} drafts saved for review")
             else:
-                logger.info("[6/5] Publisher Agent posting...")
+                logger.info("[7/11] Publisher Agent posting...")
                 active_strategy = self.db.get_active_strategy(client_id=client_id)
                 strategy_id = active_strategy["id"] if active_strategy else None
 
@@ -348,23 +371,38 @@ class Pipeline:
                 posts_published = sum(1 for p in published.posts if p.status == "published")
                 logger.info(f"  -> {posts_published} posts published")
 
-            # 7. CFO Agent (cost analysis)
-            logger.info("[7/9] CFO Agent analyzing costs...")
+            # 8. CFO Agent (cost analysis)
+            logger.info("[8/11] CFO Agent analyzing costs...")
             cfo_report = self.cfo.run(run_id)
             logger.info(f"  -> Cost/post: ${cfo_report.cost_per_post:.4f}, ROI: {cfo_report.roi_estimate:.1f}")
 
-            # 8. Ops Agent (operations management)
-            logger.info("[8/9] Ops Agent managing operations...")
+            # 9. Ops Agent (operations management)
+            logger.info("[9/11] Ops Agent managing operations...")
             ops_report = self.ops.run(run_id)
             logger.info(f"  -> Actions: {len(ops_report.actions_taken)}, Pending clients: {ops_report.pending_clients}")
 
-            # 9. Marketing Agent (only for Ortobahn self-marketing)
+            # 10. Marketing Agent (only for Ortobahn self-marketing)
             if client_id == "ortobahn":
-                logger.info("[9/9] Marketing Agent generating self-marketing content...")
+                logger.info("[10/11] Marketing Agent generating self-marketing content...")
                 marketing_report = self.marketing.run(run_id)
                 logger.info(
                     f"  -> Ideas: {len(marketing_report.content_ideas)}, Drafts: {len(marketing_report.draft_posts)}"
                 )
+
+            # 11. Learning Engine (pure computation, 0 LLM calls)
+            logger.info("[11/11] Learning Engine processing outcomes...")
+            learning_results = self.learning_engine.process_outcomes(run_id, client_id=client_id)
+            logger.info(
+                f"  -> Calibrations: {learning_results.get('calibrations', {}).get('new_records', 0)}, "
+                f"Anomalies: {len(learning_results.get('anomalies', []))}, "
+                f"Experiments concluded: {len(learning_results.get('experiments', []))}"
+            )
+
+            # Prune stale memories
+            self.memory_store.prune(
+                max_age_days=self.settings.memory_prune_days,
+                min_confidence=0.2,
+            )
 
         except Exception as e:
             logger.error(f"Pipeline error: {e}")

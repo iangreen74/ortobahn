@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.llm import parse_json_response
-from ortobahn.models import AnalyticsReport, Client, Platform, Strategy, TrendingTopic
+from ortobahn.models import AnalyticsReport, Client, Platform, ReflectionReport, Strategy, TrendingTopic
 
 
 class CEOAgent(BaseAgent):
@@ -21,6 +21,7 @@ class CEOAgent(BaseAgent):
         trending: list[TrendingTopic] | None = None,
         client: Client | None = None,
         performance_insights: str = "",
+        reflection_report: ReflectionReport | None = None,
         **kwargs,
     ) -> Strategy:
         client_id = client.id if client else "default"
@@ -79,6 +80,27 @@ class CEOAgent(BaseAgent):
 
         if performance_insights:
             parts.append(f"\n{performance_insights}")
+
+        # Inject reflection report insights
+        if reflection_report:
+            parts.append("\n## Reflection Insights")
+            parts.append(f"Confidence accuracy: {reflection_report.confidence_accuracy:.2f}")
+            parts.append(f"Confidence bias: {reflection_report.confidence_bias}")
+            if reflection_report.content_patterns:
+                cp = reflection_report.content_patterns
+                if cp.winning_attributes:
+                    parts.append(f"Winning attributes: {', '.join(cp.winning_attributes)}")
+                if cp.losing_attributes:
+                    parts.append(f"Losing attributes: {', '.join(cp.losing_attributes)}")
+            if reflection_report.recommendations:
+                parts.append("Recommendations:")
+                for rec in reflection_report.recommendations:
+                    parts.append(f"- {rec}")
+
+        # Inject memory context
+        memory_context = self.get_memory_context(client_id)
+        if memory_context:
+            parts.append(f"\n## Agent Memory\n{memory_context}")
 
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)

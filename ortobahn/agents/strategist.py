@@ -49,6 +49,12 @@ class StrategistAgent(BaseAgent):
         else:
             parts.append("\nNo trending topics available. Generate ideas from the strategy themes alone.")
 
+        # Inject memory context
+        client_id = client.id if client else "default"
+        memory_context = self.get_memory_context(client_id)
+        if memory_context:
+            parts.append(f"\n## Agent Memory\n{memory_context}")
+
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)
         plan = parse_json_response(response.text, ContentPlan)

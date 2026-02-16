@@ -47,6 +47,16 @@ class BaseAgent(ABC):
         """Execute this agent's task. Returns structured output."""
         ...
 
+    def get_memory_context(self, client_id: str = "default") -> str:
+        """Retrieve formatted memories for this agent to inject into prompts."""
+        try:
+            from ortobahn.memory import MemoryStore
+
+            store = MemoryStore(self.db)
+            return store.get_memory_context(self.name, client_id)
+        except Exception:
+            return ""
+
     def call_llm(self, user_message: str, system_prompt: str | None = None) -> LLMResponse:
         """Call Claude with this agent's system prompt (or a custom one)."""
         return call_llm(

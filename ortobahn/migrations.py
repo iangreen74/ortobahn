@@ -240,6 +240,102 @@ def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
+    """Add agent memory, confidence calibration, A/B experiments, goals, and reflection tables."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS agent_memories (
+            id TEXT PRIMARY KEY,
+            agent_name TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            memory_type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0.5,
+            source_run_id TEXT,
+            source_post_ids TEXT,
+            times_reinforced INTEGER DEFAULT 1,
+            times_contradicted INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            superseded_by TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memories_agent_client
+            ON agent_memories(agent_name, client_id, active);
+        CREATE INDEX IF NOT EXISTS idx_memories_type
+            ON agent_memories(memory_type, category);
+
+        CREATE TABLE IF NOT EXISTS confidence_calibration (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            predicted_confidence REAL NOT NULL,
+            actual_engagement INTEGER DEFAULT 0,
+            engagement_percentile REAL,
+            calibration_error REAL,
+            measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            run_id TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_calibration_client
+            ON confidence_calibration(client_id, measured_at);
+
+        CREATE TABLE IF NOT EXISTS ab_experiments (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            hypothesis TEXT NOT NULL,
+            variable TEXT NOT NULL,
+            variant_a_description TEXT NOT NULL,
+            variant_b_description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            winner TEXT,
+            pair_count INTEGER DEFAULT 0,
+            min_pairs_required INTEGER DEFAULT 5,
+            result_summary TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            concluded_at TIMESTAMP,
+            created_by_run_id TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_experiments_client
+            ON ab_experiments(client_id, status);
+
+        CREATE TABLE IF NOT EXISTS agent_goals (
+            id TEXT PRIMARY KEY,
+            agent_name TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            metric_name TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            current_value REAL DEFAULT 0.0,
+            trend TEXT DEFAULT 'stable',
+            measurement_window_days INTEGER DEFAULT 7,
+            last_measured_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_goals_agent
+            ON agent_goals(agent_name, client_id);
+
+        CREATE TABLE IF NOT EXISTS reflection_reports (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            period TEXT NOT NULL DEFAULT 'last_cycle',
+            confidence_accuracy REAL,
+            strategy_effectiveness TEXT,
+            content_patterns TEXT,
+            ab_test_results TEXT,
+            goal_progress TEXT,
+            new_memories TEXT,
+            recommendations TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -250,6 +346,7 @@ MIGRATIONS = {
     7: _migration_007_add_auth_and_credentials,
     8: _migration_008_add_stripe_events,
     9: _migration_009_add_engineering_tasks,
+    10: _migration_010_add_intelligence_system,
 }
 
 

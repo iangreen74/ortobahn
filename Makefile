@@ -1,4 +1,4 @@
-.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing clean
+.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 clean
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -61,6 +61,11 @@ deploy-landing:
 	aws s3 sync ortobahn/landing/ s3://ortobahn-landing/ --delete
 	aws cloudfront create-invalidation --distribution-id E1R6PE83G6T984 --paths "/*" > /dev/null
 	@echo "\nLanding page deployed to ortobahn.com."
+
+deploy-ec2:
+	@echo "Deploying to EC2..."
+	ssh ortobahn "cd /app/ortobahn && git pull && docker compose build && docker compose up -d"
+	@echo "\nDeployed to app.ortobahn.com."
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

@@ -27,9 +27,9 @@ Additional operational agents: SRE (system health), CFO (cost tracking), Ops (cl
 
 Ortobahn offers a public onboarding endpoint:
 
-- `POST /api/onboard` — Submit a request for early access
+- `POST https://app.ortobahn.com/api/onboard` — Create an account
   - Body: `{ name, company, email, industry, website, brand_voice }`
-  - Returns: `{ client_id, message }`
+  - Returns: `{ client_id, api_key, session_token, message }`
 
 - `GET /api/public/stats` — Public platform statistics
   - Returns: `{ total_clients, total_posts_published, platforms_supported }`

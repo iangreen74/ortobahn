@@ -48,7 +48,7 @@ class TestMigrations:
             );
         """)
         version = run_migrations(raw_conn)
-        assert version == 9
+        assert version == 10
 
         # Verify clients table exists (migration 001)
         row = raw_conn.execute("SELECT * FROM clients WHERE id='default'").fetchone()
@@ -92,6 +92,21 @@ class TestMigrations:
         raw_conn.execute("SELECT id, task_id, run_id, file_path, change_type FROM code_changes LIMIT 1")
         raw_conn.execute("SELECT id, task_id, status, commit_sha, total_input_tokens FROM cto_runs LIMIT 1")
 
+        # Verify intelligence tables (migration 010)
+        raw_conn.execute(
+            "SELECT id, agent_name, client_id, memory_type, category, content, confidence, active FROM agent_memories LIMIT 1"
+        )
+        raw_conn.execute(
+            "SELECT id, post_id, client_id, predicted_confidence, actual_engagement, calibration_error FROM confidence_calibration LIMIT 1"
+        )
+        raw_conn.execute(
+            "SELECT id, client_id, hypothesis, variable, status, winner, pair_count FROM ab_experiments LIMIT 1"
+        )
+        raw_conn.execute(
+            "SELECT id, agent_name, client_id, metric_name, target_value, current_value, trend FROM agent_goals LIMIT 1"
+        )
+        raw_conn.execute("SELECT id, run_id, client_id, period, confidence_accuracy FROM reflection_reports LIMIT 1")
+
     def test_idempotent(self, raw_conn):
         raw_conn.executescript("""
             CREATE TABLE IF NOT EXISTS strategies (
@@ -112,7 +127,7 @@ class TestMigrations:
         """)
         v1 = run_migrations(raw_conn)
         v2 = run_migrations(raw_conn)
-        assert v1 == v2 == 9
+        assert v1 == v2 == 10
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         from ortobahn.db import Database

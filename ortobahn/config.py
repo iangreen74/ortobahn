@@ -75,6 +75,15 @@ class Settings:
     secret_key: str = ""
     admin_api_key: str = ""
 
+    # Intelligence system
+    thinking_budget_reflection: int = 8_000
+    enable_self_critique: bool = True
+    memory_max_per_agent: int = 100
+    memory_prune_days: int = 90
+    ab_testing_enabled: bool = True
+    min_ab_pairs: int = 5
+    creator_critique_threshold: float = 0.8
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
@@ -167,6 +176,13 @@ def load_settings() -> Settings:
         backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),
         secret_key=os.environ.get("ORTOBAHN_SECRET_KEY", ""),
         admin_api_key=os.environ.get("ADMIN_API_KEY", ""),
+        thinking_budget_reflection=int(os.environ.get("THINKING_BUDGET_REFLECTION", "8000")),
+        enable_self_critique=os.environ.get("ENABLE_SELF_CRITIQUE", "true").lower() in ("true", "1", "yes"),
+        memory_max_per_agent=int(os.environ.get("MEMORY_MAX_PER_AGENT", "100")),
+        memory_prune_days=int(os.environ.get("MEMORY_PRUNE_DAYS", "90")),
+        ab_testing_enabled=os.environ.get("AB_TESTING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        min_ab_pairs=int(os.environ.get("MIN_AB_PAIRS", "5")),
+        creator_critique_threshold=float(os.environ.get("CREATOR_CRITIQUE_THRESHOLD", "0.8")),
         stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
         stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
         stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),

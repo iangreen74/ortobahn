@@ -38,6 +38,7 @@ def create_app() -> FastAPI:
             "https://app.ortobahn.com",
             "http://localhost:8000",
         ],
+        allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )

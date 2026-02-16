@@ -225,6 +225,7 @@ class TestCreatorAgent:
                 strategy=_make_strategy(),
                 client=client,
                 target_platforms=[Platform.TWITTER],
+                enable_self_critique=False,
             )
 
         # Verify the system prompt was parameterized with client context

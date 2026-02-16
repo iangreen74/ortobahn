@@ -562,16 +562,12 @@ class Database:
         self.conn.commit()
 
     def get_client_by_stripe_customer(self, stripe_customer_id: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM clients WHERE stripe_customer_id=?", (stripe_customer_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM clients WHERE stripe_customer_id=?", (stripe_customer_id,)).fetchone()
         return dict(row) if row else None
 
     def record_stripe_event(self, event_id: str, event_type: str) -> bool:
         """Record a Stripe event. Returns False if already processed."""
-        existing = self.conn.execute(
-            "SELECT id FROM stripe_events WHERE id=?", (event_id,)
-        ).fetchone()
+        existing = self.conn.execute("SELECT id FROM stripe_events WHERE id=?", (event_id,)).fetchone()
         if existing:
             return False
         self.conn.execute(
@@ -622,9 +618,19 @@ class Database:
 
     def update_engineering_task(self, task_id: str, data: dict) -> None:
         allowed = {
-            "title", "description", "priority", "status", "category",
-            "started_at", "completed_at", "assigned_run_id", "branch_name",
-            "files_changed", "error", "blocked_reason", "estimated_complexity",
+            "title",
+            "description",
+            "priority",
+            "status",
+            "category",
+            "started_at",
+            "completed_at",
+            "assigned_run_id",
+            "branch_name",
+            "files_changed",
+            "error",
+            "blocked_reason",
+            "estimated_complexity",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
@@ -634,8 +640,9 @@ class Database:
         self.conn.execute(f"UPDATE engineering_tasks SET {set_clause} WHERE id=?", values)
         self.conn.commit()
 
-    def log_code_change(self, task_id: str, run_id: str, file_path: str,
-                        change_type: str, diff_summary: str = "") -> str:
+    def log_code_change(
+        self, task_id: str, run_id: str, file_path: str, change_type: str, diff_summary: str = ""
+    ) -> str:
         cid = str(uuid.uuid4())
         self.conn.execute(
             "INSERT INTO code_changes (id, task_id, run_id, file_path, change_type, diff_summary) "
@@ -655,17 +662,23 @@ class Database:
     def complete_cto_run(self, run_id: str, status: str, **kwargs) -> None:
         fields = ["status=?", "completed_at=CURRENT_TIMESTAMP"]
         values: list = [status]
-        for key in ("thinking_summary", "files_read", "files_written",
-                     "tests_passed", "tests_failed", "commit_sha", "error",
-                     "total_input_tokens", "total_output_tokens"):
+        for key in (
+            "thinking_summary",
+            "files_read",
+            "files_written",
+            "tests_passed",
+            "tests_failed",
+            "commit_sha",
+            "error",
+            "total_input_tokens",
+            "total_output_tokens",
+        ):
             if key in kwargs:
                 fields.append(f"{key}=?")
                 val = kwargs[key]
                 values.append(json.dumps(val) if isinstance(val, (list, dict)) else val)
         values.append(run_id)
-        self.conn.execute(
-            f"UPDATE cto_runs SET {', '.join(fields)} WHERE id=?", values
-        )
+        self.conn.execute(f"UPDATE cto_runs SET {', '.join(fields)} WHERE id=?", values)
         self.conn.commit()
 
     def close(self):

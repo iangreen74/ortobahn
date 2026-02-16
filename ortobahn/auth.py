@@ -61,8 +61,8 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_client(
     request: Request,
-    api_key: str | None = Security(api_key_header),
-    bearer=Security(bearer_scheme),
+    api_key: str | None = Security(api_key_header),  # noqa: B008
+    bearer=Security(bearer_scheme),  # noqa: B008
 ) -> dict:
     """Resolve the authenticated client from API key, Bearer JWT, or session cookie.
 
@@ -74,9 +74,7 @@ async def get_current_client(
     # 1. API Key header
     if api_key:
         hashed = hash_api_key(api_key)
-        row = db.conn.execute(
-            "SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)
-        ).fetchone()
+        row = db.conn.execute("SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)).fetchone()
         if row:
             db.conn.execute(
                 "UPDATE api_keys SET last_used_at=? WHERE key_hash=?",

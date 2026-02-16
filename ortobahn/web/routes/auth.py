@@ -36,9 +36,7 @@ async def login(request: Request, body: LoginRequest):
     secret_key = request.app.state.settings.secret_key
 
     hashed = hash_api_key(body.api_key)
-    row = db.conn.execute(
-        "SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)
-    ).fetchone()
+    row = db.conn.execute("SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Invalid API key")
 

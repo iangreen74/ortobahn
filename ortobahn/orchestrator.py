@@ -210,13 +210,33 @@ class Pipeline:
         if client_data and client_data.get("status") == "paused":
             logger.info(f"Client {client_id} is paused (budget exceeded). Skipping cycle.")
             self.db.complete_pipeline_run(run_id, posts_published=0, errors=["client_paused"])
-            return {"run_id": run_id, "posts_published": 0, "total_drafts": 0, "input_tokens": 0, "output_tokens": 0, "errors": ["client_paused"]}
+            return {
+                "run_id": run_id,
+                "posts_published": 0,
+                "total_drafts": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "errors": ["client_paused"],
+            }
 
         # Subscription guard: skip non-internal clients without active subscription
-        if client_data and not client_data.get("internal") and client_data.get("subscription_status") not in ("active", "trialing"):
-            logger.info(f"Client {client_id} has no active subscription (status={client_data.get('subscription_status')}). Skipping.")
+        if (
+            client_data
+            and not client_data.get("internal")
+            and client_data.get("subscription_status") not in ("active", "trialing")
+        ):
+            logger.info(
+                f"Client {client_id} has no active subscription (status={client_data.get('subscription_status')}). Skipping."
+            )
             self.db.complete_pipeline_run(run_id, posts_published=0, errors=["no_active_subscription"])
-            return {"run_id": run_id, "posts_published": 0, "total_drafts": 0, "input_tokens": 0, "output_tokens": 0, "errors": ["no_active_subscription"]}
+            return {
+                "run_id": run_id,
+                "posts_published": 0,
+                "total_drafts": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "errors": ["no_active_subscription"],
+            }
 
         # Per-tenant credentials: resolve platform clients for this client
         if self.settings.secret_key:

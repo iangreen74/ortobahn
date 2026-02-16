@@ -30,9 +30,7 @@ def decrypt_credentials(encrypted: str, secret_key: str) -> dict:
     return json.loads(f.decrypt(encrypted.encode()))
 
 
-def save_platform_credentials(
-    db: Database, client_id: str, platform: str, creds: dict, secret_key: str
-) -> str:
+def save_platform_credentials(db: Database, client_id: str, platform: str, creds: dict, secret_key: str) -> str:
     """Store encrypted credentials for a client+platform. Upserts."""
     encrypted = encrypt_credentials(creds, secret_key)
     existing = db.conn.execute(
@@ -49,17 +47,14 @@ def save_platform_credentials(
         return existing["id"]
     cid = str(uuid.uuid4())
     db.conn.execute(
-        "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted) VALUES (?, ?, ?, ?)",
         (cid, client_id, platform, encrypted),
     )
     db.conn.commit()
     return cid
 
 
-def get_platform_credentials(
-    db: Database, client_id: str, platform: str, secret_key: str
-) -> dict | None:
+def get_platform_credentials(db: Database, client_id: str, platform: str, secret_key: str) -> dict | None:
     """Get decrypted credentials for a client+platform, or None."""
     row = db.conn.execute(
         "SELECT credentials_encrypted FROM platform_credentials WHERE client_id=? AND platform=?",
@@ -70,9 +65,7 @@ def get_platform_credentials(
     return None
 
 
-def get_all_platform_credentials(
-    db: Database, client_id: str, secret_key: str
-) -> dict[str, dict]:
+def get_all_platform_credentials(db: Database, client_id: str, secret_key: str) -> dict[str, dict]:
     """Get all credentials for a client, keyed by platform name."""
     rows = db.conn.execute(
         "SELECT platform, credentials_encrypted FROM platform_credentials WHERE client_id=?",
@@ -81,9 +74,7 @@ def get_all_platform_credentials(
     return {row["platform"]: decrypt_credentials(row["credentials_encrypted"], secret_key) for row in rows}
 
 
-def build_platform_clients(
-    db: Database, client_id: str, secret_key: str, settings
-) -> dict:
+def build_platform_clients(db: Database, client_id: str, secret_key: str, settings) -> dict:
     """Build platform clients from per-tenant credentials, falling back to global env vars.
 
     Returns dict: {"bluesky": client|None, "twitter": client|None, "linkedin": client|None}

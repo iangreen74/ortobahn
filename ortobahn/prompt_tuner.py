@@ -38,5 +38,7 @@ def get_performance_insights(db: Database, client_id: str | None = None) -> str:
             platform = p.get("platform", "unknown")
             lines.append(f"- [{p['engagement']} engagements, {platform}] {p['text'][:120]}...")
 
-    lines.append("\nUse these patterns to inform strategy. Double down on what works. Avoid patterns from low performers.")
+    lines.append(
+        "\nUse these patterns to inform strategy. Double down on what works. Avoid patterns from low performers."
+    )
     return "\n".join(lines)

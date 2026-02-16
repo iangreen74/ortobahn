@@ -60,14 +60,14 @@ class EnrichmentAgent(BaseAgent):
         website_text = self._fetch_website(client_data.get("website", ""))
 
         user_message = f"""## Client Info
-Name: {client_data.get('name', '')}
-Industry: {client_data.get('industry', '')}
-Description: {client_data.get('description', '')}
-Brand Voice: {client_data.get('brand_voice', '')}
-Website: {client_data.get('website', '')}
+Name: {client_data.get("name", "")}
+Industry: {client_data.get("industry", "")}
+Description: {client_data.get("description", "")}
+Brand Voice: {client_data.get("brand_voice", "")}
+Website: {client_data.get("website", "")}
 
 ## Website Content (extracted text)
-{website_text if website_text else 'No website content available.'}
+{website_text if website_text else "No website content available."}
 
 Analyze this company and generate the following fields. Be specific — use real product names, actual competitors, and concrete details from the website content. If no website is available, generate reasonable defaults based on the company name and industry.
 

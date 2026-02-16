@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from ortobahn.auth import (
     create_session_token,
     decode_session_token,

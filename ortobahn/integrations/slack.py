@@ -38,7 +38,9 @@ def format_sre_alert(health_status: str, alerts: list, recommendations: list) ->
             sev = a.severity if hasattr(a, "severity") else a.get("severity", "")
             comp = a.component if hasattr(a, "component") else a.get("component", "")
             msg = a.message if hasattr(a, "message") else a.get("message", "")
-            sev_emoji = {"critical": ":rotating_light:", "warning": ":warning:", "info": ":information_source:"}.get(sev, "")
+            sev_emoji = {"critical": ":rotating_light:", "warning": ":warning:", "info": ":information_source:"}.get(
+                sev, ""
+            )
             lines.append(f"  {sev_emoji} [{comp}] {msg}")
 
     if recommendations:

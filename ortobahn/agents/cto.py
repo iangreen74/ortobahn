@@ -204,12 +204,15 @@ class CTOAgent(BaseAgent):
 
         try:
             # 2. Mark task as in_progress
-            self.db.update_engineering_task(task_id, {
-                "status": "in_progress",
-                "started_at": datetime.utcnow().isoformat(),
-                "assigned_run_id": run_id,
-                "branch_name": branch_name,
-            })
+            self.db.update_engineering_task(
+                task_id,
+                {
+                    "status": "in_progress",
+                    "started_at": datetime.utcnow().isoformat(),
+                    "assigned_run_id": run_id,
+                    "branch_name": branch_name,
+                },
+            )
 
             # 3. Create feature branch
             # Make sure we are on main first
@@ -295,11 +298,14 @@ class CTOAgent(BaseAgent):
                 commit_msg = f"cto: {task['title']}\n\nTask: {task_id}\nPlan: {plan}"
                 commit_sha = self._commit(commit_msg)
 
-                self.db.update_engineering_task(task_id, {
-                    "status": "completed",
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "files_changed": json.dumps(files_written),
-                })
+                self.db.update_engineering_task(
+                    task_id,
+                    {
+                        "status": "completed",
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "files_changed": json.dumps(files_written),
+                    },
+                )
 
                 self.db.complete_cto_run(
                     run_id,
@@ -339,11 +345,14 @@ class CTOAgent(BaseAgent):
                 self._switch_branch("main")
                 self._delete_branch(branch_name)
 
-                self.db.update_engineering_task(task_id, {
-                    "status": "failed",
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "error": test_output[:500],
-                })
+                self.db.update_engineering_task(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "error": test_output[:500],
+                    },
+                )
 
                 self.db.complete_cto_run(
                     run_id,
@@ -361,7 +370,7 @@ class CTOAgent(BaseAgent):
                 self.log_decision(
                     run_id=run_id,
                     input_summary=f"Task: {task['title']} (P{task.get('priority', 3)})",
-                    output_summary=f"Failed: tests did not pass. Branch deleted.",
+                    output_summary="Failed: tests did not pass. Branch deleted.",
                     reasoning=f"Test output: {test_output[:200]}",
                     llm_response=response,
                 )
@@ -386,11 +395,14 @@ class CTOAgent(BaseAgent):
             except Exception:
                 pass
 
-            self.db.update_engineering_task(task_id, {
-                "status": "failed",
-                "completed_at": datetime.utcnow().isoformat(),
-                "error": str(e)[:500],
-            })
+            self.db.update_engineering_task(
+                task_id,
+                {
+                    "status": "failed",
+                    "completed_at": datetime.utcnow().isoformat(),
+                    "error": str(e)[:500],
+                },
+            )
 
             self.db.complete_cto_run(
                 run_id,

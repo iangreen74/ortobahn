@@ -84,9 +84,18 @@ def seed_ortobahn(db: Database) -> str:
     default = db.get_client("default")
     if default and default.get("name") == "Ortobahn":
         # Update the default client with full ortobahn profile
-        for key in ("description", "industry", "target_audience", "brand_voice",
-                     "website", "products", "competitive_positioning",
-                     "key_messages", "content_pillars", "company_story"):
+        for key in (
+            "description",
+            "industry",
+            "target_audience",
+            "brand_voice",
+            "website",
+            "products",
+            "competitive_positioning",
+            "key_messages",
+            "content_pillars",
+            "company_story",
+        ):
             if key in ORTOBAHN_CLIENT:
                 db.conn.execute(f"UPDATE clients SET {key}=? WHERE id='default'", (ORTOBAHN_CLIENT[key],))
         db.conn.execute("UPDATE clients SET internal=1 WHERE id='default'")
@@ -111,7 +120,9 @@ def seed_vaultscaler_credentials(db: Database, settings) -> None:
         existing = get_platform_credentials(db, "vaultscaler", "bluesky", settings.secret_key)
         if not existing:
             save_platform_credentials(
-                db, "vaultscaler", "bluesky",
+                db,
+                "vaultscaler",
+                "bluesky",
                 {"handle": settings.bluesky_handle, "app_password": settings.bluesky_app_password},
                 settings.secret_key,
             )
@@ -121,7 +132,9 @@ def seed_vaultscaler_credentials(db: Database, settings) -> None:
         existing = get_platform_credentials(db, "vaultscaler", "twitter", settings.secret_key)
         if not existing:
             save_platform_credentials(
-                db, "vaultscaler", "twitter",
+                db,
+                "vaultscaler",
+                "twitter",
                 {
                     "api_key": settings.twitter_api_key,
                     "api_secret": settings.twitter_api_secret,
@@ -136,7 +149,9 @@ def seed_vaultscaler_credentials(db: Database, settings) -> None:
         existing = get_platform_credentials(db, "vaultscaler", "linkedin", settings.secret_key)
         if not existing:
             save_platform_credentials(
-                db, "vaultscaler", "linkedin",
+                db,
+                "vaultscaler",
+                "linkedin",
                 {"access_token": settings.linkedin_access_token, "person_urn": settings.linkedin_person_urn},
                 settings.secret_key,
             )

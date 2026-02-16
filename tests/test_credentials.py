@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cryptography.fernet
 import pytest
 
 from ortobahn.credentials import (
@@ -25,7 +26,7 @@ class TestEncryption:
     def test_different_secrets_fail(self):
         creds = {"key": "value"}
         encrypted = encrypt_credentials(creds, SECRET)
-        with pytest.raises(Exception):
+        with pytest.raises(cryptography.fernet.InvalidToken):
             decrypt_credentials(encrypted, "wrong-secret")
 
     def test_encrypted_not_plaintext(self):

@@ -20,9 +20,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     strategy = db.get_active_strategy(client_id=client["id"])
     runs = db.get_recent_runs(limit=5)
     # Filter runs to this client (pipeline_runs have client_id column)
-    client_runs = [
-        r for r in runs if r.get("client_id") == client["id"]
-    ]
+    client_runs = [r for r in runs if r.get("client_id") == client["id"]]
 
     total_published = len([p for p in posts if p.get("status") == "published"])
     total_drafts = len(db.get_drafts_for_review(client_id=client["id"]))

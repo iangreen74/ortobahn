@@ -26,13 +26,15 @@ def _create_tenant(app) -> tuple[str, str, str]:
     db = app.state.db
     secret_key = app.state.settings.secret_key
 
-    client_id = db.create_client({
-        "name": "TestTenant",
-        "description": "A test tenant",
-        "industry": "Testing",
-        "email": "test@tenant.com",
-        "status": "active",
-    })
+    client_id = db.create_client(
+        {
+            "name": "TestTenant",
+            "description": "A test tenant",
+            "industry": "Testing",
+            "email": "test@tenant.com",
+            "status": "active",
+        }
+    )
 
     raw_key = generate_api_key()
     hashed = hash_api_key(raw_key)

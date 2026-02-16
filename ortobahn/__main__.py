@@ -155,7 +155,11 @@ def cmd_schedule(args):
                     rows = pipeline.db.conn.execute(
                         "SELECT id, name FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
                     ).fetchall()
-                    clients_to_run = [dict(r) for r in rows] if rows else [{"id": settings.default_client_id, "name": settings.default_client_id}]
+                    clients_to_run = (
+                        [dict(r) for r in rows]
+                        if rows
+                        else [{"id": settings.default_client_id, "name": settings.default_client_id}]
+                    )
 
                 total_published = 0
                 for client in clients_to_run:
@@ -522,8 +526,10 @@ def cmd_api_key(args):
             table.add_column("Active")
             for k in keys:
                 table.add_row(
-                    k["key_prefix"], k["name"],
-                    k["created_at"] or "", k["last_used_at"] or "never",
+                    k["key_prefix"],
+                    k["name"],
+                    k["created_at"] or "",
+                    k["last_used_at"] or "never",
                     "yes" if k["active"] else "no",
                 )
             console.print(table)
@@ -565,7 +571,7 @@ def cmd_cto(args):
     if result.status == "skipped":
         console.print("[yellow]No backlog tasks to work on[/yellow]")
     elif result.status == "success":
-        console.print(f"[green]Task completed successfully![/green]")
+        console.print("[green]Task completed successfully![/green]")
         console.print(f"  Branch: {result.branch_name}")
         console.print(f"  Commit: {result.commit_sha[:12]}")
         console.print(f"  Files changed: {', '.join(result.files_changed)}")
@@ -693,7 +699,9 @@ def main():
     sched_parser.add_argument("--interval", type=float, help="Hours between cycles (default: 6)")
     sched_parser.add_argument("--dry-run", action="store_true", help="Don't publish to platforms")
     sched_parser.add_argument("--client", type=str, help="Client ID (default: from config)")
-    sched_parser.add_argument("--platforms", type=str, default="bluesky", help="Comma-separated platforms (default: bluesky)")
+    sched_parser.add_argument(
+        "--platforms", type=str, default="bluesky", help="Comma-separated platforms (default: bluesky)"
+    )
     sched_parser.set_defaults(func=cmd_schedule)
 
     # dashboard
@@ -777,17 +785,24 @@ def main():
     cto_add_parser.add_argument("title", help="Task title")
     cto_add_parser.add_argument("-d", "--description", type=str, help="Task description")
     cto_add_parser.add_argument("-p", "--priority", type=int, default=3, help="Priority (1=highest, 5=lowest)")
-    cto_add_parser.add_argument("-c", "--category", type=str, default="feature",
-                                choices=["feature", "bugfix", "refactor", "test", "infra", "docs"],
-                                help="Task category")
-    cto_add_parser.add_argument("--complexity", type=str, default="medium",
-                                choices=["low", "medium", "high"],
-                                help="Estimated complexity")
+    cto_add_parser.add_argument(
+        "-c",
+        "--category",
+        type=str,
+        default="feature",
+        choices=["feature", "bugfix", "refactor", "test", "infra", "docs"],
+        help="Task category",
+    )
+    cto_add_parser.add_argument(
+        "--complexity", type=str, default="medium", choices=["low", "medium", "high"], help="Estimated complexity"
+    )
     cto_add_parser.set_defaults(func=cmd_cto_add)
 
     # cto-backlog
     cto_backlog_parser = subparsers.add_parser("cto-backlog", help="List engineering tasks")
-    cto_backlog_parser.add_argument("--status", type=str, help="Filter by status (backlog, in_progress, completed, failed)")
+    cto_backlog_parser.add_argument(
+        "--status", type=str, help="Filter by status (backlog, in_progress, completed, failed)"
+    )
     cto_backlog_parser.set_defaults(func=cmd_cto_backlog)
 
     # web

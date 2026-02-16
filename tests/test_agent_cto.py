@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ortobahn.agents.cto import CTOAgent, BLOCKED_PATTERNS
+from ortobahn.agents.cto import BLOCKED_PATTERNS, CTOAgent
 from ortobahn.db import Database
 from ortobahn.models import CTOResult
 
@@ -90,24 +90,30 @@ class TestCTOPriorityOrdering:
 
     def test_highest_priority_first(self, db):
         # Create tasks with different priorities
-        db.create_engineering_task({
-            "title": "Low priority",
-            "description": "P4 task",
-            "priority": 4,
-            "category": "docs",
-        })
-        db.create_engineering_task({
-            "title": "High priority",
-            "description": "P1 task",
-            "priority": 1,
-            "category": "infra",
-        })
-        db.create_engineering_task({
-            "title": "Medium priority",
-            "description": "P3 task",
-            "priority": 3,
-            "category": "feature",
-        })
+        db.create_engineering_task(
+            {
+                "title": "Low priority",
+                "description": "P4 task",
+                "priority": 4,
+                "category": "docs",
+            }
+        )
+        db.create_engineering_task(
+            {
+                "title": "High priority",
+                "description": "P1 task",
+                "priority": 1,
+                "category": "infra",
+            }
+        )
+        db.create_engineering_task(
+            {
+                "title": "Medium priority",
+                "description": "P3 task",
+                "priority": 3,
+                "category": "feature",
+            }
+        )
 
         task = db.get_next_engineering_task()
         assert task is not None
@@ -119,12 +125,14 @@ class TestCTOBranchNaming:
     """Test branch name generation."""
 
     def test_branch_format(self, db):
-        tid = db.create_engineering_task({
-            "title": "Test feature",
-            "description": "A test",
-            "priority": 3,
-            "category": "feature",
-        })
+        db.create_engineering_task(
+            {
+                "title": "Test feature",
+                "description": "A test",
+                "priority": 3,
+                "category": "feature",
+            }
+        )
         task = db.get_next_engineering_task()
         branch_name = f"cto/{task.get('category', 'feature')}/{task['id'][:8]}"
         assert branch_name.startswith("cto/feature/")
@@ -135,12 +143,14 @@ class TestCTOAuditLogging:
     """Test that CTO runs create audit records."""
 
     def test_start_and_complete_run(self, db):
-        tid = db.create_engineering_task({
-            "title": "Audit test",
-            "description": "Testing audit",
-            "priority": 3,
-            "category": "test",
-        })
+        tid = db.create_engineering_task(
+            {
+                "title": "Audit test",
+                "description": "Testing audit",
+                "priority": 3,
+                "category": "test",
+            }
+        )
 
         db.start_cto_run("run-001", tid)
         db.complete_cto_run("run-001", status="success", commit_sha="abc123")
@@ -151,12 +161,14 @@ class TestCTOAuditLogging:
         assert row["commit_sha"] == "abc123"
 
     def test_code_change_logging(self, db):
-        tid = db.create_engineering_task({
-            "title": "Change log test",
-            "description": "Testing code change log",
-            "priority": 3,
-            "category": "test",
-        })
+        tid = db.create_engineering_task(
+            {
+                "title": "Change log test",
+                "description": "Testing code change log",
+                "priority": 3,
+                "category": "test",
+            }
+        )
 
         change_id = db.log_code_change(
             task_id=tid,

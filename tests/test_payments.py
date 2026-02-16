@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestSubscriptionDb:
     def test_update_subscription(self, test_db):

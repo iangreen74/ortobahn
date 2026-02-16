@@ -47,9 +47,7 @@ class OpsAgent(BaseAgent):
                     try:
                         from ortobahn.agents.enrichment import EnrichmentAgent
 
-                        enrichment_agent = EnrichmentAgent(
-                            db=self.db, api_key=self.api_key, model=self.model
-                        )
+                        enrichment_agent = EnrichmentAgent(db=self.db, api_key=self.api_key, model=self.model)
                         enrichment = enrichment_agent.run(run_id=run_id, client_data=client)
                         if enrichment:
                             self.db.update_client(client["id"], enrichment)

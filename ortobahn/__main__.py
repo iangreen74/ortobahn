@@ -652,6 +652,62 @@ def cmd_cto_backlog(args):
     db.close()
 
 
+def cmd_cifix(args):
+    """Run the CI fix agent to diagnose and fix CI/CD failures."""
+    import uuid as _uuid
+
+    from ortobahn.agents.cifix import CIFixAgent
+    from ortobahn.config import load_settings
+    from ortobahn.db import Database
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+
+    if not settings.cifix_enabled:
+        console.print("[yellow]CI fix agent is disabled (CIFIX_ENABLED=false)[/yellow]")
+        sys.exit(0)
+
+    db = Database(settings.db_path)
+    run_id = str(_uuid.uuid4())
+
+    agent = CIFixAgent(
+        db=db,
+        api_key=settings.anthropic_api_key,
+        model=settings.claude_model,
+    )
+
+    console.print("\n[bold cyan]ORTOBAHN CI-FIX[/bold cyan] - Autonomous CI/CD Self-Healing Agent")
+    console.print("=" * 50)
+
+    auto_pr = not args.no_pr if hasattr(args, "no_pr") else settings.cifix_auto_pr
+    result = agent.run(run_id=run_id, auto_pr=auto_pr)
+
+    if result.status == "no_failures":
+        console.print("[green]No CI failures detected — all clear![/green]")
+    elif result.status == "skipped":
+        console.print(f"[yellow]Skipped: {result.summary or result.error}[/yellow]")
+    elif result.status == "fixed":
+        console.print("[green]CI failure fixed![/green]")
+        if result.branch_name:
+            console.print(f"  Branch: {result.branch_name}")
+        if result.commit_sha:
+            console.print(f"  Commit: {result.commit_sha[:12]}")
+        if result.pr_url:
+            console.print(f"  PR: {result.pr_url}")
+        if result.fix_attempt:
+            console.print(f"  Strategy: {result.fix_attempt.strategy}")
+            console.print(f"  Files: {', '.join(result.fix_attempt.files_changed)}")
+    else:
+        console.print(f"[red]Fix failed: {result.error or result.summary}[/red]")
+
+    # Show success rate
+    rate = db.get_ci_fix_success_rate()
+    if rate >= 0:
+        console.print(f"\n[dim]Overall fix success rate: {rate:.0%}[/dim]")
+
+    db.close()
+
+
 def cmd_web(args):
     """Start the web dashboard."""
     from ortobahn.config import load_settings
@@ -804,6 +860,11 @@ def main():
         "--status", type=str, help="Filter by status (backlog, in_progress, completed, failed)"
     )
     cto_backlog_parser.set_defaults(func=cmd_cto_backlog)
+
+    # ci-fix
+    cifix_parser = subparsers.add_parser("ci-fix", help="Run CI fix agent (diagnose and fix CI/CD failures)")
+    cifix_parser.add_argument("--no-pr", action="store_true", help="Don't create a pull request for the fix")
+    cifix_parser.set_defaults(func=cmd_cifix)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

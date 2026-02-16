@@ -376,3 +376,52 @@ class AgentGoal(BaseModel):
     current_value: float = 0.0
     trend: str = "stable"
     measurement_window_days: int = 7
+
+
+# --- CI/CD Self-Healing models ---
+
+
+class CIFailureCategory(str, Enum):
+    LINT = "lint"
+    FORMAT = "format"
+    TYPECHECK = "typecheck"
+    TEST = "test"
+    INSTALL = "install"
+    UNKNOWN = "unknown"
+
+
+class CIError(BaseModel):
+    file_path: str = ""
+    line: int | None = None
+    column: int | None = None
+    code: str = ""
+    message: str = ""
+    category: CIFailureCategory = CIFailureCategory.UNKNOWN
+
+
+class CIFailure(BaseModel):
+    gh_run_id: int = 0
+    gh_run_url: str = ""
+    job_name: str = ""
+    category: CIFailureCategory = CIFailureCategory.UNKNOWN
+    errors: list[CIError] = Field(default_factory=list)
+    raw_logs: str = ""
+
+
+class FixAttempt(BaseModel):
+    strategy: str = ""
+    files_changed: list[str] = Field(default_factory=list)
+    llm_used: bool = False
+    tokens_used: int = 0
+
+
+class CIFixResult(BaseModel):
+    failure: CIFailure | None = None
+    status: str = "skipped"  # "fixed", "failed", "skipped", "no_failures"
+    fix_attempt: FixAttempt | None = None
+    branch_name: str = ""
+    commit_sha: str = ""
+    pr_url: str = ""
+    validation_passed: bool = False
+    error: str = ""
+    summary: str = ""

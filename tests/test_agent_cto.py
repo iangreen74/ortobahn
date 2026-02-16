@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from ortobahn.agents.cto import BLOCKED_PATTERNS, CTOAgent
+from ortobahn.agents.cto import CTOAgent
 from ortobahn.db import Database
+from ortobahn.git_utils import BLOCKED_PATTERNS, is_path_safe
 from ortobahn.models import CTOResult
 
 
@@ -15,32 +16,27 @@ def db(tmp_path):
 
 
 class TestCTOPathSafety:
-    """Test the file path safety mechanisms."""
+    """Test the file path safety mechanisms (now in git_utils)."""
 
-    def test_safe_paths(self, db):
-        agent = CTOAgent(db, api_key="sk-ant-test")
-        assert agent._is_path_safe("ortobahn/agents/new.py") is True
-        assert agent._is_path_safe("tests/test_new.py") is True
+    def test_safe_paths(self):
+        assert is_path_safe("ortobahn/agents/new.py") is True
+        assert is_path_safe("tests/test_new.py") is True
 
-    def test_blocked_env(self, db):
-        agent = CTOAgent(db, api_key="sk-ant-test")
-        assert agent._is_path_safe(".env") is False
-        assert agent._is_path_safe("config/.env.local") is False
+    def test_blocked_env(self):
+        assert is_path_safe(".env") is False
+        assert is_path_safe("config/.env.local") is False
 
-    def test_blocked_git(self, db):
-        agent = CTOAgent(db, api_key="sk-ant-test")
-        assert agent._is_path_safe(".git/config") is False
-        assert agent._is_path_safe(".git/hooks/pre-commit") is False
+    def test_blocked_git(self):
+        assert is_path_safe(".git/config") is False
+        assert is_path_safe(".git/hooks/pre-commit") is False
 
-    def test_blocked_secrets(self, db):
-        agent = CTOAgent(db, api_key="sk-ant-test")
-        assert agent._is_path_safe("secrets/key.pem") is False
-        assert agent._is_path_safe("credential_store.json") is False
+    def test_blocked_secrets(self):
+        assert is_path_safe("secrets/key.pem") is False
+        assert is_path_safe("credential_store.json") is False
 
-    def test_path_traversal_blocked(self, db):
-        agent = CTOAgent(db, api_key="sk-ant-test")
-        assert agent._is_path_safe("../../etc/passwd") is False
-        assert agent._is_path_safe("../outside/file.py") is False
+    def test_path_traversal_blocked(self):
+        assert is_path_safe("../../etc/passwd") is False
+        assert is_path_safe("../outside/file.py") is False
 
 
 class TestCTORelevantFiles:

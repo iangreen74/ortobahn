@@ -336,6 +336,40 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_011_add_ci_fix_tracking(conn: sqlite3.Connection) -> None:
+    """Add CI fix tracking table for the CI/CD self-healing agent."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS ci_fix_attempts (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            gh_run_id INTEGER,
+            gh_run_url TEXT,
+            job_name TEXT NOT NULL DEFAULT '',
+            failure_category TEXT NOT NULL DEFAULT 'unknown',
+            error_count INTEGER DEFAULT 0,
+            error_codes TEXT,
+            fix_strategy TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            files_changed TEXT,
+            branch_name TEXT,
+            commit_sha TEXT,
+            pr_url TEXT,
+            llm_used INTEGER DEFAULT 0,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            validation_passed INTEGER DEFAULT 0,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ci_fix_category
+            ON ci_fix_attempts(failure_category, status);
+        CREATE INDEX IF NOT EXISTS idx_ci_fix_gh_run
+            ON ci_fix_attempts(gh_run_id);
+    """)
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -347,6 +381,7 @@ MIGRATIONS = {
     8: _migration_008_add_stripe_events,
     9: _migration_009_add_engineering_tasks,
     10: _migration_010_add_intelligence_system,
+    11: _migration_011_add_ci_fix_tracking,
 }
 
 

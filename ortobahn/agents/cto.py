@@ -7,19 +7,21 @@ import logging
 import re
 import subprocess
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from ortobahn.agents.base import BaseAgent
+from ortobahn.git_utils import (
+    PROJECT_ROOT,
+    commit_all,
+    create_branch,
+    current_branch,
+    delete_branch,
+    is_path_safe,
+    switch_branch,
+)
 from ortobahn.models import CTOResult
 
 logger = logging.getLogger("ortobahn.cto")
-
-# Project root: two levels up from this file (ortobahn/agents/cto.py -> ortobahn/)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
-# Files and directories that must never be written to
-BLOCKED_PATTERNS = {".env", ".git/", ".git", "secret", "credential", "credentials"}
 
 # Maximum time for pytest subprocess
 TEST_TIMEOUT_SECONDS = 120
@@ -34,26 +36,8 @@ class CTOAgent(BaseAgent):
         super().__init__(db, api_key, model, max_tokens)
 
     # ------------------------------------------------------------------
-    # Safety helpers
+    # CTO-specific helpers
     # ------------------------------------------------------------------
-
-    def _is_path_safe(self, file_path: str) -> bool:
-        """Check that a file path is within the project and not blocked."""
-        resolved = (PROJECT_ROOT / file_path).resolve()
-
-        # Must stay within the project root
-        if not str(resolved).startswith(str(PROJECT_ROOT)):
-            logger.warning(f"Path escapes project root: {file_path}")
-            return False
-
-        # Check against blocked patterns
-        lower = file_path.lower()
-        for pattern in BLOCKED_PATTERNS:
-            if pattern in lower:
-                logger.warning(f"Path matches blocked pattern '{pattern}': {file_path}")
-                return False
-
-        return True
 
     def _relevant_source_files(self, title: str, description: str) -> list[str]:
         """Heuristic: pick source files likely relevant to the task based on keywords."""
@@ -125,35 +109,6 @@ class CTOAgent(BaseAgent):
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
-    # Git helpers
-    # ------------------------------------------------------------------
-
-    def _git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-        """Run a git command in the project root."""
-        cmd = ["git", "-C", str(PROJECT_ROOT)] + list(args)
-        return subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=30)
-
-    def _current_branch(self) -> str:
-        result = self._git("rev-parse", "--abbrev-ref", "HEAD")
-        return result.stdout.strip()
-
-    def _create_branch(self, branch_name: str) -> None:
-        self._git("checkout", "-b", branch_name)
-
-    def _switch_branch(self, branch_name: str) -> None:
-        self._git("checkout", branch_name)
-
-    def _delete_branch(self, branch_name: str) -> None:
-        self._git("branch", "-D", branch_name, check=False)
-
-    def _commit(self, message: str) -> str:
-        """Stage all changes, commit, and return the commit SHA."""
-        self._git("add", "-A")
-        self._git("commit", "-m", message)
-        result = self._git("rev-parse", "HEAD")
-        return result.stdout.strip()
-
-    # ------------------------------------------------------------------
     # Test runner
     # ------------------------------------------------------------------
 
@@ -161,7 +116,7 @@ class CTOAgent(BaseAgent):
         """Run pytest and return (passed, output)."""
         try:
             result = subprocess.run(
-                ["python", "-m", "pytest", "-x", "-q", "--tb=short"],
+                ["python3", "-m", "pytest", "-x", "-q", "--tb=short"],
                 capture_output=True,
                 text=True,
                 timeout=TEST_TIMEOUT_SECONDS,
@@ -197,7 +152,7 @@ class CTOAgent(BaseAgent):
 
         task_id = task["id"]
         branch_name = f"cto/{task.get('category', 'feature')}/{task_id[:8]}"
-        original_branch = self._current_branch()
+        original_branch = current_branch()
 
         # Record the CTO run
         self.db.start_cto_run(run_id, task_id)
@@ -217,9 +172,9 @@ class CTOAgent(BaseAgent):
             # 3. Create feature branch
             # Make sure we are on main first
             if original_branch != "main":
-                self._switch_branch("main")
+                switch_branch("main")
                 original_branch = "main"
-            self._create_branch(branch_name)
+            create_branch(branch_name)
 
             # 4. Read relevant source files
             source_files = self._relevant_source_files(task["title"], task["description"])
@@ -267,7 +222,7 @@ class CTOAgent(BaseAgent):
                 if not file_path or not content:
                     continue
 
-                if not self._is_path_safe(file_path):
+                if not is_path_safe(file_path):
                     logger.warning(f"Skipping unsafe path: {file_path}")
                     continue
 
@@ -296,7 +251,7 @@ class CTOAgent(BaseAgent):
             if tests_passed:
                 # 10. Tests pass: commit
                 commit_msg = f"cto: {task['title']}\n\nTask: {task_id}\nPlan: {plan}"
-                commit_sha = self._commit(commit_msg)
+                commit_sha = commit_all(commit_msg)
 
                 self.db.update_engineering_task(
                     task_id,
@@ -328,7 +283,7 @@ class CTOAgent(BaseAgent):
                 )
 
                 # 12. Switch back to main
-                self._switch_branch("main")
+                switch_branch("main")
 
                 return CTOResult(
                     task_id=task_id,
@@ -342,8 +297,8 @@ class CTOAgent(BaseAgent):
                 # 11. Tests fail: rollback
                 logger.warning(f"Tests failed for task {task_id}, rolling back")
 
-                self._switch_branch("main")
-                self._delete_branch(branch_name)
+                switch_branch("main")
+                delete_branch(branch_name)
 
                 self.db.update_engineering_task(
                     task_id,
@@ -388,10 +343,10 @@ class CTOAgent(BaseAgent):
 
             # Try to switch back to main and clean up
             try:
-                current = self._current_branch()
-                if current != "main":
-                    self._switch_branch("main")
-                    self._delete_branch(branch_name)
+                cur = current_branch()
+                if cur != "main":
+                    switch_branch("main")
+                    delete_branch(branch_name)
             except Exception:
                 pass
 

@@ -84,6 +84,11 @@ class Settings:
     min_ab_pairs: int = 5
     creator_critique_threshold: float = 0.8
 
+    # CI/CD self-healing
+    cifix_enabled: bool = True
+    cifix_auto_pr: bool = True
+    cifix_max_llm_attempts: int = 2
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
@@ -183,6 +188,9 @@ def load_settings() -> Settings:
         ab_testing_enabled=os.environ.get("AB_TESTING_ENABLED", "true").lower() in ("true", "1", "yes"),
         min_ab_pairs=int(os.environ.get("MIN_AB_PAIRS", "5")),
         creator_critique_threshold=float(os.environ.get("CREATOR_CRITIQUE_THRESHOLD", "0.8")),
+        cifix_enabled=os.environ.get("CIFIX_ENABLED", "true").lower() in ("true", "1", "yes"),
+        cifix_auto_pr=os.environ.get("CIFIX_AUTO_PR", "true").lower() in ("true", "1", "yes"),
+        cifix_max_llm_attempts=int(os.environ.get("CIFIX_MAX_LLM_ATTEMPTS", "2")),
         stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
         stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
         stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),

@@ -8,6 +8,7 @@ import uuid
 from ortobahn.agents.analytics import AnalyticsAgent
 from ortobahn.agents.ceo import CEOAgent
 from ortobahn.agents.cfo import CFOAgent
+from ortobahn.agents.cifix import CIFixAgent
 from ortobahn.agents.creator import CreatorAgent
 from ortobahn.agents.marketing import MarketingAgent
 from ortobahn.agents.ops import OpsAgent
@@ -118,6 +119,15 @@ class Pipeline:
             model=settings.claude_model,
         )
         self.reflection.thinking_budget = settings.thinking_budget_reflection
+        self.cifix = (
+            CIFixAgent(
+                db=self.db,
+                api_key=settings.anthropic_api_key,
+                model=settings.claude_model,
+            )
+            if settings.cifix_enabled
+            else None
+        )
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
 
@@ -276,9 +286,28 @@ class Pipeline:
 
         try:
             # 0. SRE Agent (system health check - runs first)
-            logger.info("[0/9] SRE Agent checking system health...")
+            logger.info("[0/12] SRE Agent checking system health...")
             sre_report = self.sre.run(run_id, slack_webhook_url=self.settings.slack_webhook_url)
             logger.info(f"  -> Health: {sre_report.health_status}, Alerts: {len(sre_report.alerts)}")
+
+            # 0.5 CI Fix Agent (self-healing CI/CD)
+            if self.cifix:
+                logger.info("[0.5/12] CI Fix Agent checking for failures...")
+                try:
+                    cifix_result = self.cifix.run(
+                        run_id=run_id,
+                        auto_pr=self.settings.cifix_auto_pr,
+                    )
+                    if cifix_result.status == "no_failures":
+                        logger.info("  -> CI is green")
+                    elif cifix_result.status == "fixed":
+                        logger.info(f"  -> Fixed: {cifix_result.summary}")
+                    elif cifix_result.status == "skipped":
+                        logger.info(f"  -> Skipped: {cifix_result.summary or cifix_result.error}")
+                    else:
+                        logger.warning(f"  -> Fix failed: {cifix_result.error or cifix_result.summary}")
+                except Exception as e:
+                    logger.warning(f"  -> CI fix agent error (non-fatal): {e}")
 
             # 1. Analytics
             logger.info("[1/9] Analytics Agent analyzing past performance...")

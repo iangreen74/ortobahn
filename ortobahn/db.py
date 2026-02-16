@@ -681,5 +681,62 @@ class Database:
         self.conn.execute(f"UPDATE cto_runs SET {', '.join(fields)} WHERE id=?", values)
         self.conn.commit()
 
+    # --- CI Fix Tracking ---
+
+    def log_ci_fix_attempt(self, data: dict) -> str:
+        fid = data.get("id") or str(uuid.uuid4())
+        self.conn.execute(
+            """INSERT INTO ci_fix_attempts
+            (id, run_id, gh_run_id, gh_run_url, job_name, failure_category,
+             error_count, error_codes, fix_strategy, status, files_changed,
+             branch_name, commit_sha, pr_url, llm_used, input_tokens,
+             output_tokens, validation_passed, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                fid,
+                data["run_id"],
+                data.get("gh_run_id"),
+                data.get("gh_run_url"),
+                data.get("job_name", ""),
+                data.get("failure_category", "unknown"),
+                data.get("error_count", 0),
+                json.dumps(data.get("error_codes", [])),
+                data.get("fix_strategy", ""),
+                data.get("status", "pending"),
+                json.dumps(data.get("files_changed", [])),
+                data.get("branch_name"),
+                data.get("commit_sha"),
+                data.get("pr_url"),
+                1 if data.get("llm_used") else 0,
+                data.get("input_tokens", 0),
+                data.get("output_tokens", 0),
+                1 if data.get("validation_passed") else 0,
+                data.get("error_message"),
+            ),
+        )
+        self.conn.commit()
+        return fid
+
+    def get_ci_fix_history(self, category: str | None = None, limit: int = 20) -> list[dict]:
+        query = "SELECT * FROM ci_fix_attempts"
+        params: list = []
+        if category:
+            query += " WHERE failure_category = ?"
+            params.append(category)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_ci_fix_success_rate(self, category: str | None = None) -> float:
+        query = "SELECT COUNT(*) as total, SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as successes FROM ci_fix_attempts"
+        params: list = []
+        if category:
+            query += " WHERE failure_category = ?"
+            params.append(category)
+        row = self.conn.execute(query, params).fetchone()
+        total = row["total"]
+        return row["successes"] / total if total > 0 else 0.0
+
     def close(self):
         self.conn.close()

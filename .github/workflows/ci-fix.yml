@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+    branches: [main, master]
 
 permissions:
   contents: write
@@ -50,8 +51,11 @@ jobs:
         id: mypy_check
         run: |
           set -o pipefail
-          mypy ortobahn/ 2>&1 | tee /tmp/mypy_output.txt
-          echo "passed=true" >> $GITHUB_OUTPUT || echo "passed=false" >> $GITHUB_OUTPUT
+          if mypy ortobahn/ 2>&1 | tee /tmp/mypy_output.txt; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure git
         if: steps.lint_fix.outputs.changed == 'true'

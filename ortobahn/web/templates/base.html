@@ -11,14 +11,16 @@
 <body>
     <nav class="container">
         <ul>
-            <li><strong><a href="/">Ortobahn</a></strong></li>
+            <li><strong><a href="{% block nav_home %}/{% endblock %}">Ortobahn</a></strong></li>
         </ul>
         <ul>
+            {% block nav_links %}
             <li><a href="/">Dashboard</a></li>
             <li><a href="/clients/">Clients</a></li>
             <li><a href="/content/">Content</a></li>
             <li><a href="/pipeline/">Pipeline</a></li>
             <li><a href="/sre/">System Health</a></li>
+            {% endblock %}
         </ul>
     </nav>
 

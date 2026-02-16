@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Ortobahn - My Dashboard{% endblock %}
+{% block nav_home %}/my/dashboard{% endblock %}
+{% block nav_links %}
+<li><a href="/my/dashboard">Dashboard</a></li>
+<li><a href="/my/settings">Settings</a></li>
+<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
+{% endblock %}
 {% block content %}
 <h1>{{ client.name }}</h1>
 

@@ -46,8 +46,9 @@ include = ["ortobahn*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=ortobahn --cov-report=term-missing -v"
+addopts = "--cov=ortobahn --cov-report=term-missing -v -m 'not network'"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["network: tests that require network access (DNS, HTTP)"]
 
 [tool.mypy]
 python_version = "3.10"

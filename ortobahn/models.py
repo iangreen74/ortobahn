@@ -425,3 +425,34 @@ class CIFixResult(BaseModel):
     validation_passed: bool = False
     error: str = ""
     summary: str = ""
+
+
+# --- Preflight Intelligence models ---
+
+
+class PreflightSeverity(str, Enum):
+    BLOCKING = "blocking"
+    WARNING = "warning"
+    INFO = "info"
+
+
+class PreflightIssue(BaseModel):
+    severity: PreflightSeverity
+    component: str
+    message: str
+    agent_name: str = ""
+
+
+class PreflightResult(BaseModel):
+    passed: bool = True
+    issues: list[PreflightIssue] = Field(default_factory=list)
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
+    duration_ms: float = 0.0
+
+    @property
+    def blocking_issues(self) -> list[PreflightIssue]:
+        return [i for i in self.issues if i.severity == PreflightSeverity.BLOCKING]
+
+    @property
+    def warnings(self) -> list[PreflightIssue]:
+        return [i for i in self.issues if i.severity == PreflightSeverity.WARNING]

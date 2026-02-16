@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
-import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
+
+from ortobahn.preflight import resolve_host
 
 pytestmark = pytest.mark.network
 
@@ -57,15 +58,10 @@ class TestLandingPageExternalLinks:
 
         broken: list[tuple[str, str]] = []
         for host in sorted(hosts):
-            try:
-                socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-            except socket.gaierror as exc:
-                broken.append((host, str(exc)))
+            if not resolve_host(host):
+                broken.append((host, "DNS resolution failed"))
 
-        assert not broken, (
-            "External links with DNS failures:\n"
-            + "\n".join(f"  {host}: {err}" for host, err in broken)
-        )
+        assert not broken, "External links with DNS failures:\n" + "\n".join(f"  {host}: {err}" for host, err in broken)
 
     def test_no_localhost_links(self, all_hrefs: list[str]) -> None:
         localhost = [h for h in all_hrefs if "localhost" in h or "127.0.0.1" in h]

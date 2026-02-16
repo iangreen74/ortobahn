@@ -63,9 +63,13 @@ deploy-landing:
 	@echo "\nLanding page deployed to ortobahn.com."
 
 deploy-ec2:
-	@echo "Deploying to EC2..."
-	ssh ortobahn "cd /app/ortobahn && git pull && docker compose build && docker compose up -d"
-	@echo "\nDeployed to app.ortobahn.com."
+	@echo "Deploying to EC2 via SSM..."
+	GITHUB_TOKEN= aws ssm send-command --region us-west-2 \
+		--instance-ids i-02525f63177387819 \
+		--document-name AWS-RunShellScript \
+		--parameters 'commands=["cd /app/ortobahn && git pull && docker compose build && docker compose up -d"]' \
+		--query 'Command.CommandId' --output text
+	@echo "\nDeploy command sent. Check SSM console for status."
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

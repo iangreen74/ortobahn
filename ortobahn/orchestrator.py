@@ -203,6 +203,17 @@ class Pipeline:
 
         return published_count
 
+    def _run_agent_with_preflight(self, agent, run_id: str, **kwargs):
+        """Check an agent's preflight before calling run(). Returns None on block."""
+        pf = agent.preflight(**kwargs)
+        if not pf.passed:
+            for issue in pf.blocking_issues:
+                logger.error(f"Agent {agent.name} preflight BLOCKED: {issue.message}")
+            return None
+        for issue in pf.warnings:
+            logger.warning(f"Agent {agent.name} preflight warning: {issue.message}")
+        return agent.run(run_id, **kwargs)
+
     def run_cycle(
         self,
         client_id: str = "default",
@@ -283,6 +294,52 @@ class Pipeline:
         approved_published = self.publish_approved_drafts(client_id=client_id)
         if approved_published:
             logger.info(f"Published {approved_published} previously approved drafts")
+
+        # --- Preflight Intelligence ---
+        if self.settings.preflight_enabled:
+            from ortobahn.preflight import run_pipeline_preflight
+
+            preflight_result = run_pipeline_preflight(self.settings, self.db, client_id, check_apis=True)
+            if not preflight_result.passed:
+                for issue in preflight_result.blocking_issues:
+                    logger.error(f"Preflight BLOCKER: [{issue.component}] {issue.message}")
+                    if self.memory_store:
+                        from ortobahn.models import (
+                            AgentMemory,
+                            MemoryCategory,
+                            MemoryType,
+                        )
+
+                        self.memory_store.remember(
+                            AgentMemory(
+                                agent_name="preflight",
+                                client_id=client_id,
+                                memory_type=MemoryType.OBSERVATION,
+                                category=MemoryCategory.CALIBRATION,
+                                content={
+                                    "component": issue.component,
+                                    "message": issue.message,
+                                },
+                                confidence=1.0,
+                                source_run_id=run_id,
+                            )
+                        )
+                self.db.complete_pipeline_run(
+                    run_id,
+                    posts_published=0,
+                    errors=[i.message for i in preflight_result.blocking_issues],
+                )
+                return {
+                    "run_id": run_id,
+                    "posts_published": 0,
+                    "total_drafts": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "errors": [i.message for i in preflight_result.blocking_issues],
+                }
+            # Log warnings but continue
+            for issue in preflight_result.warnings:
+                logger.warning(f"Preflight warning: [{issue.component}] {issue.message}")
 
         try:
             # 0. SRE Agent (system health check - runs first)

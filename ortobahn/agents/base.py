@@ -10,6 +10,7 @@ from typing import Any
 
 from ortobahn.db import Database
 from ortobahn.llm import LLMResponse, call_llm
+from ortobahn.models import PreflightResult
 
 logger = logging.getLogger("ortobahn.agents")
 
@@ -41,6 +42,10 @@ class BaseAgent(ABC):
         Uses safe_substitute so missing keys are left as-is (backward compat).
         """
         return Template(self.system_prompt).safe_substitute(**context)
+
+    def preflight(self, **kwargs: Any) -> PreflightResult:
+        """Run agent-specific preflight checks. Override in subclasses."""
+        return PreflightResult(passed=True)
 
     @abstractmethod
     def run(self, run_id: str, **kwargs: Any) -> Any:

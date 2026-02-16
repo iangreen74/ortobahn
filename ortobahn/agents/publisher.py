@@ -5,10 +5,19 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime
+from typing import Any
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.integrations.bluesky import BlueskyClient
-from ortobahn.models import DraftPosts, Platform, PublishedPost, PublishedPosts
+from ortobahn.models import (
+    DraftPosts,
+    Platform,
+    PreflightIssue,
+    PreflightResult,
+    PreflightSeverity,
+    PublishedPost,
+    PublishedPosts,
+)
 
 logger = logging.getLogger("ortobahn.publisher")
 
@@ -35,6 +44,21 @@ class PublisherAgent(BaseAgent):
         self.linkedin = linkedin_client
         self.confidence_threshold = confidence_threshold
         self.post_delay = post_delay_seconds
+
+    def preflight(self, **kwargs: Any) -> PreflightResult:
+        """Check that at least one platform client is available."""
+        issues: list[PreflightIssue] = []
+        if self.bluesky is None and self.twitter is None and self.linkedin is None:
+            issues.append(
+                PreflightIssue(
+                    severity=PreflightSeverity.WARNING,
+                    component="publisher",
+                    message="No platform clients configured — posts will be saved as drafts only",
+                    agent_name=self.name,
+                )
+            )
+        passed = not any(i.severity == PreflightSeverity.BLOCKING for i in issues)
+        return PreflightResult(passed=passed, issues=issues)
 
     def _get_publisher(self, platform: Platform):
         """Return the client for a platform, or None if not configured."""

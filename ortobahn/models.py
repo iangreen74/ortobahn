@@ -81,6 +81,8 @@ class Client(BaseModel):
     company_story: str = ""
     internal: bool = False
     subscription_status: str = "none"
+    auto_publish: bool = False
+    target_platforms: str = "bluesky"
 
 
 # --- Trending data (fed into Strategist) ---

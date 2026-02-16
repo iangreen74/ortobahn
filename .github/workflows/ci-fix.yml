@@ -6,10 +6,6 @@ on:
     types: [completed]
     branches: [main, master]
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   auto-fix:
     runs-on: ubuntu-latest
@@ -17,10 +13,18 @@ jobs:
       github.event.workflow_run.conclusion == 'failure' &&
       !startsWith(github.event.workflow_run.head_branch, 'cifix/')
     steps:
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
+          token: ${{ steps.app_token.outputs.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -66,9 +70,8 @@ jobs:
       - name: Create fix PR
         if: steps.lint_fix.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
           BASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           BRANCH="cifix/lint-$(date +%Y%m%d-%H%M%S)"

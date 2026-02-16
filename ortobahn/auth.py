@@ -20,6 +20,7 @@ class _LoginRedirect(Exception):
     def __init__(self, next_url: str = "/my/dashboard"):
         self.next_url = next_url
 
+
 # --- API Key utilities ---
 
 

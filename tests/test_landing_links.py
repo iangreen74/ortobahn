@@ -62,10 +62,7 @@ class TestLandingPageExternalLinks:
             except socket.gaierror as exc:
                 broken.append((host, str(exc)))
 
-        assert not broken, (
-            "External links with DNS failures:\n"
-            + "\n".join(f"  {host}: {err}" for host, err in broken)
-        )
+        assert not broken, "External links with DNS failures:\n" + "\n".join(f"  {host}: {err}" for host, err in broken)
 
     def test_no_localhost_links(self, all_hrefs: list[str]) -> None:
         localhost = [h for h in all_hrefs if "localhost" in h or "127.0.0.1" in h]

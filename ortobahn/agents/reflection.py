@@ -303,7 +303,7 @@ class ReflectionAgent(BaseAgent):
 
     def _update_goals(self, posts: list[dict], goals: list[dict], client_id: str) -> list[dict]:
         """Update goal progress based on current post data. Returns progress list."""
-        progress = []
+        progress: list[dict] = []
         if not goals:
             return progress
 

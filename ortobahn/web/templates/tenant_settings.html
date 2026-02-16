@@ -10,6 +10,42 @@
 <h1>Settings</h1>
 <p><a href="/my/dashboard">&larr; Back to dashboard</a></p>
 
+{% if not client.internal %}
+<h2>Subscription</h2>
+<article>
+    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+            <strong>Status:</strong>
+            {% if client.subscription_status == 'active' %}
+            <span class="badge completed">Active</span>
+            {% elif client.subscription_status == 'trialing' %}
+            <span class="badge running">Free Trial</span>
+            {% if client.trial_ends_at %}
+            <small style="margin-left: 0.5rem;">Ends: {{ client.trial_ends_at[:10] }}</small>
+            {% endif %}
+            {% elif client.subscription_status == 'past_due' %}
+            <span class="badge failed">Past Due</span>
+            {% elif client.subscription_status == 'cancelled' %}
+            <span class="badge failed">Cancelled</span>
+            {% elif client.subscription_status == 'expired' %}
+            <span class="badge failed">Trial Expired</span>
+            {% else %}
+            <span class="badge">None</span>
+            {% endif %}
+        </div>
+        <div style="margin-left: auto;">
+            {% if client.subscription_status == 'active' or client.subscription_status == 'past_due' %}
+            <form method="post" action="/my/billing" style="display: inline;">
+                <button type="submit" class="outline">Manage Billing</button>
+            </form>
+            {% elif client.subscription_status in ('trialing', 'expired', 'none', 'cancelled') %}
+            <a href="/my/subscribe" role="button">Subscribe</a>
+            {% endif %}
+        </div>
+    </div>
+</article>
+{% endif %}
+
 <h2>Brand Profile</h2>
 <article>
     <form method="post" action="/my/settings">

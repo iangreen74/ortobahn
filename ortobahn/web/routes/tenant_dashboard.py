@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+import stripe
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from ortobahn.auth import AuthClient
@@ -39,6 +41,12 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     db = request.app.state.db
     templates = request.app.state.templates
 
+    # Check trial expiry and refresh client data
+    if not client.get("internal"):
+        sub_status = db.check_and_expire_trial(client["id"])
+        if sub_status != client.get("subscription_status"):
+            client = db.get_client(client["id"])
+
     posts = db.get_recent_posts_with_metrics(limit=20, client_id=client["id"])
     strategy = db.get_active_strategy(client_id=client["id"])
     runs = db.get_recent_runs(limit=5)
@@ -58,6 +66,18 @@ async def tenant_dashboard(request: Request, client: AuthClient):
         if row:
             connected_platforms.append(platform)
 
+    # Compute trial days remaining
+    trial_days_remaining = None
+    if client.get("subscription_status") == "trialing" and client.get("trial_ends_at"):
+        try:
+            trial_end = datetime.fromisoformat(client["trial_ends_at"])
+            if trial_end.tzinfo is None:
+                trial_end = trial_end.replace(tzinfo=timezone.utc)
+            delta = trial_end - datetime.now(timezone.utc)
+            trial_days_remaining = max(0, delta.days)
+        except (ValueError, TypeError):
+            pass
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -70,6 +90,8 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "total_drafts": total_drafts,
             "connected_platforms": connected_platforms,
             "auto_publish": client.get("auto_publish", 0),
+            "trial_days_remaining": trial_days_remaining,
+            "subscription_status": client.get("subscription_status", "none"),
         },
     )
 
@@ -186,3 +208,59 @@ async def tenant_save_credentials(
 
     save_platform_credentials(db, client["id"], platform, creds, secret_key)
     return RedirectResponse("/my/settings", status_code=303)
+
+
+@router.get("/subscribe")
+async def tenant_subscribe(request: Request, client: AuthClient):
+    """Create a Stripe Checkout session and redirect the user to it."""
+    settings = request.app.state.settings
+    db = request.app.state.db
+
+    if not settings.stripe_secret_key or not settings.stripe_price_id:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+
+    stripe.api_key = settings.stripe_secret_key
+
+    # Get or create Stripe customer
+    customer_id = client.get("stripe_customer_id")
+    if not customer_id:
+        customer = stripe.Customer.create(
+            name=client["name"],
+            email=client.get("email", ""),
+            metadata={"ortobahn_client_id": client["id"]},
+        )
+        customer_id = customer.id
+        db.update_subscription(client["id"], stripe_customer_id=customer_id)
+
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        payment_method_types=["card"],
+        line_items=[{"price": settings.stripe_price_id, "quantity": 1}],
+        mode="subscription",
+        success_url=str(request.url_for("tenant_dashboard").replace(query="payment=success")),
+        cancel_url=str(request.url_for("tenant_dashboard").replace(query="payment=cancelled")),
+        metadata={"ortobahn_client_id": client["id"]},
+    )
+
+    return RedirectResponse(str(session.url or "/my/dashboard"), status_code=303)
+
+
+@router.post("/billing")
+async def tenant_billing_portal(request: Request, client: AuthClient):
+    """Redirect to Stripe Customer Portal for subscription management."""
+    settings = request.app.state.settings
+
+    if not settings.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+
+    stripe.api_key = settings.stripe_secret_key
+    customer_id = client.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No billing account found")
+
+    portal_session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=str(request.url_for("tenant_settings")),
+    )
+
+    return RedirectResponse(portal_session.url, status_code=303)

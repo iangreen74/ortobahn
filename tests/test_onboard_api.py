@@ -34,7 +34,7 @@ async def client(app):
 
 class TestOnboardEndpoint:
     @pytest.mark.asyncio
-    async def test_successful_onboard(self, client):
+    async def test_successful_onboard(self, client, app):
         resp = await client.post(
             "/api/onboard",
             json={
@@ -54,6 +54,12 @@ class TestOnboardEndpoint:
         assert data["api_key"].startswith("otb_")
         assert "created" in data["message"].lower()
         assert data["needs_confirmation"] is True
+
+        # Verify trial was initialized
+        db = app.state.db
+        new_client = db.get_client(data["client_id"])
+        assert new_client["subscription_status"] == "trialing"
+        assert new_client["trial_ends_at"] is not None
 
     @pytest.mark.asyncio
     async def test_duplicate_email_rejected(self, client):

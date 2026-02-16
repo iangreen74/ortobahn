@@ -586,6 +586,33 @@ class Database:
         self.conn.commit()
         return True
 
+    def check_and_expire_trial(self, client_id: str) -> str:
+        """If client is trialing and trial has ended, flip to 'expired'. Returns current status."""
+        row = self.conn.execute(
+            "SELECT subscription_status, trial_ends_at FROM clients WHERE id=?",
+            (client_id,),
+        ).fetchone()
+        if not row:
+            return "none"
+        status = row["subscription_status"]
+        if status == "trialing" and row["trial_ends_at"]:
+            from datetime import datetime, timezone
+
+            try:
+                trial_end = datetime.fromisoformat(row["trial_ends_at"])
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                return status
+            if datetime.now(timezone.utc) > trial_end:
+                self.conn.execute(
+                    "UPDATE clients SET subscription_status='expired' WHERE id=?",
+                    (client_id,),
+                )
+                self.conn.commit()
+                return "expired"
+        return status
+
     # --- Engineering Tasks (CTO Agent) ---
 
     def create_engineering_task(self, data: dict) -> str:

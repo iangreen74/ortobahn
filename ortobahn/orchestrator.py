@@ -255,6 +255,11 @@ class Pipeline:
                 "errors": ["client_paused"],
             }
 
+        # Check trial expiry before subscription guard
+        if client_data and not client_data.get("internal"):
+            self.db.check_and_expire_trial(client_id)
+            client_data = self.db.get_client(client_id)
+
         # Subscription guard: skip non-internal clients without active subscription
         if (
             client_data

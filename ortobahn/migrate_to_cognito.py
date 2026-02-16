@@ -46,7 +46,7 @@ def migrate() -> None:
             print(f"  Created Cognito user {sub}")
         except CognitoError as e:
             if "UsernameExists" in e.code:
-                print(f"  Already exists in Cognito, skipping")
+                print("  Already exists in Cognito, skipping")
             else:
                 print(f"  ERROR: {e.message}")
 

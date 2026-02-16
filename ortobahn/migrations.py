@@ -400,6 +400,19 @@ def _migration_013_add_cognito_sub(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_014_add_trial_ends_at(conn: sqlite3.Connection) -> None:
+    """Add trial_ends_at column for free-trial tracking."""
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN trial_ends_at TIMESTAMP",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -414,6 +427,7 @@ MIGRATIONS = {
     11: _migration_011_add_ci_fix_tracking,
     12: _migration_012_add_auto_publish,
     13: _migration_013_add_cognito_sub,
+    14: _migration_014_add_trial_ends_at,
 }
 
 

@@ -9,6 +9,28 @@
 {% block content %}
 <h1>{{ client.name }}</h1>
 
+{% if not client.internal %}
+{% if subscription_status == 'trialing' and trial_days_remaining is not none %}
+<article style="background: {% if trial_days_remaining <= 3 %}#fecaca{% else %}#fef3c7{% endif %}; border-left: 4px solid {% if trial_days_remaining <= 3 %}#dc2626{% else %}#f59e0b{% endif %}; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+    <strong>Free trial:</strong> {{ trial_days_remaining }} day{{ 's' if trial_days_remaining != 1 else '' }} remaining.
+    <a href="/my/subscribe" style="margin-left: 0.5rem; font-weight: 600;">Subscribe now &rarr;</a>
+</article>
+{% elif subscription_status in ('expired', 'none', 'cancelled') %}
+<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+    <strong>{% if subscription_status == 'expired' %}Your free trial has ended.{% elif subscription_status == 'cancelled' %}Your subscription has been cancelled.{% else %}No active subscription.{% endif %}</strong>
+    Subscribe to continue generating content.
+    <a href="/my/subscribe" style="margin-left: 0.5rem; font-weight: 600;">Subscribe now &rarr;</a>
+</article>
+{% elif subscription_status == 'past_due' %}
+<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+    <strong>Payment failed.</strong> Please update your payment method to continue.
+    <form method="post" action="/my/billing" style="display: inline;">
+        <button type="submit" class="outline" style="padding: 0.25rem 0.75rem; margin-left: 0.5rem;">Manage billing &rarr;</button>
+    </form>
+</article>
+{% endif %}
+{% endif %}
+
 <div class="grid">
     <article>
         <header>Published Posts</header>
@@ -48,7 +70,7 @@
                 </label>
             </div>
         </div>
-        <button type="submit">Generate Content</button>
+        <button type="submit" {% if not client.internal and subscription_status not in ('active', 'trialing') %}disabled title="Subscribe to generate content"{% endif %}>Generate Content</button>
     </form>
     <small>Runs in background. {% if not auto_publish %}Drafts will appear below for review.{% else %}Posts will be published automatically.{% endif %}</small>
 </article>

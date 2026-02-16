@@ -19,10 +19,10 @@ router = APIRouter()
 
 
 @router.get("/login")
-async def login_page(request: Request):
+async def login_page(request: Request, next: str = "/my/dashboard"):
     """Render the login page."""
     templates = request.app.state.templates
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("login.html", {"request": request, "next_url": next})
 
 
 class LoginRequest(BaseModel):

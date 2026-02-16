@@ -127,7 +127,7 @@
                 <li><a href="#how-it-works">How It Works</a></li>
                 <li><a href="#features">Features</a></li>
                 <li><a href="#proof">Live Proof</a></li>
-                <li><a href="https://app.ortobahn.com/my/dashboard">Log In</a></li>
+                <li><a href="https://app.ortobahn.com/api/auth/login">Log In</a></li>
                 <li><a href="#request-access" class="btn btn-sm">Create Account</a></li>
             </ul>
         </div>
@@ -341,7 +341,7 @@
                     <ul>
                         <li><a href="https://bsky.app/profile/vaultscaler.bsky.social" target="_blank" rel="noopener">Bluesky</a></li>
                         <li><a href="https://vaultscaler.com" target="_blank" rel="noopener">Vaultscaler</a></li>
-                        <li><a href="https://app.ortobahn.com/my/dashboard">Log In</a></li>
+                        <li><a href="https://app.ortobahn.com/api/auth/login">Log In</a></li>
                         <li><a href="#request-access">Create Account</a></li>
                     </ul>
                 </div>
@@ -377,7 +377,7 @@
                 status.innerHTML = '<strong>Account created!</strong> Save your API key — it cannot be retrieved again:<br>'
                     + '<code style="display:inline-block;margin:0.5rem 0;padding:0.5rem 1rem;background:#1a1a2e;border-radius:4px;font-size:1rem;user-select:all">'
                     + result.api_key + '</code><br>'
-                    + '<a href="https://app.ortobahn.com/my/dashboard" style="color:#00d4aa">Go to dashboard &rarr;</a>';
+                    + '<a href="https://app.ortobahn.com/my/dashboard" style="color:#00d4aa">Go to Dashboard &rarr;</a>';
                 status.className = 'form-status success';
                 this.reset();
                 btn.textContent = 'Account Created';

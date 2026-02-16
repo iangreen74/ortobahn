@@ -6,9 +6,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from ortobahn.auth import _LoginRedirect
 from ortobahn.config import load_settings
 from ortobahn.db import Database
 
@@ -42,6 +44,10 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(_LoginRedirect)
+    async def _redirect_to_login(request: Request, exc: _LoginRedirect):
+        return RedirectResponse(f"/api/auth/login?next={exc.next_url}")
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

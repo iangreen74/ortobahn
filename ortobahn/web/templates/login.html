@@ -34,7 +34,7 @@ document.getElementById("login-form").addEventListener("submit", async function(
         const data = await resp.json();
 
         if (resp.ok) {
-            window.location.href = "/my/dashboard";
+            window.location.href = "{{ next_url | default('/my/dashboard') }}";
         } else {
             errorEl.textContent = data.detail || "Login failed. Check your API key.";
             errorEl.style.display = "block";

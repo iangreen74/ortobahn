@@ -13,6 +13,13 @@ from fastapi.security import APIKeyHeader, HTTPBearer
 
 from ortobahn.db import Database
 
+
+class _LoginRedirect(Exception):
+    """Raised when an unauthenticated browser request needs to be redirected to login."""
+
+    def __init__(self, next_url: str = "/my/dashboard"):
+        self.next_url = next_url
+
 # --- API Key utilities ---
 
 
@@ -104,6 +111,10 @@ async def get_current_client(
             if client:
                 return client
 
+    # Redirect browsers to login page; return JSON 401 for API clients
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        raise _LoginRedirect(next_url=request.url.path)
     raise HTTPException(status_code=401, detail="Authentication required")
 
 

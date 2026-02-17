@@ -269,7 +269,7 @@ class TestMigration011:
         """)
 
         version = run_migrations(raw_conn)
-        assert version == 14
+        assert version == 15
 
         # Verify ci_fix_attempts table exists with expected columns
         raw_conn.execute(
@@ -301,4 +301,4 @@ class TestMigration011:
 
         v1 = run_migrations(raw_conn)
         v2 = run_migrations(raw_conn)
-        assert v1 == v2 == 14
+        assert v1 == v2 == 15

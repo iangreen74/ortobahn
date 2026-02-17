@@ -117,11 +117,11 @@ def cmd_schedule(args):
     settings = load_settings()
     setup_logging(settings.log_level)
 
-    interval_hours = args.interval or settings.pipeline_interval_hours
-    interval_seconds = interval_hours * 3600
+    check_interval_hours = 1  # Check every hour which clients are due
+    check_interval_seconds = check_interval_hours * 3600
     dry_run = args.dry_run
 
-    console.print(f"\n[bold cyan]ORTOBAHN[/bold cyan] - Scheduled Mode (every {interval_hours}h)")
+    console.print("\n[bold cyan]ORTOBAHN[/bold cyan] - Scheduled Mode (checking every hour, per-client intervals)")
     if dry_run:
         console.print("[yellow]DRY RUN mode[/yellow]")
 
@@ -149,22 +149,40 @@ def cmd_schedule(args):
             try:
                 if args.client:
                     # Single-client mode (explicit --client flag)
-                    clients_to_run = [{"id": args.client, "name": args.client}]
+                    clients_to_check = [{"id": args.client, "name": args.client, "posting_interval_hours": 6}]
                 else:
                     # All active, non-paused clients
                     rows = pipeline.db.conn.execute(
-                        "SELECT id, name FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
+                        "SELECT id, name, posting_interval_hours FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
                     ).fetchall()
-                    clients_to_run = (
+                    clients_to_check = (
                         [dict(r) for r in rows]
                         if rows
-                        else [{"id": settings.default_client_id, "name": settings.default_client_id}]
+                        else [{"id": settings.default_client_id, "name": settings.default_client_id, "posting_interval_hours": 6}]
                     )
 
                 total_published = 0
-                for client in clients_to_run:
+                from datetime import datetime as _dt
+                from datetime import timezone as _tz
+
+                for client in clients_to_check:
                     cid = client["id"]
-                    console.print(f"  [dim]Running for client: {client.get('name', cid)}[/dim]")
+                    interval = client.get("posting_interval_hours") or 6
+
+                    # Check if this client is due for a run
+                    last_run = pipeline.db.get_last_run_time(cid)
+                    if last_run is not None:
+                        try:
+                            last_dt = _dt.fromisoformat(last_run)
+                            if last_dt.tzinfo is None:
+                                last_dt = last_dt.replace(tzinfo=_tz.utc)
+                            hours_since = (_dt.now(_tz.utc) - last_dt).total_seconds() / 3600
+                            if hours_since < interval:
+                                continue  # Not due yet
+                        except (ValueError, TypeError):
+                            pass  # Run if we can't parse the timestamp
+
+                    console.print(f"  [dim]Running for client: {client.get('name', cid)} (interval: {interval}h)[/dim]")
                     try:
                         result = pipeline.run_cycle(client_id=cid, target_platforms=platforms)
                         total_published += result["posts_published"]
@@ -201,9 +219,9 @@ def cmd_schedule(args):
                 console.print(f"[red]Cycle failed: {e}[/red]")
 
             if running:
-                console.print(f"Next cycle in {interval_hours}h...")
+                console.print(f"Next check in {check_interval_hours}h...")
                 # Sleep in small increments so we can respond to signals
-                for _ in range(int(interval_seconds)):
+                for _ in range(int(check_interval_seconds)):
                     if not running:
                         break
                     time.sleep(1)

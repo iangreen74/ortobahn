@@ -413,6 +413,23 @@ def _migration_014_add_trial_ends_at(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migration_015_add_client_trends_and_schedule(conn: sqlite3.Connection) -> None:
+    """Add per-client trend config and posting schedule."""
+    for stmt in [
+        "ALTER TABLE clients ADD COLUMN news_category TEXT NOT NULL DEFAULT 'technology'",
+        "ALTER TABLE clients ADD COLUMN news_keywords TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE clients ADD COLUMN rss_feeds TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE clients ADD COLUMN posting_interval_hours INTEGER NOT NULL DEFAULT 6",
+        "ALTER TABLE clients ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'",
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+    conn.commit()
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -428,6 +445,7 @@ MIGRATIONS = {
     12: _migration_012_add_auto_publish,
     13: _migration_013_add_cognito_sub,
     14: _migration_014_add_trial_ends_at,
+    15: _migration_015_add_client_trends_and_schedule,
 }
 
 

@@ -83,16 +83,48 @@
     </form>
 </article>
 
+<h2>Content Sources</h2>
+<article>
+    <form method="post" action="/my/settings">
+        <input type="hidden" name="_section" value="content_sources">
+        <label for="news_category">News Category</label>
+        <select id="news_category" name="news_category">
+            {% for cat in ['technology', 'business', 'health', 'science', 'entertainment', 'general', 'sports'] %}
+            <option value="{{ cat }}" {% if (client.news_category or 'technology') == cat %}selected{% endif %}>{{ cat|capitalize }}</option>
+            {% endfor %}
+        </select>
+        <small>Determines which category of headlines feed into your content pipeline.</small>
+
+        <label for="news_keywords">Industry Keywords</label>
+        <input type="text" id="news_keywords" name="news_keywords" value="{{ client.news_keywords or '' }}" placeholder="fintech, payments, banking">
+        <small>Comma-separated keywords. The pipeline searches for articles matching these terms.</small>
+
+        <label for="rss_feeds">Custom RSS Feeds</label>
+        <textarea id="rss_feeds" name="rss_feeds" rows="3" placeholder="https://example.com/feed.xml&#10;https://blog.example.com/rss">{{ client.rss_feeds or '' }}</textarea>
+        <small>One URL per line. Leave empty to use default tech/business feeds.</small>
+
+        <button type="submit" class="outline">Save Content Sources</button>
+    </form>
+</article>
+
 <h2>Automation</h2>
 <article>
     <form method="post" action="/my/auto-publish">
         <label>
             <input type="checkbox" name="auto_publish" value="on" {% if client.auto_publish %}checked{% endif %}>
-            Enable auto-publish (the scheduler will publish content automatically every 6 hours)
+            Enable auto-publish (the scheduler will publish content automatically)
         </label>
         <label for="target_platforms">Target Platforms</label>
         <input type="text" id="target_platforms" name="target_platforms" value="{{ client.target_platforms or 'bluesky' }}" placeholder="bluesky,twitter,linkedin">
         <small>Comma-separated list of platforms for autonomous content generation.</small>
+        <label for="posting_interval_hours">Posting Frequency</label>
+        <select id="posting_interval_hours" name="posting_interval_hours">
+            <option value="3" {% if client.posting_interval_hours == 3 %}selected{% endif %}>Every 3 hours</option>
+            <option value="6" {% if (client.posting_interval_hours or 6) == 6 %}selected{% endif %}>Every 6 hours</option>
+            <option value="12" {% if client.posting_interval_hours == 12 %}selected{% endif %}>Every 12 hours</option>
+            <option value="24" {% if client.posting_interval_hours == 24 %}selected{% endif %}>Once daily</option>
+        </select>
+        <small>How often the pipeline generates new content for your account.</small>
         <button type="submit" class="outline">Save Automation Settings</button>
     </form>
 </article>

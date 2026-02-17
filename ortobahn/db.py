@@ -158,6 +158,11 @@ class Database:
             "subscription_status",
             "subscription_plan",
             "cognito_sub",
+            "news_category",
+            "news_keywords",
+            "rss_feeds",
+            "posting_interval_hours",
+            "timezone",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
@@ -444,6 +449,14 @@ class Database:
     def get_recent_runs(self, limit: int = 10) -> list[dict]:
         rows = self.conn.execute("SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+    def get_last_run_time(self, client_id: str) -> str | None:
+        """Get the started_at timestamp of the most recent pipeline run for a client."""
+        row = self.conn.execute(
+            "SELECT started_at FROM pipeline_runs WHERE client_id=? ORDER BY started_at DESC LIMIT 1",
+            (client_id,),
+        ).fetchone()
+        return row["started_at"] if row else None
 
     # --- Analytics helpers ---
 

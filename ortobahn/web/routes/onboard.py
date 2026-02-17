@@ -20,6 +20,44 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Map common industries to news categories and keywords for trend personalization.
+INDUSTRY_DEFAULTS: dict[str, dict[str, str]] = {
+    "saas": {"news_category": "technology", "news_keywords": "SaaS, cloud computing, software"},
+    "software": {"news_category": "technology", "news_keywords": "software, SaaS, developer tools"},
+    "technology": {"news_category": "technology", "news_keywords": "technology, startups, innovation"},
+    "ai": {"news_category": "technology", "news_keywords": "artificial intelligence, machine learning, AI"},
+    "fintech": {"news_category": "business", "news_keywords": "fintech, payments, banking, cryptocurrency"},
+    "finance": {"news_category": "business", "news_keywords": "finance, investing, markets, wealth management"},
+    "healthcare": {"news_category": "health", "news_keywords": "healthcare, medtech, digital health"},
+    "health": {"news_category": "health", "news_keywords": "health, wellness, medical technology"},
+    "ecommerce": {"news_category": "business", "news_keywords": "ecommerce, retail, DTC, online shopping"},
+    "retail": {"news_category": "business", "news_keywords": "retail, consumer goods, shopping"},
+    "marketing": {"news_category": "business", "news_keywords": "marketing, advertising, brand strategy"},
+    "real estate": {"news_category": "business", "news_keywords": "real estate, proptech, housing market"},
+    "education": {"news_category": "science", "news_keywords": "education, edtech, online learning"},
+    "cybersecurity": {"news_category": "technology", "news_keywords": "cybersecurity, infosec, data privacy"},
+    "crypto": {"news_category": "business", "news_keywords": "cryptocurrency, blockchain, web3, DeFi"},
+    "gaming": {"news_category": "entertainment", "news_keywords": "gaming, esports, game development"},
+    "media": {"news_category": "entertainment", "news_keywords": "media, content creation, streaming"},
+    "legal": {"news_category": "general", "news_keywords": "legal tech, law, compliance, regulation"},
+    "consulting": {"news_category": "business", "news_keywords": "consulting, management, strategy"},
+    "energy": {"news_category": "science", "news_keywords": "energy, cleantech, renewable, sustainability"},
+}
+
+
+def _match_industry(industry: str) -> dict[str, str]:
+    """Match a user-provided industry string to trend defaults using simple keyword matching."""
+    industry_lower = industry.lower().strip()
+    # Exact match
+    if industry_lower in INDUSTRY_DEFAULTS:
+        return INDUSTRY_DEFAULTS[industry_lower]
+    # Substring match
+    for key, defaults in INDUSTRY_DEFAULTS.items():
+        if key in industry_lower or industry_lower in key:
+            return defaults
+    # Default fallback
+    return {"news_category": "technology", "news_keywords": ""}
+
 
 class OnboardRequest(BaseModel):
     name: str
@@ -43,7 +81,10 @@ async def onboard(request: Request, body: OnboardRequest):
             status_code=409,
         )
 
-    # Create client with pending status
+    # Match industry to trend defaults
+    trend_defaults = _match_industry(body.industry)
+
+    # Create client with pending status and industry-specific trend config
     client_id = db.create_client(
         {
             "name": body.company,
@@ -55,6 +96,11 @@ async def onboard(request: Request, body: OnboardRequest):
             "status": "pending",
         }
     )
+    # Set trend config (after create, since create_client has a fixed column set)
+    db.update_client(client_id, {
+        "news_category": trend_defaults["news_category"],
+        "news_keywords": trend_defaults["news_keywords"],
+    })
 
     # Register user in Cognito
     try:

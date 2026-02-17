@@ -131,12 +131,14 @@ class Pipeline:
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
 
-    def gather_trends(self) -> list[TrendingTopic]:
-        """Gather trending topics from all sources."""
+    def gather_trends(self, client_id: str = "default") -> list[TrendingTopic]:
+        """Gather trending topics from all sources, filtered by client's industry."""
         topics = []
+        client = self.db.get_client(client_id)
 
-        # NewsAPI
-        for article in get_trending_headlines(self.settings.newsapi_key or ""):
+        # NewsAPI: use client's category
+        category = client.get("news_category", "technology") if client else "technology"
+        for article in get_trending_headlines(self.settings.newsapi_key or "", category=category):
             topics.append(
                 TrendingTopic(
                     title=article.title,
@@ -146,7 +148,22 @@ class Pipeline:
                 )
             )
 
-        # Google Trends
+        # NewsAPI keyword search: use client's industry keywords
+        keywords = client.get("news_keywords", "") if client else ""
+        if keywords:
+            from ortobahn.integrations.newsapi_client import search_news
+
+            for article in search_news(self.settings.newsapi_key or "", query=keywords):
+                topics.append(
+                    TrendingTopic(
+                        title=article.title,
+                        source="newsapi_search",
+                        description=article.description,
+                        url=article.url,
+                    )
+                )
+
+        # Google Trends (global — no keyword filtering available)
         for term in get_trending_searches():
             topics.append(
                 TrendingTopic(
@@ -155,8 +172,12 @@ class Pipeline:
                 )
             )
 
-        # RSS
-        for rss_item in fetch_feeds(self.settings.rss_feeds):
+        # RSS: use client's feeds if set, fall back to global defaults
+        client_feeds = client.get("rss_feeds", "") if client else ""
+        feed_urls = [f.strip() for f in client_feeds.split(",") if f.strip()] if client_feeds else []
+        if not feed_urls:
+            feed_urls = self.settings.rss_feeds
+        for rss_item in fetch_feeds(feed_urls):
             topics.append(
                 TrendingTopic(
                     title=rss_item.title,
@@ -166,7 +187,7 @@ class Pipeline:
                 )
             )
 
-        logger.info(f"Gathered {len(topics)} trending topics")
+        logger.info(f"Gathered {len(topics)} trending topics for client {client_id}")
         return topics
 
     def publish_approved_drafts(self, client_id: str = "default") -> int:
@@ -391,7 +412,7 @@ class Pipeline:
 
             # 3. Gather trends (parallel-safe, no LLM)
             logger.info("[3/11] Gathering trending topics...")
-            trending = self.gather_trends()
+            trending = self.gather_trends(client_id)
 
             # 3.5. Performance insights for CEO (prompt tuner)
             from ortobahn.prompt_tuner import get_performance_insights

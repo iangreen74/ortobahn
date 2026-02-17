@@ -120,13 +120,15 @@ async def tenant_toggle_auto_publish(
     client: AuthClient,
     auto_publish: str = Form(""),
     target_platforms: str = Form("bluesky"),
+    posting_interval_hours: int = Form(6),
 ):
     """Toggle auto-publish setting for this tenant."""
     db = request.app.state.db
     enabled = 1 if auto_publish == "on" else 0
+    interval = max(3, min(24, posting_interval_hours))
     db.conn.execute(
-        "UPDATE clients SET auto_publish=?, target_platforms=? WHERE id=?",
-        (enabled, target_platforms, client["id"]),
+        "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=? WHERE id=?",
+        (enabled, target_platforms, interval, client["id"]),
     )
     db.conn.commit()
     return RedirectResponse("/my/settings", status_code=303)
@@ -161,36 +163,36 @@ async def tenant_settings(request: Request, client: AuthClient):
 
 
 @router.post("/settings")
-async def tenant_settings_update(
-    request: Request,
-    client: AuthClient,
-    name: str = Form(...),
-    industry: str = Form(""),
-    target_audience: str = Form(""),
-    brand_voice: str = Form(""),
-    website: str = Form(""),
-    products: str = Form(""),
-    competitive_positioning: str = Form(""),
-    key_messages: str = Form(""),
-    content_pillars: str = Form(""),
-    company_story: str = Form(""),
-):
+async def tenant_settings_update(request: Request, client: AuthClient):
     db = request.app.state.db
-    db.update_client(
-        client["id"],
-        {
-            "name": name,
-            "industry": industry,
-            "target_audience": target_audience,
-            "brand_voice": brand_voice,
-            "website": website,
-            "products": products,
-            "competitive_positioning": competitive_positioning,
-            "key_messages": key_messages,
-            "content_pillars": content_pillars,
-            "company_story": company_story,
-        },
-    )
+    form = await request.form()
+    section = form.get("_section", "brand_profile")
+
+    if section == "content_sources":
+        db.update_client(
+            client["id"],
+            {
+                "news_category": form.get("news_category", "technology"),
+                "news_keywords": form.get("news_keywords", ""),
+                "rss_feeds": form.get("rss_feeds", ""),
+            },
+        )
+    else:
+        db.update_client(
+            client["id"],
+            {
+                "name": form.get("name", client["name"]),
+                "industry": form.get("industry", ""),
+                "target_audience": form.get("target_audience", ""),
+                "brand_voice": form.get("brand_voice", ""),
+                "website": form.get("website", ""),
+                "products": form.get("products", ""),
+                "competitive_positioning": form.get("competitive_positioning", ""),
+                "key_messages": form.get("key_messages", ""),
+                "content_pillars": form.get("content_pillars", ""),
+                "company_story": form.get("company_story", ""),
+            },
+        )
     return RedirectResponse("/my/settings", status_code=303)
 
 

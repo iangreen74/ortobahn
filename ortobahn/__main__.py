@@ -152,11 +152,11 @@ def cmd_schedule(args):
                     clients_to_check = [{"id": args.client, "name": args.client, "posting_interval_hours": 6}]
                 else:
                     # All active, non-paused clients
-                    rows = pipeline.db.conn.execute(
+                    rows = pipeline.db.fetchall(
                         "SELECT id, name, posting_interval_hours FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
-                    ).fetchall()
+                    )
                     clients_to_check = (
-                        [dict(r) for r in rows]
+                        rows
                         if rows
                         else [{"id": settings.default_client_id, "name": settings.default_client_id, "posting_interval_hours": 6}]
                     )
@@ -233,9 +233,11 @@ def cmd_dashboard(args):
     """Show the terminal dashboard."""
     from ortobahn.config import load_settings
     from ortobahn.dashboard.terminal import show_dashboard
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    show_dashboard(settings.db_path)
+    db = create_database(settings)
+    show_dashboard(db)
 
 
 def cmd_healthcheck(args):
@@ -269,10 +271,10 @@ def cmd_healthcheck(args):
 def cmd_status(args):
     """Quick status check."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     runs = db.get_recent_runs(limit=5)
     strategy = db.get_active_strategy()
@@ -308,10 +310,10 @@ def cmd_status(args):
 def cmd_client_add(args):
     """Add a new client."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     client_data = {
         "name": args.name,
@@ -332,10 +334,10 @@ def cmd_client_add(args):
 def cmd_client_list(args):
     """List all clients."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     clients = db.get_all_clients()
     table = Table(title="Clients")
@@ -354,11 +356,11 @@ def cmd_client_list(args):
 def cmd_seed(args):
     """Seed all known clients (Vaultscaler, Ortobahn)."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
     from ortobahn.seed import seed_all
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
     client_ids = seed_all(db, settings=settings)
     for cid in client_ids:
         client = db.get_client(cid)
@@ -371,10 +373,10 @@ def cmd_seed(args):
 def cmd_review(args):
     """Review pending drafts."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     drafts = db.get_drafts_for_review(
         client_id=args.client or None,
@@ -410,10 +412,10 @@ def cmd_review(args):
 def cmd_approve(args):
     """Approve a draft post."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     # Find post by prefix
     all_drafts = db.get_drafts_for_review()
@@ -436,10 +438,10 @@ def cmd_approve(args):
 def cmd_reject(args):
     """Reject a draft post."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     all_drafts = db.get_drafts_for_review()
     match = None
@@ -462,14 +464,14 @@ def cmd_credentials(args):
     """Set platform credentials for a client."""
     from ortobahn.config import load_settings
     from ortobahn.credentials import save_platform_credentials
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
     if not settings.secret_key:
         console.print("[red]ORTOBAHN_SECRET_KEY must be set for credential encryption[/red]")
         sys.exit(1)
 
-    db = Database(settings.db_path)
+    db = create_database(settings)
     client = db.get_client(args.client)
     if not client:
         console.print(f"[red]Client '{args.client}' not found[/red]")
@@ -510,10 +512,10 @@ def cmd_api_key(args):
     """Create or list API keys."""
     from ortobahn.auth import generate_api_key, hash_api_key, key_prefix
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     if args.apikey_action == "create":
         client = db.get_client(args.client)
@@ -563,7 +565,7 @@ def cmd_cto(args):
 
     from ortobahn.agents.cto import CTOAgent
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
     setup_logging(settings.log_level)
@@ -572,7 +574,7 @@ def cmd_cto(args):
         console.print("[red]ANTHROPIC_API_KEY is required for the CTO agent[/red]")
         sys.exit(1)
 
-    db = Database(settings.db_path)
+    db = create_database(settings)
     run_id = str(uuid.uuid4())
 
     agent = CTOAgent(
@@ -603,10 +605,10 @@ def cmd_cto(args):
 def cmd_cto_add(args):
     """Add an engineering task to the CTO backlog."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     task_data = {
         "title": args.title,
@@ -626,10 +628,10 @@ def cmd_cto_add(args):
 def cmd_cto_backlog(args):
     """List engineering tasks in the CTO backlog."""
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
-    db = Database(settings.db_path)
+    db = create_database(settings)
 
     tasks = db.get_engineering_tasks(status=args.status or None)
 
@@ -676,7 +678,7 @@ def cmd_cifix(args):
 
     from ortobahn.agents.cifix import CIFixAgent
     from ortobahn.config import load_settings
-    from ortobahn.db import Database
+    from ortobahn.db import create_database
 
     settings = load_settings()
     setup_logging(settings.log_level)
@@ -685,7 +687,7 @@ def cmd_cifix(args):
         console.print("[yellow]CI fix agent is disabled (CIFIX_ENABLED=false)[/yellow]")
         sys.exit(0)
 
-    db = Database(settings.db_path)
+    db = create_database(settings)
     run_id = str(_uuid.uuid4())
 
     agent = CIFixAgent(

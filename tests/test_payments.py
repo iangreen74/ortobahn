@@ -45,22 +45,22 @@ class TestTrialExpiry:
     def test_trial_active_not_expired(self, test_db):
         test_db.create_client({"id": "trial1", "name": "TrialCo"})
         future = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-        test_db.conn.execute(
+        test_db.execute(
             "UPDATE clients SET subscription_status='trialing', trial_ends_at=? WHERE id=?",
             (future, "trial1"),
+            commit=True,
         )
-        test_db.conn.commit()
         status = test_db.check_and_expire_trial("trial1")
         assert status == "trialing"
 
     def test_trial_expired_flips_to_expired(self, test_db):
         test_db.create_client({"id": "trial2", "name": "ExpiredCo"})
         past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        test_db.conn.execute(
+        test_db.execute(
             "UPDATE clients SET subscription_status='trialing', trial_ends_at=? WHERE id=?",
             (past, "trial2"),
+            commit=True,
         )
-        test_db.conn.commit()
         status = test_db.check_and_expire_trial("trial2")
         assert status == "expired"
         client = test_db.get_client("trial2")
@@ -78,10 +78,10 @@ class TestTrialExpiry:
 
     def test_trial_no_end_date_stays_trialing(self, test_db):
         test_db.create_client({"id": "trial4", "name": "NoDateCo"})
-        test_db.conn.execute(
+        test_db.execute(
             "UPDATE clients SET subscription_status='trialing' WHERE id=?",
             ("trial4",),
+            commit=True,
         )
-        test_db.conn.commit()
         status = test_db.check_and_expire_trial("trial4")
         assert status == "trialing"

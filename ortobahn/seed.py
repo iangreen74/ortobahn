@@ -59,12 +59,10 @@ def seed_vaultscaler(db: Database) -> str:
     """Create the Vaultscaler client if it doesn't exist. Returns client_id."""
     existing = db.get_client("vaultscaler")
     if existing:
-        db.conn.execute("UPDATE clients SET internal=1 WHERE id='vaultscaler'")
-        db.conn.commit()
+        db.execute("UPDATE clients SET internal=1 WHERE id='vaultscaler'", commit=True)
         return "vaultscaler"
     cid = db.create_client(VAULTSCALER_CLIENT)
-    db.conn.execute("UPDATE clients SET internal=1 WHERE id=?", (cid,))
-    db.conn.commit()
+    db.execute("UPDATE clients SET internal=1 WHERE id=?", (cid,), commit=True)
     return cid
 
 
@@ -76,8 +74,7 @@ def seed_ortobahn(db: Database) -> str:
     """
     existing = db.get_client("ortobahn")
     if existing:
-        db.conn.execute("UPDATE clients SET internal=1 WHERE id='ortobahn'")
-        db.conn.commit()
+        db.execute("UPDATE clients SET internal=1 WHERE id='ortobahn'", commit=True)
         return "ortobahn"
 
     # Check if the 'default' client is already named Ortobahn (from migration 001)
@@ -97,14 +94,12 @@ def seed_ortobahn(db: Database) -> str:
             "company_story",
         ):
             if key in ORTOBAHN_CLIENT:
-                db.conn.execute(f"UPDATE clients SET {key}=? WHERE id='default'", (ORTOBAHN_CLIENT[key],))
-        db.conn.execute("UPDATE clients SET internal=1 WHERE id='default'")
-        db.conn.commit()
+                db.execute(f"UPDATE clients SET {key}=? WHERE id='default'", (ORTOBAHN_CLIENT[key],), commit=True)
+        db.execute("UPDATE clients SET internal=1 WHERE id='default'", commit=True)
         return "default"
 
     cid = db.create_client(ORTOBAHN_CLIENT)
-    db.conn.execute("UPDATE clients SET internal=1 WHERE id=?", (cid,))
-    db.conn.commit()
+    db.execute("UPDATE clients SET internal=1 WHERE id=?", (cid,), commit=True)
     return cid
 
 

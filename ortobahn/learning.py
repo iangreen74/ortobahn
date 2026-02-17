@@ -49,7 +49,7 @@ class LearningEngine:
         Returns a summary dict with count of new records and average calibration error.
         """
         # Get published posts that are missing calibration records
-        rows = self.db.conn.execute(
+        rows = self.db.fetchall(
             """
             SELECT p.id, p.confidence, p.text,
                    COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0)
@@ -63,12 +63,12 @@ class LearningEngine:
             LIMIT 50
             """,
             (client_id, client_id),
-        ).fetchall()
+        )
 
         if not rows:
             return {"new_records": 0, "avg_error": 0.0}
 
-        posts = [dict(r) for r in rows]
+        posts = rows
 
         # Sort by engagement to compute percentiles
         sorted_posts = sorted(posts, key=lambda p: p["engagement"])
@@ -87,7 +87,7 @@ class LearningEngine:
             total_error += error
 
             cal_id = str(uuid.uuid4())[:8]
-            self.db.conn.execute(
+            self.db.execute(
                 """
                 INSERT INTO confidence_calibration
                     (id, post_id, client_id, predicted_confidence, actual_engagement,
@@ -107,7 +107,7 @@ class LearningEngine:
                 ),
             )
 
-        self.db.conn.commit()
+        self.db.commit()
 
         avg_error = round(total_error / n, 4)
         logger.info(
@@ -130,7 +130,7 @@ class LearningEngine:
 
         Returns a list of anomaly dicts.
         """
-        rows = self.db.conn.execute(
+        posts = self.db.fetchall(
             """
             SELECT p.id, p.text, p.source_idea, p.confidence, p.platform,
                    COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0)
@@ -142,12 +142,10 @@ class LearningEngine:
             LIMIT 50
             """,
             (client_id,),
-        ).fetchall()
+        )
 
-        if not rows:
+        if not posts:
             return []
-
-        posts = [dict(r) for r in rows]
         total_engagement = sum(p["engagement"] for p in posts)
         avg_engagement = total_engagement / len(posts) if posts else 0.0
 
@@ -251,7 +249,7 @@ class LearningEngine:
         Returns dict mapping theme -> average engagement.
         """
         # Get recent strategies with their themes
-        strategy_rows = self.db.conn.execute(
+        strategy_rows = self.db.fetchall(
             """
             SELECT id, themes FROM strategies
             WHERE client_id = ?
@@ -259,7 +257,7 @@ class LearningEngine:
             LIMIT 10
             """,
             (client_id,),
-        ).fetchall()
+        )
 
         if not strategy_rows:
             return {}
@@ -279,7 +277,7 @@ class LearningEngine:
 
         # Get posts linked to these strategies with engagement
         placeholders = ",".join("?" for _ in strategy_ids)
-        post_rows = self.db.conn.execute(
+        post_rows = self.db.fetchall(
             f"""
             SELECT p.strategy_id,
                    COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0)
@@ -291,7 +289,7 @@ class LearningEngine:
               AND p.strategy_id IN ({placeholders})
             """,
             [client_id] + strategy_ids,
-        ).fetchall()
+        )
 
         if not post_rows:
             return {}
@@ -359,10 +357,10 @@ class LearningEngine:
 
         Returns list of concluded experiment summaries.
         """
-        experiments = self.db.conn.execute(
+        experiments = self.db.fetchall(
             "SELECT * FROM ab_experiments WHERE client_id = ? AND status = 'active'",
             (client_id,),
-        ).fetchall()
+        )
 
         if not experiments:
             return []
@@ -408,7 +406,7 @@ class LearningEngine:
 
             # Update experiment record
             now = datetime.now(timezone.utc).isoformat()
-            self.db.conn.execute(
+            self.db.execute(
                 """
                 UPDATE ab_experiments
                 SET status = 'concluded', winner = ?, pair_count = ?,
@@ -416,8 +414,8 @@ class LearningEngine:
                 WHERE id = ?
                 """,
                 (winner, completed_pairs, result_summary, now, exp_id),
+                commit=True,
             )
-            self.db.conn.commit()
 
             # Create a lesson memory from the result
             self.memory.remember(

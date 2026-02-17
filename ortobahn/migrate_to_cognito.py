@@ -6,7 +6,7 @@ import sys
 
 from ortobahn.cognito import CognitoClient, CognitoError
 from ortobahn.config import load_settings
-from ortobahn.db import Database
+from ortobahn.db import create_database
 
 
 def migrate() -> None:
@@ -16,16 +16,16 @@ def migrate() -> None:
         print("ERROR: COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID must be set")
         sys.exit(1)
 
-    db = Database(settings.db_path)
+    db = create_database(settings)
     cognito = CognitoClient(
         settings.cognito_user_pool_id,
         settings.cognito_client_id,
         settings.cognito_region,
     )
 
-    rows = db.conn.execute(
+    rows = db.fetchall(
         "SELECT id, email, name FROM clients WHERE email != '' AND (cognito_sub IS NULL OR cognito_sub = '')"
-    ).fetchall()
+    )
 
     if not rows:
         print("No clients to migrate.")
@@ -41,8 +41,7 @@ def migrate() -> None:
         print(f"Migrating {email} (client: {client_id})...")
         try:
             sub = cognito.admin_create_user(email, client_id)
-            db.conn.execute("UPDATE clients SET cognito_sub=? WHERE id=?", (sub, client_id))
-            db.conn.commit()
+            db.execute("UPDATE clients SET cognito_sub=? WHERE id=?", (sub, client_id), commit=True)
             print(f"  Created Cognito user {sub}")
         except CognitoError as e:
             if "UsernameExists" in e.code:

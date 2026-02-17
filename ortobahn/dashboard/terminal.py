@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -12,9 +10,8 @@ from rich.text import Text
 from ortobahn.db import Database
 
 
-def show_dashboard(db_path: Path):
+def show_dashboard(db: Database):
     console = Console()
-    db = Database(db_path)
 
     console.print()
     console.print(

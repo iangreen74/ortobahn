@@ -17,8 +17,7 @@ class OpsAgent(BaseAgent):
 
     def run(self, run_id: str, **kwargs) -> OpsReport:
         # Get client data
-        all_clients = self.db.conn.execute("SELECT * FROM clients ORDER BY created_at DESC").fetchall()
-        all_clients = [dict(r) for r in all_clients]
+        all_clients = self.db.fetchall("SELECT * FROM clients ORDER BY created_at DESC")
 
         pending_clients = [c for c in all_clients if c.get("status") == "pending"]
         active_clients = [c for c in all_clients if c.get("status") == "active" or c.get("active")]
@@ -62,11 +61,11 @@ class OpsAgent(BaseAgent):
                     except Exception as e:
                         logger.warning(f"Failed to enrich client {client.get('name')}: {e}")
 
-                self.db.conn.execute(
+                self.db.execute(
                     "UPDATE clients SET status='active', active=1 WHERE id=?",
                     (client["id"],),
+                    commit=True,
                 )
-                self.db.conn.commit()
                 actions.append(
                     OpsAction(
                         action="activate_client",

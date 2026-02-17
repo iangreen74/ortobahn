@@ -74,7 +74,7 @@ async def onboard(request: Request, body: OnboardRequest):
     db = request.app.state.db
 
     # Check for duplicate email
-    existing = db.conn.execute("SELECT id FROM clients WHERE email=?", (body.email,)).fetchone()
+    existing = db.fetchone("SELECT id FROM clients WHERE email=?", (body.email,))
     if existing:
         return JSONResponse(
             {"detail": "An account with this email already exists."},
@@ -110,8 +110,7 @@ async def onboard(request: Request, body: OnboardRequest):
     except CognitoError as exc:
         log.warning("Cognito sign-up failed for %s: %s", body.email, exc)
         # Rollback: remove the client record we just created
-        db.conn.execute("DELETE FROM clients WHERE id=?", (client_id,))
-        db.conn.commit()
+        db.execute("DELETE FROM clients WHERE id=?", (client_id,), commit=True)
         return JSONResponse(
             {"detail": str(exc)},
             status_code=400,
@@ -119,11 +118,11 @@ async def onboard(request: Request, body: OnboardRequest):
 
     # Store the Cognito sub and start 14-day free trial
     trial_end = datetime.now(timezone.utc) + timedelta(days=14)
-    db.conn.execute(
+    db.execute(
         "UPDATE clients SET cognito_sub=?, subscription_status='trialing', trial_ends_at=? WHERE id=?",
         (cognito_sub, trial_end.isoformat(), client_id),
+        commit=True,
     )
-    db.conn.commit()
 
     # Generate API key for programmatic access
     raw_key = generate_api_key()

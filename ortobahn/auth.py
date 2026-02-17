@@ -81,13 +81,13 @@ async def get_current_client(
     # 1. API Key header
     if api_key:
         hashed = hash_api_key(api_key)
-        row = db.conn.execute("SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,)).fetchone()
+        row = db.fetchone("SELECT client_id FROM api_keys WHERE key_hash=? AND active=1", (hashed,))
         if row:
-            db.conn.execute(
+            db.execute(
                 "UPDATE api_keys SET last_used_at=? WHERE key_hash=?",
                 (datetime.now(timezone.utc).isoformat(), hashed),
+                commit=True,
             )
-            db.conn.commit()
             client = db.get_client(row["client_id"])
             if client:
                 return client

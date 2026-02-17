@@ -33,33 +33,33 @@ def decrypt_credentials(encrypted: str, secret_key: str) -> dict:
 def save_platform_credentials(db: Database, client_id: str, platform: str, creds: dict, secret_key: str) -> str:
     """Store encrypted credentials for a client+platform. Upserts."""
     encrypted = encrypt_credentials(creds, secret_key)
-    existing = db.conn.execute(
+    existing = db.fetchone(
         "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
         (client_id, platform),
-    ).fetchone()
+    )
     if existing:
-        db.conn.execute(
+        db.execute(
             "UPDATE platform_credentials SET credentials_encrypted=?, updated_at=CURRENT_TIMESTAMP "
             "WHERE client_id=? AND platform=?",
             (encrypted, client_id, platform),
+            commit=True,
         )
-        db.conn.commit()
         return existing["id"]
     cid = str(uuid.uuid4())
-    db.conn.execute(
+    db.execute(
         "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted) VALUES (?, ?, ?, ?)",
         (cid, client_id, platform, encrypted),
+        commit=True,
     )
-    db.conn.commit()
     return cid
 
 
 def get_platform_credentials(db: Database, client_id: str, platform: str, secret_key: str) -> dict | None:
     """Get decrypted credentials for a client+platform, or None."""
-    row = db.conn.execute(
+    row = db.fetchone(
         "SELECT credentials_encrypted FROM platform_credentials WHERE client_id=? AND platform=?",
         (client_id, platform),
-    ).fetchone()
+    )
     if row:
         return decrypt_credentials(row["credentials_encrypted"], secret_key)
     return None
@@ -67,10 +67,10 @@ def get_platform_credentials(db: Database, client_id: str, platform: str, secret
 
 def get_all_platform_credentials(db: Database, client_id: str, secret_key: str) -> dict[str, dict]:
     """Get all credentials for a client, keyed by platform name."""
-    rows = db.conn.execute(
+    rows = db.fetchall(
         "SELECT platform, credentials_encrypted FROM platform_credentials WHERE client_id=?",
         (client_id,),
-    ).fetchall()
+    )
     return {row["platform"]: decrypt_credentials(row["credentials_encrypted"], secret_key) for row in rows}
 
 

@@ -16,6 +16,8 @@ class LLMResponse:
     output_tokens: int
     model: str
     thinking: str = ""
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
 
 
 def call_llm(
@@ -48,10 +50,27 @@ def call_llm(
         # Extended thinking doesn't support system parameter; prepend to user message
         if system_prompt:
             kwargs["messages"] = [
-                {"role": "user", "content": f"<system>\n{system_prompt}\n</system>\n\n{user_message}"},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"<system>\n{system_prompt}\n</system>",
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {"type": "text", "text": user_message},
+                    ],
+                },
             ]
     else:
-        kwargs["system"] = system_prompt
+        # Use structured system prompt with cache_control for prompt caching
+        kwargs["system"] = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
 
     # Use streaming for extended thinking (required for long requests)
     use_stream = thinking_budget > 0
@@ -79,6 +98,12 @@ def call_llm(
                 output_tokens=response.usage.output_tokens,
                 model=model,
                 thinking="\n".join(thinking_parts),
+                cache_creation_input_tokens=getattr(
+                    response.usage, "cache_creation_input_tokens", 0
+                ) or 0,
+                cache_read_input_tokens=getattr(
+                    response.usage, "cache_read_input_tokens", 0
+                ) or 0,
             )
         except anthropic.RateLimitError:
             wait = 2**attempt * 5

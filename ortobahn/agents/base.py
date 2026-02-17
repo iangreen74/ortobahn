@@ -98,5 +98,7 @@ class BaseAgent(ABC):
             input_tokens=llm_response.input_tokens if llm_response else 0,
             output_tokens=llm_response.output_tokens if llm_response else 0,
             raw_response=llm_response.text if llm_response else "",
+            cache_creation_input_tokens=llm_response.cache_creation_input_tokens if llm_response else 0,
+            cache_read_input_tokens=llm_response.cache_read_input_tokens if llm_response else 0,
         )
         logger.info(f"[{self.name}] {output_summary[:100]}")

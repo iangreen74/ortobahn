@@ -17,7 +17,7 @@ from ortobahn.agents.reflection import ReflectionAgent
 from ortobahn.agents.sre import SREAgent
 from ortobahn.agents.strategist import StrategistAgent
 from ortobahn.config import Settings
-from ortobahn.db import Database
+from ortobahn.db import create_database
 from ortobahn.integrations.bluesky import BlueskyClient
 from ortobahn.integrations.linkedin import LinkedInClient
 from ortobahn.integrations.newsapi_client import get_trending_headlines
@@ -35,7 +35,7 @@ class Pipeline:
     def __init__(self, settings: Settings, dry_run: bool = False):
         self.settings = settings
         self.dry_run = dry_run
-        self.db = Database(settings.db_path)
+        self.db = create_database(settings)
 
         # Platform clients (optional - only init if credentials configured)
         self.bluesky = None
@@ -527,11 +527,15 @@ class Pipeline:
             raise
 
         # Calculate token usage from agent logs
+        total_cache_creation = 0
+        total_cache_read = 0
         logs = self.db.get_recent_agent_logs(limit=10)
         for log in logs:
             if log.get("run_id") == run_id:
                 total_input_tokens += log.get("input_tokens") or 0
                 total_output_tokens += log.get("output_tokens") or 0
+                total_cache_creation += log.get("cache_creation_input_tokens") or 0
+                total_cache_read += log.get("cache_read_input_tokens") or 0
 
         self.db.complete_pipeline_run(
             run_id,
@@ -539,6 +543,8 @@ class Pipeline:
             errors=errors if errors else None,
             total_input_tokens=total_input_tokens,
             total_output_tokens=total_output_tokens,
+            total_cache_creation_tokens=total_cache_creation,
+            total_cache_read_tokens=total_cache_read,
         )
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} completed: {posts_published} posts published ===")

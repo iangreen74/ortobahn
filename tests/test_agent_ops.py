@@ -56,7 +56,7 @@ class TestOpsAgent:
         assert "TestCorp" in report.actions_taken[0].target
 
         # Verify client was activated in DB
-        clients = test_db.conn.execute("SELECT status FROM clients WHERE name='TestCorp'").fetchone()
+        clients = test_db.fetchone("SELECT status FROM clients WHERE name='TestCorp'")
         assert clients["status"] == "active"
 
     def test_does_not_activate_incomplete_profile(self, test_db, mock_llm_response):

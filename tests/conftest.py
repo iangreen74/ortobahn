@@ -60,8 +60,7 @@ def test_api_key(test_db):
     if not client:
         test_db.create_client({"id": "default", "name": "Test Default"})
     # Mark as internal so it passes admin checks
-    test_db.conn.execute("UPDATE clients SET internal=1 WHERE id='default'")
-    test_db.conn.commit()
+    test_db.execute("UPDATE clients SET internal=1 WHERE id='default'", commit=True)
 
     raw_key = generate_api_key()
     hashed = hash_api_key(raw_key)

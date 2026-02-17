@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 
 class TestDatabaseTables:
     def test_tables_created(self, test_db):
-        cursor = test_db.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        tables = [row["name"] for row in cursor.fetchall()]
+        rows = test_db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row["name"] for row in rows]
         assert "strategies" in tables
         assert "posts" in tables
         assert "metrics" in tables

@@ -30,7 +30,7 @@ def get_ab_results(db: Database, client_id: str | None = None) -> dict:
         query += " AND p.client_id=?"
         params.append(client_id)
 
-    rows = db.conn.execute(query, params).fetchall()
+    rows = db.fetchall(query, params)
 
     # Group by pair_id, compare A vs B
     pairs: dict[str, dict] = {}

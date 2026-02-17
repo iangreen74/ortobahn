@@ -40,11 +40,12 @@ class Settings:
     thinking_budget_creator: int = 6_000
 
     # Database
-    db_path: Path = Path("data/ortobahn.db")
+    database_url: str = ""  # PostgreSQL: postgresql://user:pass@host:5432/dbname
+    db_path: Path = Path("data/ortobahn.db")  # SQLite fallback (ignored if database_url set)
 
     # Pipeline
     post_confidence_threshold: float = 0.7
-    pipeline_interval_hours: int = 6
+    pipeline_interval_hours: int = 8
     max_posts_per_cycle: int = 4
 
     # Default client
@@ -173,9 +174,10 @@ def load_settings() -> Settings:
         thinking_budget_ceo=int(os.environ.get("THINKING_BUDGET_CEO", "10000")),
         thinking_budget_strategist=int(os.environ.get("THINKING_BUDGET_STRATEGIST", "8000")),
         thinking_budget_creator=int(os.environ.get("THINKING_BUDGET_CREATOR", "6000")),
+        database_url=os.environ.get("DATABASE_URL", ""),
         db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
         post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),
-        pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "6")),
+        pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "8")),
         max_posts_per_cycle=int(os.environ.get("MAX_POSTS_PER_CYCLE", "4")),
         default_client_id=os.environ.get("DEFAULT_CLIENT_ID", "default"),
         web_host=os.environ.get("WEB_HOST", "127.0.0.1"),

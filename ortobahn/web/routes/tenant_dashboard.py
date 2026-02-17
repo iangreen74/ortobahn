@@ -59,10 +59,10 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     # Check connected platforms
     connected_platforms = []
     for platform in ("bluesky", "twitter", "linkedin"):
-        row = db.conn.execute(
+        row = db.fetchone(
             "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
             (client["id"], platform),
-        ).fetchone()
+        )
         if row:
             connected_platforms.append(platform)
 
@@ -126,11 +126,11 @@ async def tenant_toggle_auto_publish(
     db = request.app.state.db
     enabled = 1 if auto_publish == "on" else 0
     interval = max(3, min(24, posting_interval_hours))
-    db.conn.execute(
+    db.execute(
         "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=? WHERE id=?",
         (enabled, target_platforms, interval, client["id"]),
+        commit=True,
     )
-    db.conn.commit()
     return RedirectResponse("/my/settings", status_code=303)
 
 
@@ -144,10 +144,10 @@ async def tenant_settings(request: Request, client: AuthClient):
     # Check which platforms have credentials stored
     connected_platforms = []
     for platform in ("bluesky", "twitter", "linkedin"):
-        row = db.conn.execute(
+        row = db.fetchone(
             "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
             (client["id"], platform),
-        ).fetchone()
+        )
         if row:
             connected_platforms.append(platform)
 

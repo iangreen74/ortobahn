@@ -50,7 +50,7 @@ class MemoryStore:
         query += " ORDER BY confidence DESC, times_reinforced DESC LIMIT ?"
         params.append(limit * 2)  # Fetch extra for scoring
 
-        rows = self.db.conn.execute(query, params).fetchall()
+        rows = self.db.fetchall(query, params)
         memories = [self._row_to_memory(row) for row in rows]
 
         # Score and sort by relevance
@@ -61,28 +61,35 @@ class MemoryStore:
 
     def contradict(self, memory_id: str, evidence: str = "") -> None:
         """Record counter-evidence against a memory."""
-        self.db.conn.execute(
+        self.db.execute(
             "UPDATE agent_memories SET times_contradicted = times_contradicted + 1, updated_at = ? WHERE id = ?",
             (datetime.now(timezone.utc).isoformat(), memory_id),
+            commit=True,
         )
-        self.db.conn.commit()
 
     def prune(self, max_age_days: int = 90, min_confidence: float = 0.2) -> int:
         """Remove stale or low-confidence memories. Returns count removed."""
+        from datetime import timedelta
+
         now = datetime.now(timezone.utc).isoformat()
-        # Deactivate old low-confidence memories
-        result = self.db.conn.execute(
-            """UPDATE agent_memories SET active = 0
-            WHERE active = 1 AND (
-                (confidence < ? AND julianday(?) - julianday(updated_at) > ?)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+        # Count how many will be affected, then deactivate
+        condition = """active = 1 AND (
+                (confidence < ? AND updated_at < ?)
                 OR (times_contradicted > times_reinforced * 2 AND times_contradicted > 2)
                 OR (expires_at IS NOT NULL AND expires_at < ?)
-            )""",
-            (min_confidence, now, max_age_days, now),
+            )"""
+        params = (min_confidence, cutoff, now)
+        row = self.db.fetchone(
+            f"SELECT COUNT(*) as cnt FROM agent_memories WHERE {condition}", params
         )
-        self.db.conn.commit()
-        count = result.rowcount
+        count = row["cnt"] if row else 0
         if count > 0:
+            self.db.execute(
+                f"UPDATE agent_memories SET active = 0 WHERE {condition}",
+                params,
+                commit=True,
+            )
             logger.info(f"Pruned {count} stale/low-confidence memories")
         return count
 
@@ -139,11 +146,11 @@ class MemoryStore:
 
     def count(self, agent_name: str, client_id: str = "default") -> int:
         """Count active memories for an agent."""
-        row = self.db.conn.execute(
-            "SELECT COUNT(*) FROM agent_memories WHERE agent_name = ? AND client_id = ? AND active = 1",
+        row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM agent_memories WHERE agent_name = ? AND client_id = ? AND active = 1",
             (agent_name, client_id),
-        ).fetchone()
-        return row[0]
+        )
+        return row["cnt"] if row else 0
 
     def enforce_limits(self, agent_name: str, client_id: str = "default", max_memories: int = 100) -> int:
         """Ensure memory count stays within limits by deactivating lowest-relevance entries."""
@@ -151,7 +158,7 @@ class MemoryStore:
         if count <= max_memories:
             return 0
         excess = count - max_memories
-        self.db.conn.execute(
+        self.db.execute(
             """UPDATE agent_memories SET active = 0 WHERE id IN (
                 SELECT id FROM agent_memories
                 WHERE agent_name = ? AND client_id = ? AND active = 1
@@ -159,8 +166,8 @@ class MemoryStore:
                 LIMIT ?
             )""",
             (agent_name, client_id, excess),
+            commit=True,
         )
-        self.db.conn.commit()
         return excess
 
     # --- Internal helpers ---
@@ -168,7 +175,7 @@ class MemoryStore:
     def _create(self, memory: AgentMemory) -> str:
         mem_id = memory.id or str(uuid.uuid4())[:8]
         now = datetime.now(timezone.utc).isoformat()
-        self.db.conn.execute(
+        self.db.execute(
             """INSERT INTO agent_memories
             (id, agent_name, client_id, memory_type, category, content, confidence,
              source_run_id, source_post_ids, times_reinforced, times_contradicted,
@@ -189,20 +196,20 @@ class MemoryStore:
                 now,
                 now,
             ),
+            commit=True,
         )
-        self.db.conn.commit()
         logger.debug(f"Created memory {mem_id} for {memory.agent_name}: {memory.category.value}")
         return mem_id
 
     def _find_similar(self, memory: AgentMemory) -> dict | None:
         """Find an existing active memory with same agent, client, type, and category."""
-        rows = self.db.conn.execute(
+        rows = self.db.fetchall(
             """SELECT * FROM agent_memories
             WHERE agent_name = ? AND client_id = ? AND memory_type = ? AND category = ?
                 AND active = 1
             ORDER BY times_reinforced DESC LIMIT 5""",
             (memory.agent_name, memory.client_id, memory.memory_type.value, memory.category.value),
-        ).fetchall()
+        )
 
         # Check content similarity (same key findings)
         for row in rows:
@@ -218,15 +225,15 @@ class MemoryStore:
         """Reinforce an existing memory with new supporting evidence."""
         now = datetime.now(timezone.utc).isoformat()
         # Boost confidence slightly (up to 0.95)
-        self.db.conn.execute(
+        self.db.execute(
             """UPDATE agent_memories SET
                 times_reinforced = times_reinforced + 1,
                 confidence = MIN(0.95, confidence + 0.05),
                 updated_at = ?
             WHERE id = ?""",
             (now, memory_id),
+            commit=True,
         )
-        self.db.conn.commit()
         logger.debug(f"Reinforced memory {memory_id}")
 
     def _row_to_memory(self, row) -> AgentMemory:
@@ -260,8 +267,7 @@ class MemoryStore:
 
     def _get_goals(self, agent_name: str, client_id: str) -> list[dict]:
         """Retrieve current goals for an agent."""
-        rows = self.db.conn.execute(
+        return self.db.fetchall(
             "SELECT * FROM agent_goals WHERE agent_name = ? AND client_id = ?",
             (agent_name, client_id),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        )

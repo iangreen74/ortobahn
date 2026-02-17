@@ -15,6 +15,7 @@ dependencies = [
     "tweepy>=4.14.0",
     "requests>=2.31.0",
     "cryptography>=42.0",
+    "psycopg2-binary>=2.9",
 ]
 
 [project.scripts]

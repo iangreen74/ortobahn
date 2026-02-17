@@ -1,31 +1,46 @@
-"""Lightweight schema migration system for SQLite."""
+"""Lightweight schema migration system — supports PostgreSQL and SQLite."""
 
 from __future__ import annotations
 
 import logging
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ortobahn.db import Database
 
 logger = logging.getLogger("ortobahn.migrations")
 
 
-def _get_schema_version(conn: sqlite3.Connection) -> int:
-    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)")
-    row = conn.execute("SELECT version FROM schema_version").fetchone()
+def _safe_add_column(db: Database, table: str, column_def: str) -> None:
+    """Add a column if it doesn't already exist. Silently ignores duplicates."""
+    try:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+        db.commit()
+    except Exception as e:
+        err = str(e).lower()
+        if "duplicate column" in err or "already exists" in err:
+            pass
+        else:
+            raise
+
+
+def _get_schema_version(db: Database) -> int:
+    db.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)")
+    db.commit()
+    row = db.fetchone("SELECT version FROM schema_version")
     if row is None:
-        conn.execute("INSERT INTO schema_version (version) VALUES (0)")
-        conn.commit()
+        db.execute("INSERT INTO schema_version (version) VALUES (0)", commit=True)
         return 0
-    return row[0] if isinstance(row, (tuple, list)) else row["version"]
+    return row["version"]
 
 
-def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
-    conn.execute("UPDATE schema_version SET version = ?", (version,))
-    conn.commit()
+def _set_schema_version(db: Database, version: int) -> None:
+    db.execute("UPDATE schema_version SET version = ?", (version,), commit=True)
 
 
-def _migration_001_add_clients_and_platform(conn: sqlite3.Connection) -> None:
+def _migration_001_add_clients_and_platform(db: Database) -> None:
     """Add clients table and extend posts/strategies/pipeline_runs with client_id/platform."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
@@ -36,109 +51,77 @@ def _migration_001_add_clients_and_platform(conn: sqlite3.Connection) -> None:
             website TEXT NOT NULL DEFAULT '',
             active INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        INSERT OR IGNORE INTO clients (id, name, description, industry, target_audience, brand_voice)
-        VALUES ('default', 'Ortobahn', 'Autonomous AI marketing engine', 'AI/Technology',
-                'tech-savvy professionals, founders, AI enthusiasts', 'authoritative but approachable');
+        )
     """)
+    db.execute(
+        """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO NOTHING""",
+        (
+            "default",
+            "Ortobahn",
+            "Autonomous AI marketing engine",
+            "AI/Technology",
+            "tech-savvy professionals, founders, AI enthusiasts",
+            "authoritative but approachable",
+        ),
+    )
+    db.commit()
 
-    # Add columns to existing tables (SQLite requires one ALTER per column)
-    for stmt in [
-        "ALTER TABLE strategies ADD COLUMN client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)",
-        "ALTER TABLE posts ADD COLUMN client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)",
-        "ALTER TABLE posts ADD COLUMN platform TEXT NOT NULL DEFAULT 'generic'",
-        "ALTER TABLE posts ADD COLUMN content_type TEXT NOT NULL DEFAULT 'social_post'",
-        "ALTER TABLE pipeline_runs ADD COLUMN client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)",
+    for col_def in [
+        ("strategies", "client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)"),
+        ("posts", "client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)"),
+        ("posts", "platform TEXT NOT NULL DEFAULT 'generic'"),
+        ("posts", "content_type TEXT NOT NULL DEFAULT 'social_post'"),
+        ("pipeline_runs", "client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id)"),
     ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+        _safe_add_column(db, col_def[0], col_def[1])
 
 
-def _migration_002_add_platform_uri(conn: sqlite3.Connection) -> None:
+def _migration_002_add_platform_uri(db: Database) -> None:
     """Add platform-agnostic URI/ID columns to posts."""
-    for stmt in [
-        "ALTER TABLE posts ADD COLUMN platform_uri TEXT",
-        "ALTER TABLE posts ADD COLUMN platform_id TEXT",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
+    _safe_add_column(db, "posts", "platform_uri TEXT")
+    _safe_add_column(db, "posts", "platform_id TEXT")
     # Backfill from bluesky columns
-    conn.execute(
+    db.execute(
         "UPDATE posts SET platform_uri = bluesky_uri, platform_id = bluesky_cid "
         "WHERE bluesky_uri IS NOT NULL AND platform_uri IS NULL"
     )
-    conn.commit()
+    db.commit()
 
 
-def _migration_003_add_client_onboarding(conn: sqlite3.Connection) -> None:
+def _migration_003_add_client_onboarding(db: Database) -> None:
     """Add email and status columns to clients for onboarding support."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN email TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+    _safe_add_column(db, "clients", "email TEXT NOT NULL DEFAULT ''")
+    _safe_add_column(db, "clients", "status TEXT NOT NULL DEFAULT 'active'")
 
 
-def _migration_004_add_client_enrichment(conn: sqlite3.Connection) -> None:
+def _migration_004_add_client_enrichment(db: Database) -> None:
     """Add product/positioning/pillars/story columns to clients."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN products TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN competitive_positioning TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN key_messages TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN content_pillars TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN company_story TEXT NOT NULL DEFAULT ''",
+    for col in [
+        "products TEXT NOT NULL DEFAULT ''",
+        "competitive_positioning TEXT NOT NULL DEFAULT ''",
+        "key_messages TEXT NOT NULL DEFAULT ''",
+        "content_pillars TEXT NOT NULL DEFAULT ''",
+        "company_story TEXT NOT NULL DEFAULT ''",
     ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+        _safe_add_column(db, "clients", col)
 
 
-def _migration_005_add_monthly_budget(conn: sqlite3.Connection) -> None:
+def _migration_005_add_monthly_budget(db: Database) -> None:
     """Add monthly_budget column to clients for CFO enforcement."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN monthly_budget REAL DEFAULT 0",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+    _safe_add_column(db, "clients", "monthly_budget REAL DEFAULT 0")
 
 
-def _migration_006_add_ab_testing(conn: sqlite3.Connection) -> None:
+def _migration_006_add_ab_testing(db: Database) -> None:
     """Add A/B testing columns to posts."""
-    for stmt in [
-        "ALTER TABLE posts ADD COLUMN ab_group TEXT DEFAULT NULL",
-        "ALTER TABLE posts ADD COLUMN ab_pair_id TEXT DEFAULT NULL",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+    _safe_add_column(db, "posts", "ab_group TEXT DEFAULT NULL")
+    _safe_add_column(db, "posts", "ab_pair_id TEXT DEFAULT NULL")
 
 
-def _migration_007_add_auth_and_credentials(conn: sqlite3.Connection) -> None:
+def _migration_007_add_auth_and_credentials(db: Database) -> None:
     """Add API keys, sessions, and encrypted platform credentials."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS api_keys (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL REFERENCES clients(id),
@@ -148,8 +131,9 @@ def _migration_007_add_auth_and_credentials(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_used_at TIMESTAMP,
             active INTEGER NOT NULL DEFAULT 1
-        );
-
+        )
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS platform_credentials (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL REFERENCES clients(id),
@@ -158,39 +142,38 @@ def _migration_007_add_auth_and_credentials(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(client_id, platform)
-        );
+        )
     """)
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN internal INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE clients ADD COLUMN stripe_customer_id TEXT",
-        "ALTER TABLE clients ADD COLUMN stripe_subscription_id TEXT",
-        "ALTER TABLE clients ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'none'",
-        "ALTER TABLE clients ADD COLUMN subscription_plan TEXT NOT NULL DEFAULT ''",
+    db.commit()
+
+    for col in [
+        "internal INTEGER NOT NULL DEFAULT 0",
+        "stripe_customer_id TEXT",
+        "stripe_subscription_id TEXT",
+        "subscription_status TEXT NOT NULL DEFAULT 'none'",
+        "subscription_plan TEXT NOT NULL DEFAULT ''",
     ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.execute("UPDATE clients SET internal=1 WHERE id IN ('default', 'vaultscaler', 'ortobahn')")
-    conn.commit()
+        _safe_add_column(db, "clients", col)
+
+    db.execute("UPDATE clients SET internal=1 WHERE id IN ('default', 'vaultscaler', 'ortobahn')")
+    db.commit()
 
 
-def _migration_008_add_stripe_events(conn: sqlite3.Connection) -> None:
+def _migration_008_add_stripe_events(db: Database) -> None:
     """Add stripe events log for idempotent webhook processing."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS stripe_events (
             id TEXT PRIMARY KEY,
             event_type TEXT NOT NULL,
             processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        )
     """)
-    conn.commit()
+    db.commit()
 
 
-def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
+def _migration_009_add_engineering_tasks(db: Database) -> None:
     """Add engineering task backlog and CTO agent tracking tables."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS engineering_tasks (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
@@ -208,8 +191,9 @@ def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
             files_changed TEXT,
             error TEXT,
             blocked_reason TEXT
-        );
-
+        )
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS code_changes (
             id TEXT PRIMARY KEY,
             task_id TEXT NOT NULL REFERENCES engineering_tasks(id),
@@ -218,8 +202,9 @@ def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
             change_type TEXT NOT NULL,
             diff_summary TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
+        )
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS cto_runs (
             id TEXT PRIMARY KEY,
             task_id TEXT REFERENCES engineering_tasks(id),
@@ -235,14 +220,14 @@ def _migration_009_add_engineering_tasks(conn: sqlite3.Connection) -> None:
             error TEXT,
             total_input_tokens INTEGER DEFAULT 0,
             total_output_tokens INTEGER DEFAULT 0
-        );
+        )
     """)
-    conn.commit()
+    db.commit()
 
 
-def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
+def _migration_010_add_intelligence_system(db: Database) -> None:
     """Add agent memory, confidence calibration, A/B experiments, goals, and reflection tables."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS agent_memories (
             id TEXT PRIMARY KEY,
             agent_name TEXT NOT NULL,
@@ -260,13 +245,14 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
             expires_at TIMESTAMP,
             superseded_by TEXT,
             active INTEGER NOT NULL DEFAULT 1
-        );
+        )
+    """)
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_memories_agent_client
+        ON agent_memories(agent_name, client_id, active)""")
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_memories_type
+        ON agent_memories(memory_type, category)""")
 
-        CREATE INDEX IF NOT EXISTS idx_memories_agent_client
-            ON agent_memories(agent_name, client_id, active);
-        CREATE INDEX IF NOT EXISTS idx_memories_type
-            ON agent_memories(memory_type, category);
-
+    db.execute("""
         CREATE TABLE IF NOT EXISTS confidence_calibration (
             id TEXT PRIMARY KEY,
             post_id TEXT NOT NULL,
@@ -277,11 +263,12 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
             calibration_error REAL,
             measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             run_id TEXT
-        );
+        )
+    """)
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_calibration_client
+        ON confidence_calibration(client_id, measured_at)""")
 
-        CREATE INDEX IF NOT EXISTS idx_calibration_client
-            ON confidence_calibration(client_id, measured_at);
-
+    db.execute("""
         CREATE TABLE IF NOT EXISTS ab_experiments (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL DEFAULT 'default',
@@ -297,11 +284,12 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             concluded_at TIMESTAMP,
             created_by_run_id TEXT
-        );
+        )
+    """)
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_experiments_client
+        ON ab_experiments(client_id, status)""")
 
-        CREATE INDEX IF NOT EXISTS idx_experiments_client
-            ON ab_experiments(client_id, status);
-
+    db.execute("""
         CREATE TABLE IF NOT EXISTS agent_goals (
             id TEXT PRIMARY KEY,
             agent_name TEXT NOT NULL,
@@ -313,11 +301,12 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
             measurement_window_days INTEGER DEFAULT 7,
             last_measured_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        )
+    """)
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_goals_agent
+        ON agent_goals(agent_name, client_id)""")
 
-        CREATE INDEX IF NOT EXISTS idx_goals_agent
-            ON agent_goals(agent_name, client_id);
-
+    db.execute("""
         CREATE TABLE IF NOT EXISTS reflection_reports (
             id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -331,14 +320,14 @@ def _migration_010_add_intelligence_system(conn: sqlite3.Connection) -> None:
             new_memories TEXT,
             recommendations TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        )
     """)
-    conn.commit()
+    db.commit()
 
 
-def _migration_011_add_ci_fix_tracking(conn: sqlite3.Connection) -> None:
+def _migration_011_add_ci_fix_tracking(db: Database) -> None:
     """Add CI fix tracking table for the CI/CD self-healing agent."""
-    conn.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS ci_fix_attempts (
             id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -360,74 +349,54 @@ def _migration_011_add_ci_fix_tracking(conn: sqlite3.Connection) -> None:
             validation_passed INTEGER DEFAULT 0,
             error_message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_ci_fix_category
-            ON ci_fix_attempts(failure_category, status);
-        CREATE INDEX IF NOT EXISTS idx_ci_fix_gh_run
-            ON ci_fix_attempts(gh_run_id);
+        )
     """)
-    conn.commit()
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_ci_fix_category
+        ON ci_fix_attempts(failure_category, status)""")
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_ci_fix_gh_run
+        ON ci_fix_attempts(gh_run_id)""")
+    db.commit()
 
 
-def _migration_012_add_auto_publish(conn: sqlite3.Connection) -> None:
+def _migration_012_add_auto_publish(db: Database) -> None:
     """Add per-client auto_publish toggle and target_platforms."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN auto_publish INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE clients ADD COLUMN target_platforms TEXT NOT NULL DEFAULT 'bluesky'",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
+    _safe_add_column(db, "clients", "auto_publish INTEGER NOT NULL DEFAULT 0")
+    _safe_add_column(db, "clients", "target_platforms TEXT NOT NULL DEFAULT 'bluesky'")
     # Enable auto_publish for existing internal clients
-    conn.execute("UPDATE clients SET auto_publish=1, target_platforms='bluesky' WHERE internal=1")
-    conn.commit()
+    db.execute("UPDATE clients SET auto_publish=1, target_platforms='bluesky' WHERE internal=1")
+    db.commit()
 
 
-def _migration_013_add_cognito_sub(conn: sqlite3.Connection) -> None:
+def _migration_013_add_cognito_sub(db: Database) -> None:
     """Add cognito_sub column to clients for Cognito user mapping."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN cognito_sub TEXT",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_clients_cognito_sub ON clients(cognito_sub)")
-    conn.commit()
+    _safe_add_column(db, "clients", "cognito_sub TEXT")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_clients_cognito_sub ON clients(cognito_sub)")
+    db.commit()
 
 
-def _migration_014_add_trial_ends_at(conn: sqlite3.Connection) -> None:
+def _migration_014_add_trial_ends_at(db: Database) -> None:
     """Add trial_ends_at column for free-trial tracking."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN trial_ends_at TIMESTAMP",
-    ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+    _safe_add_column(db, "clients", "trial_ends_at TIMESTAMP")
 
 
-def _migration_015_add_client_trends_and_schedule(conn: sqlite3.Connection) -> None:
+def _migration_015_add_client_trends_and_schedule(db: Database) -> None:
     """Add per-client trend config and posting schedule."""
-    for stmt in [
-        "ALTER TABLE clients ADD COLUMN news_category TEXT NOT NULL DEFAULT 'technology'",
-        "ALTER TABLE clients ADD COLUMN news_keywords TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN rss_feeds TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN posting_interval_hours INTEGER NOT NULL DEFAULT 6",
-        "ALTER TABLE clients ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'",
+    for col in [
+        "news_category TEXT NOT NULL DEFAULT 'technology'",
+        "news_keywords TEXT NOT NULL DEFAULT ''",
+        "rss_feeds TEXT NOT NULL DEFAULT ''",
+        "posting_interval_hours INTEGER NOT NULL DEFAULT 8",
+        "timezone TEXT NOT NULL DEFAULT 'UTC'",
     ]:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
-                raise
-    conn.commit()
+        _safe_add_column(db, "clients", col)
+
+
+def _migration_016_add_cache_token_tracking(db: Database) -> None:
+    """Add cache token columns for prompt caching cost tracking."""
+    _safe_add_column(db, "agent_logs", "cache_creation_input_tokens INTEGER DEFAULT 0")
+    _safe_add_column(db, "agent_logs", "cache_read_input_tokens INTEGER DEFAULT 0")
+    _safe_add_column(db, "pipeline_runs", "total_cache_creation_tokens INTEGER DEFAULT 0")
+    _safe_add_column(db, "pipeline_runs", "total_cache_read_tokens INTEGER DEFAULT 0")
 
 
 MIGRATIONS = {
@@ -446,12 +415,13 @@ MIGRATIONS = {
     13: _migration_013_add_cognito_sub,
     14: _migration_014_add_trial_ends_at,
     15: _migration_015_add_client_trends_and_schedule,
+    16: _migration_016_add_cache_token_tracking,
 }
 
 
-def run_migrations(conn: sqlite3.Connection) -> int:
+def run_migrations(db: Database) -> int:
     """Run any pending migrations. Returns the final schema version."""
-    current = _get_schema_version(conn)
+    current = _get_schema_version(db)
     latest = max(MIGRATIONS.keys()) if MIGRATIONS else 0
 
     if current >= latest:
@@ -460,8 +430,8 @@ def run_migrations(conn: sqlite3.Connection) -> int:
     for version in range(current + 1, latest + 1):
         if version in MIGRATIONS:
             logger.info(f"Running migration {version}...")
-            MIGRATIONS[version](conn)
-            _set_schema_version(conn, version)
+            MIGRATIONS[version](db)
+            _set_schema_version(db, version)
             logger.info(f"Migration {version} complete.")
 
     return latest

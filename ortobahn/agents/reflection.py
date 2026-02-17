@@ -168,8 +168,8 @@ class ReflectionAgent(BaseAgent):
 
             # Store to calibration table
             try:
-                self.db.conn.execute(
-                    """INSERT OR REPLACE INTO confidence_calibration
+                self.db.execute(
+                    """INSERT INTO confidence_calibration
                     (id, post_id, client_id, predicted_confidence, actual_engagement,
                      engagement_percentile, calibration_error, run_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -183,14 +183,10 @@ class ReflectionAgent(BaseAgent):
                         error,
                         run_id,
                     ),
+                    commit=True,
                 )
             except Exception as e:
                 logger.debug(f"Failed to store calibration row: {e}")
-
-        try:
-            self.db.conn.commit()
-        except Exception:
-            pass
 
         mae = sum(abs(e) for e in errors) / len(errors)
         mean_error = sum(errors) / len(errors)
@@ -282,22 +278,20 @@ class ReflectionAgent(BaseAgent):
     def _get_active_experiments(self, client_id: str) -> list[dict]:
         """Retrieve active A/B experiments."""
         try:
-            rows = self.db.conn.execute(
+            return self.db.fetchall(
                 "SELECT * FROM ab_experiments WHERE client_id = ? AND status = 'active'",
                 (client_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
+            )
         except Exception:
             return []
 
     def _get_goals(self, client_id: str) -> list[dict]:
         """Retrieve agent goals."""
         try:
-            rows = self.db.conn.execute(
+            return self.db.fetchall(
                 "SELECT * FROM agent_goals WHERE client_id = ?",
                 (client_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
+            )
         except Exception:
             return []
 
@@ -328,11 +322,11 @@ class ReflectionAgent(BaseAgent):
 
             # Update in DB
             try:
-                self.db.conn.execute(
+                self.db.execute(
                     "UPDATE agent_goals SET current_value = ?, trend = ?, last_measured_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (current, trend, goal["id"]),
+                    commit=True,
                 )
-                self.db.conn.commit()
             except Exception as e:
                 logger.warning(f"Failed to update goal {goal.get('id')}: {e}")
 
@@ -398,11 +392,11 @@ class ReflectionAgent(BaseAgent):
 
             # Update pair count
             try:
-                self.db.conn.execute(
+                self.db.execute(
                     "UPDATE ab_experiments SET pair_count = ? WHERE id = ?",
                     (pair_count, exp_id),
+                    commit=True,
                 )
-                self.db.conn.commit()
             except Exception:
                 pass
 
@@ -442,12 +436,12 @@ class ReflectionAgent(BaseAgent):
 
             # Conclude experiment
             try:
-                self.db.conn.execute(
+                self.db.execute(
                     """UPDATE ab_experiments SET status = 'concluded', winner = ?,
                        result_summary = ?, concluded_at = CURRENT_TIMESTAMP WHERE id = ?""",
                     (winner if winner != "inconclusive" else None, result_summary, exp_id),
+                    commit=True,
                 )
-                self.db.conn.commit()
             except Exception as e:
                 logger.warning(f"Failed to conclude experiment {exp_id}: {e}")
 

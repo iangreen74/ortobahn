@@ -28,12 +28,13 @@ def check_config(settings: Settings, require_bluesky: bool = True) -> HealthResu
 def check_database(settings: Settings) -> HealthResult:
     """Verify database can be created/opened."""
     try:
-        from ortobahn.db import Database
+        from ortobahn.db import create_database
 
-        db = Database(settings.db_path)
+        db = create_database(settings)
         db.get_recent_runs(limit=1)
+        backend = db.backend
         db.close()
-        return HealthResult("database", True, f"SQLite OK at {settings.db_path}")
+        return HealthResult("database", True, f"{backend} OK")
     except Exception as e:
         return HealthResult("database", False, f"Database error: {e}")
 

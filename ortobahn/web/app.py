@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from ortobahn.auth import _LoginRedirect
 from ortobahn.cognito import CognitoClient
 from ortobahn.config import load_settings
-from ortobahn.db import Database
+from ortobahn.db import Database, create_database
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
 
     settings = load_settings()
     app.state.settings = settings
-    app.state.db = Database(settings.db_path)
+    app.state.db = create_database(settings)
     app.state.templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
     if settings.cognito_user_pool_id and settings.cognito_client_id:

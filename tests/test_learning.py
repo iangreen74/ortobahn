@@ -35,14 +35,14 @@ def _insert_published_post(
 ) -> str:
     """Insert a published post directly into the database and return its id."""
     pid = post_id or str(uuid.uuid4())
-    db.conn.execute(
+    db.execute(
         """INSERT INTO posts
            (id, text, confidence, status, client_id, run_id, strategy_id,
             platform, source_idea, published_at, content_type, ab_group, ab_pair_id)
-           VALUES (?, ?, ?, 'published', ?, ?, ?, ?, ?, datetime('now'), 'social_post', ?, ?)""",
+           VALUES (?, ?, ?, 'published', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'social_post', ?, ?)""",
         (pid, text, confidence, client_id, run_id, strategy_id, platform, source_idea, ab_group, ab_pair_id),
+        commit=True,
     )
-    db.conn.commit()
     return pid
 
 
@@ -56,12 +56,12 @@ def _insert_metrics(
     quotes: int = 0,
 ) -> None:
     """Insert a metrics row for a given post."""
-    db.conn.execute(
+    db.execute(
         """INSERT INTO metrics (id, post_id, like_count, repost_count, reply_count, quote_count)
            VALUES (?, ?, ?, ?, ?, ?)""",
         (str(uuid.uuid4()), post_id, likes, reposts, replies, quotes),
+        commit=True,
     )
-    db.conn.commit()
 
 
 def _insert_strategy(
@@ -73,16 +73,19 @@ def _insert_strategy(
     run_id: str = RUN_ID,
 ) -> str:
     """Insert a strategy row with JSON themes and return its id."""
+    from datetime import datetime, timedelta, timezone
+
     sid = strategy_id or str(uuid.uuid4())
-    db.conn.execute(
+    valid_until = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    db.execute(
         """INSERT INTO strategies
            (id, themes, tone, goals, content_guidelines, posting_frequency,
             valid_until, run_id, client_id)
            VALUES (?, ?, 'professional', '[]', 'none', 'daily',
-                   datetime('now', '+7 days'), ?, ?)""",
-        (sid, json.dumps(themes or ["AI", "automation"]), run_id, client_id),
+                   ?, ?, ?)""",
+        (sid, json.dumps(themes or ["AI", "automation"]), valid_until, run_id, client_id),
+        commit=True,
     )
-    db.conn.commit()
     return sid
 
 
@@ -100,14 +103,14 @@ def _insert_ab_experiment(
 ) -> str:
     """Insert an A/B experiment and return its id."""
     eid = exp_id or str(uuid.uuid4())
-    db.conn.execute(
+    db.execute(
         """INSERT INTO ab_experiments
            (id, client_id, hypothesis, variable, variant_a_description,
             variant_b_description, status, min_pairs_required)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (eid, client_id, hypothesis, variable, variant_a, variant_b, status, min_pairs),
+        commit=True,
     )
-    db.conn.commit()
     return eid
 
 
@@ -162,7 +165,7 @@ class TestLearningEngine:
         assert result["avg_error"] > 0  # confidence vs percentile will differ
 
         # Verify rows actually landed in the table
-        rows = self.db.conn.execute("SELECT * FROM confidence_calibration WHERE client_id = ?", (CLIENT_ID,)).fetchall()
+        rows = self.db.fetchall("SELECT * FROM confidence_calibration WHERE client_id = ?", (CLIENT_ID,))
         assert len(rows) == 3
 
         # Each row should reference one of our posts

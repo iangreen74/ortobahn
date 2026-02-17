@@ -142,11 +142,11 @@ class TestMemoryStore:
 
         # Manually backdate the updated_at to make it older than max_age_days
         old_date = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
-        test_db.conn.execute(
+        test_db.execute(
             "UPDATE agent_memories SET updated_at = ?, created_at = ? WHERE id = ?",
             (old_date, old_date, mem_id),
+            commit=True,
         )
-        test_db.conn.commit()
 
         # Also add a healthy memory that should survive
         store.remember(self._make_memory(confidence=0.8, summary="healthy insight"))
@@ -395,11 +395,11 @@ class TestMemoryStore:
 
         # Backdate and prune it
         old_date = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
-        test_db.conn.execute(
+        test_db.execute(
             "UPDATE agent_memories SET updated_at = ? WHERE id = ?",
             (old_date, mem_id),
+            commit=True,
         )
-        test_db.conn.commit()
         store.prune(max_age_days=90, min_confidence=0.2)
 
         assert store.count("analytics") == 0

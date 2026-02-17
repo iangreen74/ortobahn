@@ -30,23 +30,23 @@ VALID_REFLECTION_JSON = json.dumps(
 
 def _insert_published_post(db, post_id: str, confidence: float, client_id: str = "default", run_id: str = "run-1"):
     """Insert a published post with metrics for testing."""
-    db.conn.execute(
-        """INSERT INTO posts (id, text, status, confidence, run_id, client_id, platform)
-           VALUES (?, ?, 'published', ?, ?, ?, 'bluesky')""",
+    db.execute(
+        """INSERT INTO posts (id, text, status, confidence, run_id, client_id, platform, published_at)
+           VALUES (?, ?, 'published', ?, ?, ?, 'bluesky', CURRENT_TIMESTAMP)""",
         (post_id, f"Post {post_id}", confidence, run_id, client_id),
+        commit=True,
     )
-    db.conn.commit()
 
 
 def _insert_metrics(db, post_id: str, likes: int = 0, reposts: int = 0, replies: int = 0):
     """Insert metrics for a given post."""
     import uuid
 
-    db.conn.execute(
+    db.execute(
         "INSERT INTO metrics (id, post_id, like_count, repost_count, reply_count) VALUES (?, ?, ?, ?, ?)",
         (str(uuid.uuid4())[:8], post_id, likes, reposts, replies),
+        commit=True,
     )
-    db.conn.commit()
 
 
 class TestReflectionAgent:

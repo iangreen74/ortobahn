@@ -151,7 +151,7 @@ class TestCTOAuditLogging:
         db.start_cto_run("run-001", tid)
         db.complete_cto_run("run-001", status="success", commit_sha="abc123")
 
-        row = db.conn.execute("SELECT * FROM cto_runs WHERE id='run-001'").fetchone()
+        row = db.fetchone("SELECT * FROM cto_runs WHERE id='run-001'")
         assert row is not None
         assert row["status"] == "success"
         assert row["commit_sha"] == "abc123"
@@ -175,7 +175,7 @@ class TestCTOAuditLogging:
         )
         assert change_id is not None
 
-        row = db.conn.execute("SELECT * FROM code_changes WHERE id=?", (change_id,)).fetchone()
+        row = db.fetchone("SELECT * FROM code_changes WHERE id=?", (change_id,))
         assert row["file_path"] == "ortobahn/new_file.py"
         assert row["change_type"] == "create"
 

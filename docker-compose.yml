@@ -1,13 +1,32 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ortobahn-postgres
+    environment:
+      POSTGRES_USER: ortobahn_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ortobahn_dev_pass}
+      POSTGRES_DB: ortobahn
+    volumes:
+      - ortobahn-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ortobahn_app -d ortobahn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   ortobahn-scheduler:
     build: .
     container_name: ortobahn-scheduler
     env_file: .env
     environment:
-      - DB_PATH=/app/data/ortobahn.db
+      - DATABASE_URL=postgresql://ortobahn_app:${POSTGRES_PASSWORD:-ortobahn_dev_pass}@postgres:5432/ortobahn
       - AUTONOMOUS_MODE=true
-    volumes:
-      - ortobahn-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     command: ["python", "-m", "ortobahn", "schedule", "--platforms", "bluesky"]
 
@@ -16,15 +35,16 @@ services:
     container_name: ortobahn-web
     env_file: .env
     environment:
-      - DB_PATH=/app/data/ortobahn.db
+      - DATABASE_URL=postgresql://ortobahn_app:${POSTGRES_PASSWORD:-ortobahn_dev_pass}@postgres:5432/ortobahn
       - WEB_HOST=0.0.0.0
       - WEB_PORT=8000
-    volumes:
-      - ortobahn-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped
     command: ["python", "-m", "ortobahn", "web", "--host", "0.0.0.0", "--port", "8000"]
 
 volumes:
-  ortobahn-data:
+  ortobahn-pgdata:

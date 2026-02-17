@@ -24,7 +24,7 @@ class MarketingAgent(BaseAgent):
         success_rate = (total_runs - failed_runs) / total_runs if total_runs else 0
 
         # Client count
-        clients = self.db.conn.execute("SELECT COUNT(*) as c FROM clients WHERE active=1").fetchone()
+        clients = self.db.fetchone("SELECT COUNT(*) as c FROM clients WHERE active=1")
         client_count = clients["c"] if clients else 0
 
         # Platform breakdown

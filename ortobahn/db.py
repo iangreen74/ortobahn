@@ -113,6 +113,8 @@ class Database:
     # ------------------------------------------------------------------
 
     def _create_tables(self):
+        # Each execute() may use a different pool connection, so commit each
+        # table individually to ensure foreign key references resolve.
         self.execute(
             """CREATE TABLE IF NOT EXISTS strategies (
                 id TEXT PRIMARY KEY,
@@ -125,7 +127,8 @@ class Database:
                 valid_until TIMESTAMP NOT NULL,
                 run_id TEXT NOT NULL,
                 raw_llm_response TEXT
-            )"""
+            )""",
+            commit=True,
         )
         self.execute(
             """CREATE TABLE IF NOT EXISTS posts (
@@ -141,7 +144,8 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 run_id TEXT NOT NULL,
                 strategy_id TEXT REFERENCES strategies(id)
-            )"""
+            )""",
+            commit=True,
         )
         self.execute(
             """CREATE TABLE IF NOT EXISTS metrics (
@@ -152,7 +156,8 @@ class Database:
                 reply_count INTEGER DEFAULT 0,
                 quote_count INTEGER DEFAULT 0,
                 measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )"""
+            )""",
+            commit=True,
         )
         self.execute(
             """CREATE TABLE IF NOT EXISTS agent_logs (
@@ -168,7 +173,8 @@ class Database:
                 duration_seconds REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 raw_llm_response TEXT
-            )"""
+            )""",
+            commit=True,
         )
         self.execute(
             """CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -181,9 +187,9 @@ class Database:
                 errors TEXT,
                 total_input_tokens INTEGER DEFAULT 0,
                 total_output_tokens INTEGER DEFAULT 0
-            )"""
+            )""",
+            commit=True,
         )
-        self.commit()
 
     def _run_migrations(self):
         from ortobahn.migrations import run_migrations

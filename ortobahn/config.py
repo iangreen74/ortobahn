@@ -39,6 +39,10 @@ class Settings:
     thinking_budget_strategist: int = 8_000
     thinking_budget_creator: int = 6_000
 
+    # Bedrock (uses IAM auth instead of API key)
+    use_bedrock: bool = False
+    bedrock_region: str = "us-west-2"
+
     # Database
     database_url: str = ""  # PostgreSQL: postgresql://user:pass@host:5432/dbname
     db_path: Path = Path("data/ortobahn.db")  # SQLite fallback (ignored if database_url set)
@@ -174,6 +178,8 @@ def load_settings() -> Settings:
         thinking_budget_ceo=int(os.environ.get("THINKING_BUDGET_CEO", "10000")),
         thinking_budget_strategist=int(os.environ.get("THINKING_BUDGET_STRATEGIST", "8000")),
         thinking_budget_creator=int(os.environ.get("THINKING_BUDGET_CREATOR", "6000")),
+        use_bedrock=os.environ.get("USE_BEDROCK", "false").lower() in ("true", "1", "yes"),
+        bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
         database_url=os.environ.get("DATABASE_URL", ""),
         db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
         post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),

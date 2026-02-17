@@ -210,6 +210,8 @@ def cmd_schedule(args):
                             db=pipeline.db,
                             api_key=settings.anthropic_api_key,
                             model=settings.claude_model,
+                            use_bedrock=settings.use_bedrock,
+                            bedrock_region=settings.bedrock_region,
                         )
                         console.print("  [dim]Running CTO agent...[/dim]")
                         cto_result = cto_agent.run(run_id=cto_run_id)
@@ -587,6 +589,8 @@ def cmd_cto(args):
         db=db,
         api_key=settings.anthropic_api_key,
         model=settings.claude_model,
+        use_bedrock=settings.use_bedrock,
+        bedrock_region=settings.bedrock_region,
     )
 
     console.print("\n[bold cyan]ORTOBAHN CTO[/bold cyan] - Autonomous Engineering Agent")
@@ -601,6 +605,8 @@ def cmd_cto(args):
         console.print(f"  Branch: {result.branch_name}")
         console.print(f"  Commit: {result.commit_sha[:12]}")
         console.print(f"  Files changed: {', '.join(result.files_changed)}")
+        if result.pr_url:
+            console.print(f"  PR (auto-merge): {result.pr_url}")
         console.print(f"  Summary: {result.summary}")
     else:
         console.print(f"[red]Task failed: {result.error}[/red]")
@@ -700,6 +706,8 @@ def cmd_cifix(args):
         db=db,
         api_key=settings.anthropic_api_key,
         model=settings.claude_model,
+        use_bedrock=settings.use_bedrock,
+        bedrock_region=settings.bedrock_region,
     )
 
     console.print("\n[bold cyan]ORTOBAHN CI-FIX[/bold cyan] - Autonomous CI/CD Self-Healing Agent")

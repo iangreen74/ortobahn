@@ -17,7 +17,9 @@
         {"name": "BACKUP_ENABLED", "value": "false"},
         {"name": "COGNITO_REGION", "value": "us-west-2"},
         {"name": "PIPELINE_INTERVAL_HOURS", "value": "8"},
-        {"name": "LOG_LEVEL", "value": "INFO"}
+        {"name": "LOG_LEVEL", "value": "INFO"},
+        {"name": "USE_BEDROCK", "value": "true"},
+        {"name": "BEDROCK_REGION", "value": "us-west-2"}
       ],
       "secrets": [
         {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:ANTHROPIC_API_KEY::"},
@@ -30,7 +32,8 @@
         {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:STRIPE_WEBHOOK_SECRET::"},
         {"name": "STRIPE_PRICE_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:STRIPE_PRICE_ID::"},
         {"name": "COGNITO_USER_POOL_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:COGNITO_USER_POOL_ID::"},
-        {"name": "COGNITO_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:COGNITO_CLIENT_ID::"}
+        {"name": "COGNITO_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:COGNITO_CLIENT_ID::"},
+        {"name": "GH_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:GH_TOKEN::"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

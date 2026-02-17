@@ -22,8 +22,9 @@ class AnalyticsAgent(BaseAgent):
         bluesky_client: BlueskyClient | None = None,
         twitter_client=None,
         linkedin_client=None,
+        **kwargs,
     ):
-        super().__init__(db, api_key, model, max_tokens)
+        super().__init__(db, api_key, model, max_tokens, **kwargs)
         self.bluesky = bluesky_client
         self.twitter = twitter_client
         self.linkedin = linkedin_client

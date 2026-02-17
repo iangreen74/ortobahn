@@ -24,7 +24,9 @@
         {"name": "AUTONOMOUS_MODE", "value": "true"},
         {"name": "COGNITO_REGION", "value": "us-west-2"},
         {"name": "PIPELINE_INTERVAL_HOURS", "value": "8"},
-        {"name": "LOG_LEVEL", "value": "INFO"}
+        {"name": "LOG_LEVEL", "value": "INFO"},
+        {"name": "USE_BEDROCK", "value": "true"},
+        {"name": "BEDROCK_REGION", "value": "us-west-2"}
       ],
       "secrets": [
         {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:ANTHROPIC_API_KEY::"},

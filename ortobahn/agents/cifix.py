@@ -41,8 +41,8 @@ class CIFixAgent(BaseAgent):
     prompt_file = "cifix.txt"
     thinking_budget = 10_000
 
-    def __init__(self, db, api_key: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 16384):
-        super().__init__(db, api_key, model, max_tokens)
+    def __init__(self, db, api_key: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 16384, **kwargs):
+        super().__init__(db, api_key, model, max_tokens, **kwargs)
 
     # ------------------------------------------------------------------
     # Main orchestration

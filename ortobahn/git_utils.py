@@ -81,6 +81,43 @@ def is_path_safe(file_path: str) -> bool:
     return True
 
 
+def create_pr(branch_name: str, title: str, body: str, base: str = "main") -> str:
+    """Create a GitHub pull request using the gh CLI. Returns the PR URL."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch_name, "--base", base],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+            cwd=str(PROJECT_ROOT),
+        )
+        pr_url = result.stdout.strip()
+        logger.info("Created PR: %s", pr_url)
+        return pr_url
+    except subprocess.SubprocessError as e:
+        logger.warning("Failed to create PR: %s", e)
+        return ""
+
+
+def enable_auto_merge(pr_url: str) -> bool:
+    """Enable auto-merge (squash) on a pull request. Returns True on success."""
+    try:
+        subprocess.run(
+            ["gh", "pr", "merge", pr_url, "--auto", "--squash"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+            cwd=str(PROJECT_ROOT),
+        )
+        logger.info("Enabled auto-merge on %s", pr_url)
+        return True
+    except subprocess.SubprocessError as e:
+        logger.warning("Failed to enable auto-merge: %s", e)
+        return False
+
+
 def read_source_file(rel_path: str, max_chars: int = 8000) -> str | None:
     """Read a project file and return its contents, truncated if needed.
 

@@ -58,32 +58,27 @@ class Pipeline:
                 person_urn=settings.linkedin_person_urn,
             )
 
+        # Common agent kwargs (includes Bedrock settings when enabled)
+        agent_kwargs = {
+            "db": self.db,
+            "api_key": settings.anthropic_api_key,
+            "model": settings.claude_model,
+            "use_bedrock": settings.use_bedrock,
+            "bedrock_region": settings.bedrock_region,
+        }
+
         # Initialize agents
         self.analytics = AnalyticsAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
+            **agent_kwargs,
             bluesky_client=self.bluesky,
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
         )
-        self.ceo = CEOAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
+        self.ceo = CEOAgent(**agent_kwargs)
         self.ceo.thinking_budget = settings.thinking_budget_ceo
-        self.strategist = StrategistAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
+        self.strategist = StrategistAgent(**agent_kwargs)
         self.strategist.thinking_budget = settings.thinking_budget_strategist
-        self.creator = CreatorAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
+        self.creator = CreatorAgent(**agent_kwargs)
         self.creator.thinking_budget = settings.thinking_budget_creator
         self.publisher = PublisherAgent(
             db=self.db,
@@ -93,41 +88,13 @@ class Pipeline:
             confidence_threshold=settings.post_confidence_threshold,
             post_delay_seconds=settings.post_delay_seconds,
         )
-        self.sre = SREAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
-        self.cfo = CFOAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
-        self.ops = OpsAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
-        self.marketing = MarketingAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
-        self.reflection = ReflectionAgent(
-            db=self.db,
-            api_key=settings.anthropic_api_key,
-            model=settings.claude_model,
-        )
+        self.sre = SREAgent(**agent_kwargs)
+        self.cfo = CFOAgent(**agent_kwargs)
+        self.ops = OpsAgent(**agent_kwargs)
+        self.marketing = MarketingAgent(**agent_kwargs)
+        self.reflection = ReflectionAgent(**agent_kwargs)
         self.reflection.thinking_budget = settings.thinking_budget_reflection
-        self.cifix = (
-            CIFixAgent(
-                db=self.db,
-                api_key=settings.anthropic_api_key,
-                model=settings.claude_model,
-            )
-            if settings.cifix_enabled
-            else None
-        )
+        self.cifix = CIFixAgent(**agent_kwargs) if settings.cifix_enabled else None
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
 

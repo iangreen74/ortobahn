@@ -8,6 +8,13 @@ import anthropic
 
 logger = logging.getLogger("ortobahn.llm")
 
+# Map direct API model IDs to Bedrock cross-region inference profile IDs.
+BEDROCK_MODEL_MAP = {
+    "claude-sonnet-4-5-20250929": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "claude-sonnet-4-20250514": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+}
+
 
 @dataclass
 class LLMResponse:
@@ -28,13 +35,22 @@ def call_llm(
     api_key: str = "",
     retries: int = 3,
     thinking_budget: int = 0,
+    use_bedrock: bool = False,
+    bedrock_region: str = "us-west-2",
 ) -> LLMResponse:
     """Call Claude and return the response with token usage.
 
     When thinking_budget > 0, enables extended thinking which gives the model
     a scratchpad for deeper reasoning before producing its final answer.
+
+    When use_bedrock is True, uses AWS Bedrock (IAM auth) instead of direct
+    Anthropic API. Model IDs are mapped automatically.
     """
-    client = anthropic.Anthropic(api_key=api_key)
+    if use_bedrock:
+        client = anthropic.AnthropicBedrock(aws_region=bedrock_region)
+        model = BEDROCK_MODEL_MAP.get(model, model)
+    else:
+        client = anthropic.Anthropic(api_key=api_key)
 
     kwargs: dict = {
         "model": model,

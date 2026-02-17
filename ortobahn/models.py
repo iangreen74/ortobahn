@@ -294,6 +294,7 @@ class CTOResult(BaseModel):
     files_changed: list[str] = Field(default_factory=list)
     summary: str = ""
     error: str = ""
+    pr_url: str = ""
 
 
 # --- Intelligence System models ---

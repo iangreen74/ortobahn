@@ -22,11 +22,21 @@ class BaseAgent(ABC):
     prompt_file: str = ""
     thinking_budget: int = 0
 
-    def __init__(self, db: Database, api_key: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096):
+    def __init__(
+        self,
+        db: Database,
+        api_key: str,
+        model: str = "claude-sonnet-4-5-20250929",
+        max_tokens: int = 4096,
+        use_bedrock: bool = False,
+        bedrock_region: str = "us-west-2",
+    ):
         self.db = db
         self.api_key = api_key
         self.model = model
         self.max_tokens = max_tokens
+        self.use_bedrock = use_bedrock
+        self.bedrock_region = bedrock_region
         self._system_prompt = ""
 
     @property
@@ -71,6 +81,8 @@ class BaseAgent(ABC):
             max_tokens=self.max_tokens,
             api_key=self.api_key,
             thinking_budget=self.thinking_budget,
+            use_bedrock=self.use_bedrock,
+            bedrock_region=self.bedrock_region,
         )
 
     def log_decision(

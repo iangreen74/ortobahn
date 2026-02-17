@@ -109,8 +109,13 @@ class TestFullPipeline:
             call_count["n"] += 1
             text = responses_in_order[idx] if idx < len(responses_in_order) else "{}"
             return MagicMock(
-                text=text, input_tokens=100, output_tokens=200, model="test", thinking="",
-                cache_creation_input_tokens=0, cache_read_input_tokens=0,
+                text=text,
+                input_tokens=100,
+                output_tokens=200,
+                model="test",
+                thinking="",
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
             )
 
         with (

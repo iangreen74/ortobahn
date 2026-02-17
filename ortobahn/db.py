@@ -641,9 +641,7 @@ class Database:
     def get_public_stats(self) -> dict:
         clients = self.fetchone("SELECT COUNT(*) as c FROM clients WHERE active=1")
         posts = self.fetchone("SELECT COUNT(*) as c FROM posts WHERE status='published'")
-        platforms = self.fetchone(
-            "SELECT COUNT(DISTINCT platform) as c FROM posts WHERE status='published'"
-        )
+        platforms = self.fetchone("SELECT COUNT(DISTINCT platform) as c FROM posts WHERE status='published'")
         return {
             "total_clients": clients["c"] if clients else 0,
             "total_posts_published": posts["c"] if posts else 0,
@@ -713,7 +711,11 @@ class Database:
         status = row["subscription_status"]
         if status == "trialing" and row["trial_ends_at"]:
             try:
-                trial_end = row["trial_ends_at"] if isinstance(row["trial_ends_at"], datetime) else datetime.fromisoformat(row["trial_ends_at"])
+                trial_end = (
+                    row["trial_ends_at"]
+                    if isinstance(row["trial_ends_at"], datetime)
+                    else datetime.fromisoformat(row["trial_ends_at"])
+                )
                 if trial_end.tzinfo is None:
                     trial_end = trial_end.replace(tzinfo=timezone.utc)
             except (ValueError, TypeError):

@@ -38,7 +38,8 @@ def _set_schema_version(db: Database, version: int) -> None:
 
 def _migration_001_add_clients_and_platform(db: Database) -> None:
     """Add clients table and extend posts/strategies/pipeline_runs with client_id/platform."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS clients (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
@@ -50,7 +51,9 @@ def _migration_001_add_clients_and_platform(db: Database) -> None:
             active INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
+    """,
+        commit=True,
+    )
     db.execute(
         """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice)
            VALUES (?, ?, ?, ?, ?, ?)
@@ -119,7 +122,8 @@ def _migration_006_add_ab_testing(db: Database) -> None:
 
 def _migration_007_add_auth_and_credentials(db: Database) -> None:
     """Add API keys, sessions, and encrypted platform credentials."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS api_keys (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL REFERENCES clients(id),
@@ -130,8 +134,11 @@ def _migration_007_add_auth_and_credentials(db: Database) -> None:
             last_used_at TIMESTAMP,
             active INTEGER NOT NULL DEFAULT 1
         )
-    """, commit=True)
-    db.execute("""
+    """,
+        commit=True,
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS platform_credentials (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL REFERENCES clients(id),
@@ -141,7 +148,9 @@ def _migration_007_add_auth_and_credentials(db: Database) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(client_id, platform)
         )
-    """, commit=True)
+    """,
+        commit=True,
+    )
 
     for col in [
         "internal INTEGER NOT NULL DEFAULT 0",
@@ -157,18 +166,22 @@ def _migration_007_add_auth_and_credentials(db: Database) -> None:
 
 def _migration_008_add_stripe_events(db: Database) -> None:
     """Add stripe events log for idempotent webhook processing."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS stripe_events (
             id TEXT PRIMARY KEY,
             event_type TEXT NOT NULL,
             processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
+    """,
+        commit=True,
+    )
 
 
 def _migration_009_add_engineering_tasks(db: Database) -> None:
     """Add engineering task backlog and CTO agent tracking tables."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS engineering_tasks (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
@@ -187,8 +200,11 @@ def _migration_009_add_engineering_tasks(db: Database) -> None:
             error TEXT,
             blocked_reason TEXT
         )
-    """, commit=True)
-    db.execute("""
+    """,
+        commit=True,
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS code_changes (
             id TEXT PRIMARY KEY,
             task_id TEXT NOT NULL REFERENCES engineering_tasks(id),
@@ -198,8 +214,11 @@ def _migration_009_add_engineering_tasks(db: Database) -> None:
             diff_summary TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
-    db.execute("""
+    """,
+        commit=True,
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS cto_runs (
             id TEXT PRIMARY KEY,
             task_id TEXT REFERENCES engineering_tasks(id),
@@ -216,12 +235,15 @@ def _migration_009_add_engineering_tasks(db: Database) -> None:
             total_input_tokens INTEGER DEFAULT 0,
             total_output_tokens INTEGER DEFAULT 0
         )
-    """, commit=True)
+    """,
+        commit=True,
+    )
 
 
 def _migration_010_add_intelligence_system(db: Database) -> None:
     """Add agent memory, confidence calibration, A/B experiments, goals, and reflection tables."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS agent_memories (
             id TEXT PRIMARY KEY,
             agent_name TEXT NOT NULL,
@@ -240,13 +262,22 @@ def _migration_010_add_intelligence_system(db: Database) -> None:
             superseded_by TEXT,
             active INTEGER NOT NULL DEFAULT 1
         )
-    """, commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_memories_agent_client
-        ON agent_memories(agent_name, client_id, active)""", commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_memories_type
-        ON agent_memories(memory_type, category)""", commit=True)
+    """,
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_memories_agent_client
+        ON agent_memories(agent_name, client_id, active)""",
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_memories_type
+        ON agent_memories(memory_type, category)""",
+        commit=True,
+    )
 
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS confidence_calibration (
             id TEXT PRIMARY KEY,
             post_id TEXT NOT NULL,
@@ -258,11 +289,17 @@ def _migration_010_add_intelligence_system(db: Database) -> None:
             measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             run_id TEXT
         )
-    """, commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_calibration_client
-        ON confidence_calibration(client_id, measured_at)""", commit=True)
+    """,
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_calibration_client
+        ON confidence_calibration(client_id, measured_at)""",
+        commit=True,
+    )
 
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS ab_experiments (
             id TEXT PRIMARY KEY,
             client_id TEXT NOT NULL DEFAULT 'default',
@@ -279,11 +316,17 @@ def _migration_010_add_intelligence_system(db: Database) -> None:
             concluded_at TIMESTAMP,
             created_by_run_id TEXT
         )
-    """, commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_experiments_client
-        ON ab_experiments(client_id, status)""", commit=True)
+    """,
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_experiments_client
+        ON ab_experiments(client_id, status)""",
+        commit=True,
+    )
 
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS agent_goals (
             id TEXT PRIMARY KEY,
             agent_name TEXT NOT NULL,
@@ -296,11 +339,17 @@ def _migration_010_add_intelligence_system(db: Database) -> None:
             last_measured_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_goals_agent
-        ON agent_goals(agent_name, client_id)""", commit=True)
+    """,
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_goals_agent
+        ON agent_goals(agent_name, client_id)""",
+        commit=True,
+    )
 
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS reflection_reports (
             id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -315,12 +364,15 @@ def _migration_010_add_intelligence_system(db: Database) -> None:
             recommendations TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
+    """,
+        commit=True,
+    )
 
 
 def _migration_011_add_ci_fix_tracking(db: Database) -> None:
     """Add CI fix tracking table for the CI/CD self-healing agent."""
-    db.execute("""
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS ci_fix_attempts (
             id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -343,11 +395,19 @@ def _migration_011_add_ci_fix_tracking(db: Database) -> None:
             error_message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """, commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_ci_fix_category
-        ON ci_fix_attempts(failure_category, status)""", commit=True)
-    db.execute("""CREATE INDEX IF NOT EXISTS idx_ci_fix_gh_run
-        ON ci_fix_attempts(gh_run_id)""", commit=True)
+    """,
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_ci_fix_category
+        ON ci_fix_attempts(failure_category, status)""",
+        commit=True,
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_ci_fix_gh_run
+        ON ci_fix_attempts(gh_run_id)""",
+        commit=True,
+    )
 
 
 def _migration_012_add_auto_publish(db: Database) -> None:

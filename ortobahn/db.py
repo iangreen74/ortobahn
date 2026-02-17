@@ -713,7 +713,7 @@ class Database:
         status = row["subscription_status"]
         if status == "trialing" and row["trial_ends_at"]:
             try:
-                trial_end = datetime.fromisoformat(row["trial_ends_at"])
+                trial_end = row["trial_ends_at"] if isinstance(row["trial_ends_at"], datetime) else datetime.fromisoformat(row["trial_ends_at"])
                 if trial_end.tzinfo is None:
                     trial_end = trial_end.replace(tzinfo=timezone.utc)
             except (ValueError, TypeError):

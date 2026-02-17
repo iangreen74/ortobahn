@@ -35,7 +35,7 @@ class CEOAgent(BaseAgent):
                 goals=existing["goals"],
                 content_guidelines=existing["content_guidelines"],
                 posting_frequency=existing["posting_frequency"],
-                valid_until=datetime.fromisoformat(existing["valid_until"]),
+                valid_until=existing["valid_until"] if isinstance(existing["valid_until"], datetime) else datetime.fromisoformat(existing["valid_until"]),
                 client_id=client_id,
             )
             self.log_decision(

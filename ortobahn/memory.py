@@ -257,7 +257,7 @@ class MemoryStore:
 
         updated = row["updated_at"] or row["created_at"]
         try:
-            updated_dt = datetime.fromisoformat(updated)
+            updated_dt = updated if isinstance(updated, datetime) else datetime.fromisoformat(updated)
             days_old = (datetime.now(timezone.utc) - updated_dt.replace(tzinfo=timezone.utc)).days
         except (ValueError, TypeError):
             days_old = 0

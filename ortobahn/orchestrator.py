@@ -59,26 +59,25 @@ class Pipeline:
             )
 
         # Common agent kwargs (includes Bedrock settings when enabled)
-        agent_kwargs = {
-            "db": self.db,
-            "api_key": settings.anthropic_api_key,
-            "model": settings.claude_model,
-            "use_bedrock": settings.use_bedrock,
-            "bedrock_region": settings.bedrock_region,
-        }
+        _api_key = settings.anthropic_api_key
+        _model = settings.claude_model
+        _bedrock = settings.use_bedrock
+        _region = settings.bedrock_region
 
         # Initialize agents
         self.analytics = AnalyticsAgent(
-            **agent_kwargs,
+            self.db, _api_key, _model,
             bluesky_client=self.bluesky,
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
+            use_bedrock=_bedrock,
+            bedrock_region=_region,
         )
-        self.ceo = CEOAgent(**agent_kwargs)
+        self.ceo = CEOAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.ceo.thinking_budget = settings.thinking_budget_ceo
-        self.strategist = StrategistAgent(**agent_kwargs)
+        self.strategist = StrategistAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.strategist.thinking_budget = settings.thinking_budget_strategist
-        self.creator = CreatorAgent(**agent_kwargs)
+        self.creator = CreatorAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.creator.thinking_budget = settings.thinking_budget_creator
         self.publisher = PublisherAgent(
             db=self.db,
@@ -88,13 +87,13 @@ class Pipeline:
             confidence_threshold=settings.post_confidence_threshold,
             post_delay_seconds=settings.post_delay_seconds,
         )
-        self.sre = SREAgent(**agent_kwargs)
-        self.cfo = CFOAgent(**agent_kwargs)
-        self.ops = OpsAgent(**agent_kwargs)
-        self.marketing = MarketingAgent(**agent_kwargs)
-        self.reflection = ReflectionAgent(**agent_kwargs)
+        self.sre = SREAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+        self.cfo = CFOAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+        self.ops = OpsAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+        self.marketing = MarketingAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+        self.reflection = ReflectionAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection.thinking_budget = settings.thinking_budget_reflection
-        self.cifix = CIFixAgent(**agent_kwargs) if settings.cifix_enabled else None
+        self.cifix = CIFixAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region) if settings.cifix_enabled else None
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
 

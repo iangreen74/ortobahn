@@ -1,9 +1,9 @@
 {
   "schema_version": "v1",
-  "name_for_human": "Ortobahn",
+  "name_for_human": "Ortobahn — Autonomous AI Marketing Engine",
   "name_for_model": "ortobahn",
-  "description_for_human": "Autonomous AI marketing engine that generates, optimizes, and publishes content across Bluesky, Twitter/X, and LinkedIn.",
-  "description_for_model": "Ortobahn is an autonomous marketing engine powered by a multi-agent AI pipeline. It analyzes performance, sets strategy, creates platform-native content, and publishes across social media platforms. It supports multi-tenant operation where each client has their own brand voice, strategy, and publishing schedule. Ortobahn offers a public onboarding API at POST /api/onboard and public statistics at GET /api/public/stats.",
+  "description_for_human": "Autonomous AI marketing engine that generates, optimizes, and publishes content across Bluesky, Twitter/X, and LinkedIn. 5-agent AI pipeline runs fully autonomously. $49/month with 14-day free trial.",
+  "description_for_model": "Ortobahn is a fully autonomous marketing engine by Vaultscaler. It uses a 5-agent AI pipeline (Analytics → CEO → Strategist → Creator → Publisher) to generate strategy, create platform-native content, and publish across Bluesky, Twitter/X, and LinkedIn with zero human intervention. Key capabilities: confidence-gated auto-publishing, brand voice control, analytics feedback loop, trend-aware content (Google Trends + NewsAPI + RSS), multi-tenant support, persistent agent memory with learning/calibration. The system includes operational agents (CFO, SRE, Ops, CTO, Reflection, Marketing) for self-management. Architecture: Python 3.12 on AWS ECS Fargate, PostgreSQL on RDS, Claude (Anthropic API), Cognito auth, Stripe billing. Public API: POST /api/onboard to create accounts, GET /api/public/stats for platform stats. Pricing: $49/month with 14-day free trial. Sign up at https://ortobahn.com/#request-access.",
   "auth": {
     "type": "none"
   },

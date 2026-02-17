@@ -14,8 +14,7 @@ logger = logging.getLogger("ortobahn.migrations")
 def _safe_add_column(db: Database, table: str, column_def: str) -> None:
     """Add a column if it doesn't already exist. Silently ignores duplicates."""
     try:
-        db.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
-        db.commit()
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}", commit=True)
     except Exception as e:
         err = str(e).lower()
         if "duplicate column" in err or "already exists" in err:

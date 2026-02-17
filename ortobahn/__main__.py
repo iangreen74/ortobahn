@@ -158,7 +158,13 @@ def cmd_schedule(args):
                     clients_to_check = (
                         [dict(r) for r in rows]
                         if rows
-                        else [{"id": settings.default_client_id, "name": settings.default_client_id, "posting_interval_hours": 6}]
+                        else [
+                            {
+                                "id": settings.default_client_id,
+                                "name": settings.default_client_id,
+                                "posting_interval_hours": 6,
+                            }
+                        ]
                     )
 
                 total_published = 0

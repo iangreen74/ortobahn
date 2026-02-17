@@ -493,7 +493,9 @@ class Pipeline:
             )
 
         except Exception as e:
-            logger.error(f"Pipeline error: {e}")
+            import traceback
+
+            logger.error(f"Pipeline error: {e}\n{traceback.format_exc()}")
             errors.append(str(e))
             self.db.fail_pipeline_run(run_id, errors)
             raise

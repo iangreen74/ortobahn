@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from ortobahn.agents.base import BaseAgent
+from ortobahn.db import to_datetime
 from ortobahn.llm import parse_json_response
 from ortobahn.models import AnalyticsReport, Client, Platform, ReflectionReport, Strategy, TrendingTopic
 
@@ -35,9 +36,7 @@ class CEOAgent(BaseAgent):
                 goals=existing["goals"],
                 content_guidelines=existing["content_guidelines"],
                 posting_frequency=existing["posting_frequency"],
-                valid_until=existing["valid_until"]
-                if isinstance(existing["valid_until"], datetime)
-                else datetime.fromisoformat(existing["valid_until"]),
+                valid_until=to_datetime(existing["valid_until"]),
                 client_id=client_id,
             )
             self.log_decision(

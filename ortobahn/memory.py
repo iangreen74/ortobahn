@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from ortobahn.db import Database
+from ortobahn.db import Database, to_datetime
 from ortobahn.models import AgentMemory, MemoryCategory, MemoryType
 
 logger = logging.getLogger("ortobahn.memory")
@@ -255,7 +255,7 @@ class MemoryStore:
 
         updated = row["updated_at"] or row["created_at"]
         try:
-            updated_dt = updated if isinstance(updated, datetime) else datetime.fromisoformat(updated)
+            updated_dt = to_datetime(updated)
             days_old = (datetime.now(timezone.utc) - updated_dt.replace(tzinfo=timezone.utc)).days
         except (ValueError, TypeError):
             days_old = 0

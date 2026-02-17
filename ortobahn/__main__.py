@@ -179,7 +179,9 @@ def cmd_schedule(args):
                     last_run = pipeline.db.get_last_run_time(cid)
                     if last_run is not None:
                         try:
-                            last_dt = last_run if isinstance(last_run, _dt) else _dt.fromisoformat(last_run)
+                            from ortobahn.db import to_datetime
+
+                            last_dt = to_datetime(last_run)
                             if last_dt.tzinfo is None:
                                 last_dt = last_dt.replace(tzinfo=_tz.utc)
                             hours_since = (_dt.now(_tz.utc) - last_dt).total_seconds() / 3600

@@ -15,6 +15,15 @@ from ortobahn.models import AnalyticsReport, PostPerformance
 logger = logging.getLogger("ortobahn.db")
 
 
+def to_datetime(value: Any) -> datetime:
+    """Safely convert a value to datetime. Handles str, datetime, date, and None."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    raise TypeError(f"Cannot convert {type(value).__name__} to datetime: {value!r}")
+
+
 class Database:
     def __init__(self, db_path: Path | None = None, database_url: str = ""):
         if database_url:
@@ -711,11 +720,7 @@ class Database:
         status = row["subscription_status"]
         if status == "trialing" and row["trial_ends_at"]:
             try:
-                trial_end = (
-                    row["trial_ends_at"]
-                    if isinstance(row["trial_ends_at"], datetime)
-                    else datetime.fromisoformat(row["trial_ends_at"])
-                )
+                trial_end = to_datetime(row["trial_ends_at"])
                 if trial_end.tzinfo is None:
                     trial_end = trial_end.replace(tzinfo=timezone.utc)
             except (ValueError, TypeError):

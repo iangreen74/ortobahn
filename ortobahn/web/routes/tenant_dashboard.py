@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 
 from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
+from ortobahn.db import to_datetime
 from ortobahn.models import Platform
 
 logger = logging.getLogger("ortobahn.web.tenant")
@@ -70,11 +71,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     trial_days_remaining = None
     if client.get("subscription_status") == "trialing" and client.get("trial_ends_at"):
         try:
-            trial_end = (
-                client["trial_ends_at"]
-                if isinstance(client["trial_ends_at"], datetime)
-                else datetime.fromisoformat(client["trial_ends_at"])
-            )
+            trial_end = to_datetime(client["trial_ends_at"])
             if trial_end.tzinfo is None:
                 trial_end = trial_end.replace(tzinfo=timezone.utc)
             delta = trial_end - datetime.now(timezone.utc)

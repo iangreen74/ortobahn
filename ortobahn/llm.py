@@ -98,12 +98,8 @@ def call_llm(
                 output_tokens=response.usage.output_tokens,
                 model=model,
                 thinking="\n".join(thinking_parts),
-                cache_creation_input_tokens=getattr(
-                    response.usage, "cache_creation_input_tokens", 0
-                ) or 0,
-                cache_read_input_tokens=getattr(
-                    response.usage, "cache_read_input_tokens", 0
-                ) or 0,
+                cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             )
         except anthropic.RateLimitError:
             wait = 2**attempt * 5

@@ -25,8 +25,7 @@ def _safe_add_column(db: Database, table: str, column_def: str) -> None:
 
 
 def _get_schema_version(db: Database) -> int:
-    db.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)")
-    db.commit()
+    db.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)", commit=True)
     row = db.fetchone("SELECT version FROM schema_version")
     if row is None:
         db.execute("INSERT INTO schema_version (version) VALUES (0)", commit=True)

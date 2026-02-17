@@ -66,7 +66,9 @@ class Pipeline:
 
         # Initialize agents
         self.analytics = AnalyticsAgent(
-            self.db, _api_key, _model,
+            self.db,
+            _api_key,
+            _model,
             bluesky_client=self.bluesky,
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
@@ -93,7 +95,11 @@ class Pipeline:
         self.marketing = MarketingAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection = ReflectionAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection.thinking_budget = settings.thinking_budget_reflection
-        self.cifix = CIFixAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region) if settings.cifix_enabled else None
+        self.cifix = (
+            CIFixAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+            if settings.cifix_enabled
+            else None
+        )
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
 

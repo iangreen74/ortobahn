@@ -47,9 +47,7 @@ def call_llm(
     Anthropic API. Model IDs are mapped automatically.
     """
     if use_bedrock:
-        client: anthropic.Anthropic | anthropic.AnthropicBedrock = (
-            anthropic.AnthropicBedrock(aws_region=bedrock_region)
-        )
+        client: anthropic.Anthropic | anthropic.AnthropicBedrock = anthropic.AnthropicBedrock(aws_region=bedrock_region)
         model = BEDROCK_MODEL_MAP.get(model, model)
     else:
         client = anthropic.Anthropic(api_key=api_key)

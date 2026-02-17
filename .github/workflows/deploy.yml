@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/ortobahn:$IMAGE_TAG -t $ECR_REGISTRY/ortobahn:latest .
+          docker push $ECR_REGISTRY/ortobahn:$IMAGE_TAG
+          docker push $ECR_REGISTRY/ortobahn:latest
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service --cluster ortobahn --service ortobahn-web --force-new-deployment
+          aws ecs update-service --cluster ortobahn --service ortobahn-scheduler --force-new-deployment

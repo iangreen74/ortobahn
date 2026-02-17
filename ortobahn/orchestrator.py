@@ -314,8 +314,8 @@ class Pipeline:
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} started (client={client_id}) ===")
 
-        # Backup database before cycle
-        if self.settings.backup_enabled:
+        # Backup database before cycle (SQLite only — RDS has automated backups)
+        if self.settings.backup_enabled and not self.settings.database_url:
             from ortobahn.backup import backup_database
 
             backup_database(self.settings.db_path, self.settings.backup_dir, self.settings.backup_max_count)

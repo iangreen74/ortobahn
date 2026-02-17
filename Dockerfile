@@ -1,11 +1,22 @@
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+COPY pyproject.toml .
+COPY ortobahn/ ortobahn/
+RUN pip install --no-cache-dir ".[web]"
+
 FROM python:3.12-slim
 
 WORKDIR /app
-
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 COPY pyproject.toml .
 COPY ortobahn/ ortobahn/
+RUN pip install --no-deps --no-cache-dir -e .
 
-RUN pip install --no-cache-dir -e ".[web]"
+RUN useradd -r -s /bin/false ortobahn
+USER ortobahn
 
-# Default: run the autonomous scheduler
-CMD ["python", "-m", "ortobahn", "schedule", "--client", "vaultscaler"]
+EXPOSE 8000
+
+CMD ["python", "-m", "ortobahn", "schedule", "--platforms", "bluesky"]

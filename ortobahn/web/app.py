@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -54,6 +54,16 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    @app.get("/health")
+    async def health():
+        """ALB health check — verifies DB connectivity."""
+        try:
+            db = app.state.db
+            db.fetchone("SELECT 1 AS ok")
+            return {"status": "healthy", "db": db.backend}
+        except Exception as e:
+            return JSONResponse({"status": "unhealthy", "error": str(e)}, status_code=503)
 
     @app.exception_handler(_LoginRedirect)
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):

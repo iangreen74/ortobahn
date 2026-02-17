@@ -1,4 +1,6 @@
-.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 clean
+.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 deploy-ecs clean
+
+ECR_REPO = 418295677815.dkr.ecr.us-west-2.amazonaws.com/ortobahn
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -70,6 +72,16 @@ deploy-ec2:
 		--parameters 'commands=["cd /app/ortobahn && git pull && docker compose build && docker compose up -d"]' \
 		--query 'Command.CommandId' --output text
 	@echo "\nDeploy command sent. Check SSM console for status."
+
+deploy-ecs:
+	@echo "Building and pushing to ECR..."
+	aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 418295677815.dkr.ecr.us-west-2.amazonaws.com
+	docker build -t ortobahn .
+	docker tag ortobahn:latest $(ECR_REPO):latest
+	docker push $(ECR_REPO):latest
+	aws ecs update-service --cluster ortobahn --service ortobahn-web --force-new-deployment --region us-west-2
+	aws ecs update-service --cluster ortobahn --service ortobahn-scheduler --force-new-deployment --region us-west-2
+	@echo "\nECS services updating."
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

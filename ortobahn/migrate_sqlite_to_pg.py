@@ -12,7 +12,6 @@ import sys
 from ortobahn.config import load_settings
 from ortobahn.db import Database
 
-
 # Tables to migrate in dependency order (no foreign keys, but logical order).
 TABLES = [
     "clients",

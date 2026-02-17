@@ -46,9 +46,7 @@ def get_trending_headlines(
         return []
 
 
-def search_news(
-    api_key: str, query: str, page_size: int = 5, sort_by: str = "relevancy"
-) -> list[Article]:
+def search_news(api_key: str, query: str, page_size: int = 5, sort_by: str = "relevancy") -> list[Article]:
     """Search for articles matching keywords via the 'everything' endpoint."""
     if not api_key or not query:
         return []
@@ -57,9 +55,7 @@ def search_news(
         from newsapi import NewsApiClient
 
         client = NewsApiClient(api_key=api_key)
-        response = client.get_everything(
-            q=query, language="en", sort_by=sort_by, page_size=page_size
-        )
+        response = client.get_everything(q=query, language="en", sort_by=sort_by, page_size=page_size)
         articles = []
         for a in response.get("articles", []):
             articles.append(

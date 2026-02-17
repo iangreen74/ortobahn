@@ -80,9 +80,7 @@ class MemoryStore:
                 OR (expires_at IS NOT NULL AND expires_at < ?)
             )"""
         params = (min_confidence, cutoff, now)
-        row = self.db.fetchone(
-            f"SELECT COUNT(*) as cnt FROM agent_memories WHERE {condition}", params
-        )
+        row = self.db.fetchone(f"SELECT COUNT(*) as cnt FROM agent_memories WHERE {condition}", params)
         count = row["cnt"] if row else 0
         if count > 0:
             self.db.execute(

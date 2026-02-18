@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ortobahn.config import Settings
 from ortobahn.db import Database, PoolExhaustedError, _HealthCheckedPool, create_database
-
 
 # ---------------------------------------------------------------------------
 # Helpers

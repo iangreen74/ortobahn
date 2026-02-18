@@ -8,9 +8,10 @@ import logging
 import sqlite3
 import threading
 import uuid
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from ortobahn.models import AnalyticsReport, PostPerformance
 

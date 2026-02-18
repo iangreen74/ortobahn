@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from ortobahn.web.rate_limit import (
     DEFAULT_TIERS,
-    GENERAL_TIER_NAME,
     RateLimitMiddleware,
     RateLimitStore,
     RateTier,
     _match_tier,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -285,7 +281,6 @@ class TestRateLimitMiddleware:
     def test_different_ips_tracked_independently(self):
         """Requests from different IPs don't share rate-limit buckets."""
         store = RateLimitStore()
-        app = _make_app(default_rpm=2, store=store)
 
         # We can't easily change the client IP in TestClient, so test via the store directly.
         # Confirm that the store keys include the IP component.

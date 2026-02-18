@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 from fastapi.testclient import TestClient
 
 from ortobahn.config import Settings

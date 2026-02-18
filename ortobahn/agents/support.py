@@ -45,9 +45,7 @@ class SupportAgent(BaseAgent):
             profile_pct = filled / len(profile_fields) * 100
 
             # Credential completeness
-            creds = self.db.fetchall(
-                "SELECT * FROM platform_credentials WHERE client_id=?", (cid,)
-            )
+            creds = self.db.fetchall("SELECT * FROM platform_credentials WHERE client_id=?", (cid,))
             cred_count = len(creds) if creds else 0
 
             # Pipeline success rate (recent runs for this client)
@@ -56,27 +54,15 @@ class SupportAgent(BaseAgent):
                 (cid,),
             )
             total_runs = len(client_runs) if client_runs else 0
-            failed_runs = (
-                sum(1 for r in client_runs if r.get("status") == "failed")
-                if client_runs
-                else 0
-            )
-            success_rate = (
-                (total_runs - failed_runs) / total_runs if total_runs > 0 else 0
-            )
+            failed_runs = sum(1 for r in client_runs if r.get("status") == "failed") if client_runs else 0
+            success_rate = (total_runs - failed_runs) / total_runs if total_runs > 0 else 0
 
             # Days since last successful run
-            successful_runs = (
-                [r for r in client_runs if r.get("status") == "completed"]
-                if client_runs
-                else []
-            )
+            successful_runs = [r for r in client_runs if r.get("status") == "completed"] if client_runs else []
             if successful_runs:
                 last_success = successful_runs[0]
                 try:
-                    last_ts = last_success.get("completed_at") or last_success.get(
-                        "started_at"
-                    )
+                    last_ts = last_success.get("completed_at") or last_success.get("started_at")
                     if last_ts:
                         if isinstance(last_ts, str):
                             last_dt = datetime.fromisoformat(last_ts)
@@ -84,9 +70,7 @@ class SupportAgent(BaseAgent):
                             last_dt = last_ts
                         if last_dt.tzinfo is None:
                             last_dt = last_dt.replace(tzinfo=timezone.utc)
-                        days_since = (
-                            datetime.now(timezone.utc) - last_dt
-                        ).days
+                        days_since = (datetime.now(timezone.utc) - last_dt).days
                     else:
                         days_since = -1
                 except (ValueError, TypeError):
@@ -106,9 +90,7 @@ class SupportAgent(BaseAgent):
                         trial_end = trial_end_str
                     if trial_end.tzinfo is None:
                         trial_end = trial_end.replace(tzinfo=timezone.utc)
-                    trial_days_remaining = (
-                        trial_end - datetime.now(timezone.utc)
-                    ).days
+                    trial_days_remaining = (trial_end - datetime.now(timezone.utc)).days
                 except (ValueError, TypeError):
                     trial_days_remaining = -1
 
@@ -140,12 +122,8 @@ Total active clients checked: {total_checked}
         report = SupportReport(total_clients_checked=total_checked)
 
         try:
-            analysis = json.loads(
-                response.text.strip().strip("`").removeprefix("json").strip()
-            )
-            report.tickets = [
-                SupportTicket(**t) for t in analysis.get("tickets", [])
-            ]
+            analysis = json.loads(response.text.strip().strip("`").removeprefix("json").strip())
+            report.tickets = [SupportTicket(**t) for t in analysis.get("tickets", [])]
             report.health_summary = analysis.get("health_summary", "")
             report.at_risk_clients = analysis.get("at_risk_clients", [])
             report.recommendations = analysis.get("recommendations", [])

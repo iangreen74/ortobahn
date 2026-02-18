@@ -32,7 +32,7 @@ class RateTier:
 
 # Default tiers — evaluated top-to-bottom; first match wins.
 DEFAULT_TIERS: tuple[RateTier, ...] = (
-    RateTier(name="public", requests_per_minute=120, prefixes=("/health", "/api/public/")),
+    RateTier(name="public", requests_per_minute=120, prefixes=("/health", "/api/public/", "/glass")),
     RateTier(name="auth", requests_per_minute=10, prefixes=("/api/auth/login", "/api/auth/register")),
     RateTier(name="onboard", requests_per_minute=5, prefixes=("/api/onboard",)),
 )

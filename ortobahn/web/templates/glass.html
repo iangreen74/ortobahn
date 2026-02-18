@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn — Glass Company{% endblock %}
+{% block nav_home %}/glass{% endblock %}
+{% block nav_links %}
+    <li><a href="https://ortobahn.com">ortobahn.com</a></li>
+    <li><a href="/glass">Glass Dashboard</a></li>
+{% endblock %}
+
+{% block content %}
+<header class="glass-hero">
+    <h1 class="glass-title">Glass Company</h1>
+    <p>The world's most transparent company. Every decision, every cost, every outcome — visible.</p>
+</header>
+
+<!-- Status pulse -->
+<div id="glass-status" hx-get="/glass/api/status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <div class="glass-status-card">
+        <span class="glass-pulse idle"></span>
+        <strong>Loading...</strong>
+    </div>
+</div>
+
+<!-- Costs + Health -->
+<div class="grid">
+    <article id="glass-costs" hx-get="/glass/api/costs" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <h3>Costs</h3>
+        <p>Loading...</p>
+    </article>
+    <article id="glass-health" hx-get="/glass/api/health" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <h3>System Health</h3>
+        <p>Loading...</p>
+    </article>
+</div>
+
+<!-- Agent activity -->
+<article id="glass-agents" hx-get="/glass/api/agents" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <h3>Agent Activity</h3>
+    <p>Loading...</p>
+</article>
+
+<!-- Pipeline runs -->
+<article id="glass-runs" hx-get="/glass/api/runs" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <h3>Pipeline Runs</h3>
+    <p>Loading...</p>
+</article>
+
+<!-- Published posts -->
+<article id="glass-posts" hx-get="/glass/api/posts" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <h3>Published Posts</h3>
+    <p>Loading...</p>
+</article>
+
+<footer style="text-align:center; margin-top:2rem; opacity:0.5">
+    <small>Auto-refreshes every 30 seconds. All costs are real. All decisions are autonomous.</small>
+</footer>
+{% endblock %}

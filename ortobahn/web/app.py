@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
         clients,
         content,
         dashboard,
+        glass,
         onboard,
         payments,
         pipeline,
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(onboard.router, prefix="/api")
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(payments.router, prefix="/api/payments")
+    app.include_router(glass.router)
 
     # Tenant self-service routes (per-client auth)
     app.include_router(tenant_dashboard.router)

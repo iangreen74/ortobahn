@@ -19,6 +19,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 # Tier configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RateTier:
     """A named rate-limit tier with a requests-per-minute cap."""
@@ -42,6 +43,7 @@ GENERAL_TIER_NAME = "general"
 # ---------------------------------------------------------------------------
 # Sliding-window bucket
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _Bucket:
@@ -69,6 +71,7 @@ class _Bucket:
 # ---------------------------------------------------------------------------
 # In-memory store with periodic cleanup
 # ---------------------------------------------------------------------------
+
 
 class RateLimitStore:
     """Thread-safe-ish in-memory store keyed by ``(client_ip, tier_name)``."""
@@ -100,9 +103,7 @@ class RateLimitStore:
             return
         self._last_cleanup = now
         cutoff = now - window
-        empty_keys = [
-            k for k, b in self._buckets.items() if not b.timestamps or b.timestamps[-1] <= cutoff
-        ]
+        empty_keys = [k for k, b in self._buckets.items() if not b.timestamps or b.timestamps[-1] <= cutoff]
         for k in empty_keys:
             del self._buckets[k]
 
@@ -115,6 +116,7 @@ class RateLimitStore:
 # ---------------------------------------------------------------------------
 # ASGI Middleware
 # ---------------------------------------------------------------------------
+
 
 def _client_ip(scope: Scope) -> str:
     """Extract the client IP from the ASGI scope."""

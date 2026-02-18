@@ -14,9 +14,18 @@ INTERNAL_IDS = ("default", "vaultscaler", "ortobahn")
 _IN_CLAUSE = ",".join("?" for _ in INTERNAL_IDS)
 
 PIPELINE_STEPS = [
-    "sre", "cifix", "analytics", "reflection", "trends",
-    "ceo", "strategist", "creator", "publisher", "support",
-    "marketing", "learning",
+    "sre",
+    "cifix",
+    "analytics",
+    "reflection",
+    "trends",
+    "ceo",
+    "strategist",
+    "creator",
+    "publisher",
+    "support",
+    "marketing",
+    "learning",
 ]
 
 _CACHE_HEADERS = {"Cache-Control": "public, max-age=15"}
@@ -25,6 +34,7 @@ _CACHE_HEADERS = {"Cache-Control": "public, max-age=15"}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _cost(input_tok: int, output_tok: int, cache_create: int = 0, cache_read: int = 0) -> float:
     """Sonnet pricing — mirrors db.get_current_month_spend."""
@@ -94,17 +104,13 @@ def _step_index(agent_name: str) -> int:
 
 def _escape(text: str) -> str:
     """Minimal HTML escaping."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 # ---------------------------------------------------------------------------
 # Full page
 # ---------------------------------------------------------------------------
+
 
 @router.get("/glass")
 async def glass_dashboard(request: Request):
@@ -115,6 +121,7 @@ async def glass_dashboard(request: Request):
 # ---------------------------------------------------------------------------
 # HTMX partials
 # ---------------------------------------------------------------------------
+
 
 @router.get("/glass/api/status", response_class=HTMLResponse)
 async def glass_status(request: Request):
@@ -144,29 +151,29 @@ async def glass_status(request: Request):
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse running"></span>'
-            f' <strong>Pipeline RUNNING</strong> &mdash; step {step_num}/12: {_escape(step_name)}'
-            '</div>'
+            f" <strong>Pipeline RUNNING</strong> &mdash; step {step_num}/12: {_escape(step_name)}"
+            "</div>"
         )
     elif last and last["status"] == "failed":
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse failed"></span>'
-            f' <strong>Last run FAILED</strong> &mdash; {last["completed_at"] or "unknown"}'
-            '</div>'
+            f" <strong>Last run FAILED</strong> &mdash; {last['completed_at'] or 'unknown'}"
+            "</div>"
         )
     elif last:
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse idle"></span>'
-            f' <strong>Pipeline IDLE</strong> &mdash; last run published {last["posts_published"] or 0} post(s)'
-            '</div>'
+            f" <strong>Pipeline IDLE</strong> &mdash; last run published {last['posts_published'] or 0} post(s)"
+            "</div>"
         )
     else:
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse idle"></span>'
-            ' <strong>Pipeline IDLE</strong> &mdash; awaiting first run'
-            '</div>'
+            " <strong>Pipeline IDLE</strong> &mdash; awaiting first run"
+            "</div>"
         )
 
     return HTMLResponse(html, headers=_CACHE_HEADERS)
@@ -184,12 +191,12 @@ async def glass_costs(request: Request):
     cost_all = _cost_query(db)
 
     html = (
-        '<h3>Costs</h3>'
+        "<h3>Costs</h3>"
         '<div class="grid">'
         f'<div class="glass-stat"><div class="value">${cost_today:.4f}</div><div class="label">Today</div></div>'
         f'<div class="glass-stat"><div class="value">${cost_month:.2f}</div><div class="label">This month</div></div>'
         f'<div class="glass-stat"><div class="value">${cost_all:.2f}</div><div class="label">All time</div></div>'
-        '</div>'
+        "</div>"
     )
     return HTMLResponse(html, headers=_CACHE_HEADERS)
 
@@ -222,12 +229,12 @@ async def glass_health(request: Request):
     platform_count = platforms["c"] if platforms else 0
 
     html = (
-        '<h3>System Health</h3>'
+        "<h3>System Health</h3>"
         '<div class="grid">'
         f'<div class="glass-stat"><div class="value">{success_rate}</div><div class="label">Pipeline success rate</div></div>'
         f'<div class="glass-stat"><div class="value">{posts_count}</div><div class="label">Posts published</div></div>'
         f'<div class="glass-stat"><div class="value">{platform_count}</div><div class="label">Active platforms</div></div>'
-        '</div>'
+        "</div>"
     )
     return HTMLResponse(html, headers=_CACHE_HEADERS)
 
@@ -257,14 +264,14 @@ async def glass_agents(request: Request):
         tokens = (log.get("input_tokens") or 0) + (log.get("output_tokens") or 0)
         cards.append(
             '<div class="glass-agent-card">'
-            f'<strong>{_escape(log["agent_name"])}</strong>'
-            f' <small>{_fmt_duration(log.get("duration_seconds"))} &middot; {_fmt_tokens(tokens)} tokens</small>'
-            f'<p>{_escape(reasoning)}</p>'
+            f"<strong>{_escape(log['agent_name'])}</strong>"
+            f" <small>{_fmt_duration(log.get('duration_seconds'))} &middot; {_fmt_tokens(tokens)} tokens</small>"
+            f"<p>{_escape(reasoning)}</p>"
             f'<small class="glass-ts">{log.get("created_at", "")}</small>'
-            '</div>'
+            "</div>"
         )
 
-    html = '<h3>Agent Activity</h3><div class="glass-feed">' + "".join(cards) + '</div>'
+    html = '<h3>Agent Activity</h3><div class="glass-feed">' + "".join(cards) + "</div>"
     return HTMLResponse(html, headers=_CACHE_HEADERS)
 
 
@@ -312,25 +319,23 @@ async def glass_runs(request: Request):
 
         total_tok = (r.get("total_input_tokens") or 0) + (r.get("total_output_tokens") or 0)
         rows.append(
-            '<tr>'
-            f'<td><code>{r["id"][:8]}</code></td>'
-            f'<td>{_badge(r["status"])}{errors}</td>'
-            f'<td>{r.get("posts_published") or 0}</td>'
-            f'<td>{_fmt_tokens(total_tok)}</td>'
-            f'<td>${run_cost:.4f}</td>'
-            f'<td>{duration or "-"}</td>'
-            f'<td><small>{r.get("started_at", "")}</small></td>'
-            '</tr>'
+            "<tr>"
+            f"<td><code>{r['id'][:8]}</code></td>"
+            f"<td>{_badge(r['status'])}{errors}</td>"
+            f"<td>{r.get('posts_published') or 0}</td>"
+            f"<td>{_fmt_tokens(total_tok)}</td>"
+            f"<td>${run_cost:.4f}</td>"
+            f"<td>{duration or '-'}</td>"
+            f"<td><small>{r.get('started_at', '')}</small></td>"
+            "</tr>"
         )
 
     html = (
-        '<h3>Pipeline Runs</h3>'
+        "<h3>Pipeline Runs</h3>"
         '<div style="overflow-x:auto">'
-        '<table><thead><tr>'
-        '<th>Run</th><th>Status</th><th>Posts</th><th>Tokens</th><th>Cost</th><th>Duration</th><th>Started</th>'
-        '</tr></thead><tbody>'
-        + "".join(rows)
-        + '</tbody></table></div>'
+        "<table><thead><tr>"
+        "<th>Run</th><th>Status</th><th>Posts</th><th>Tokens</th><th>Cost</th><th>Duration</th><th>Started</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
     return HTMLResponse(html, headers=_CACHE_HEADERS)
 
@@ -369,13 +374,13 @@ async def glass_posts(request: Request):
             f'<div class="glass-post-meta">'
             f'<span class="badge {platform}">{_escape(platform)}</span>'
             f' <span class="confidence-bar"><span class="fill" style="width:{conf_pct}%;background:{conf_color}"></span></span>'
-            f' <small>{conf_pct}% confidence</small>'
-            f'{link}'
-            '</div>'
-            f'<p>{_escape(_trunc(p["text"], 280))}</p>'
+            f" <small>{conf_pct}% confidence</small>"
+            f"{link}"
+            "</div>"
+            f"<p>{_escape(_trunc(p['text'], 280))}</p>"
             f'<small class="glass-ts">{p.get("published_at", "")}</small>'
-            '</div>'
+            "</div>"
         )
 
-    html = '<h3>Published Posts</h3><div class="glass-feed">' + "".join(cards) + '</div>'
+    html = '<h3>Published Posts</h3><div class="glass-feed">' + "".join(cards) + "</div>"
     return HTMLResponse(html, headers=_CACHE_HEADERS)

@@ -227,7 +227,6 @@ class Pipeline:
             else:
                 generate_only = not self.settings.autonomous_mode
         run_id = str(uuid.uuid4())
-        self.db.start_pipeline_run(run_id, mode="single", client_id=client_id)
         errors = []
         total_input_tokens = 0
         total_output_tokens = 0
@@ -237,10 +236,9 @@ class Pipeline:
         client = Client(**client_data) if client_data else None
         platforms = target_platforms or [Platform.GENERIC]
 
-        # Budget guard: skip paused clients
+        # Budget guard: skip paused clients (no run recorded)
         if client_data and client_data.get("status") == "paused":
             logger.info(f"Client {client_id} is paused (budget exceeded). Skipping cycle.")
-            self.db.complete_pipeline_run(run_id, posts_published=0, errors=["client_paused"])
             return {
                 "run_id": run_id,
                 "posts_published": 0,
@@ -255,7 +253,7 @@ class Pipeline:
             self.db.check_and_expire_trial(client_id)
             client_data = self.db.get_client(client_id)
 
-        # Subscription guard: skip non-internal clients without active subscription
+        # Subscription guard: skip non-internal clients without active subscription (no run recorded)
         if (
             client_data
             and not client_data.get("internal")
@@ -264,7 +262,6 @@ class Pipeline:
             logger.info(
                 f"Client {client_id} has no active subscription (status={client_data.get('subscription_status')}). Skipping."
             )
-            self.db.complete_pipeline_run(run_id, posts_published=0, errors=["no_active_subscription"])
             return {
                 "run_id": run_id,
                 "posts_published": 0,
@@ -273,6 +270,9 @@ class Pipeline:
                 "output_tokens": 0,
                 "errors": ["no_active_subscription"],
             }
+
+        # Guards passed — record the pipeline run
+        self.db.start_pipeline_run(run_id, mode="single", client_id=client_id)
 
         # Per-tenant credentials: resolve platform clients for this client
         if self.settings.secret_key:

@@ -1,156 +1,25 @@
 # Ortobahn
 
-> Autonomous AI marketing engine by Vaultscaler
+> Autonomous AI marketing engine that runs itself
 
-## Summary
-
-Ortobahn is a fully autonomous marketing engine that uses a pipeline of 5 specialized AI agents to generate strategy, create platform-native content, and publish across social media — with zero human intervention. It operates as an autonomous AI company: once configured, it runs itself indefinitely.
-
-## Product Details
-
-- **Type:** SaaS — autonomous multi-agent marketing platform
-- **URL:** https://ortobahn.com
-- **App:** https://app.ortobahn.com
-- **Pricing:** $49/month (14-day free trial, no credit card required)
-- **Built by:** Vaultscaler (https://vaultscaler.com)
-- **Status:** Live and publishing autonomously
-
-## How It Works
-
-Ortobahn runs a 5-agent AI pipeline on a configurable schedule (default: every 6 hours):
-
-### Agent Pipeline
-
-1. **Analytics Agent** — Analyzes past post performance: engagement rates, impressions, likes, reposts, top-performing themes, audience signals, and time-of-day patterns. Grounds every downstream decision in data.
-
-2. **CEO Agent** — Sets high-level strategic direction based on analytics, trending topics, and brand profile. Decides themes, tone adjustments, posting cadence, platform priorities, and content mix. Produces a strategy document that guides the rest of the pipeline.
-
-3. **Strategist Agent** — Translates the CEO's strategy into a concrete content plan: specific post ideas with hooks, angles, target platforms, and content formats. Incorporates trending news (via Google Trends, NewsAPI, RSS feeds) for timely content.
-
-4. **Creator Agent** — Writes platform-native content for each post idea. Respects platform character limits (Bluesky: 300 chars, Twitter: 280 chars, LinkedIn: 3000 chars), tone conventions, hashtag practices, and formatting expectations. Produces multiple drafts per idea.
-
-5. **Publisher Agent** — Evaluates each draft with a confidence score (0.0–1.0). Posts above the client's confidence threshold are published automatically to connected platforms. Below-threshold posts are saved as drafts for optional human review.
-
-### Additional Operational Agents
-
-- **CFO Agent** — Tracks API costs, token usage, and per-client profitability
-- **SRE Agent** — Monitors system health, error rates, and pipeline performance
-- **Ops Agent** — Manages client onboarding, scheduling, and platform connectivity
-- **CTO Agent** — Handles engineering tasks, code changes, and CI/CD
-- **Reflection Agent** — Periodic self-assessment comparing predictions to outcomes
-- **Marketing Agent** — Meta-marketing: promotes Ortobahn itself using the same pipeline
-
-### Learning System
-
-Ortobahn includes a persistent memory and learning engine:
-- **Agent Memory** — Stores observations, patterns, and preferences per agent per client
-- **Confidence Calibration** — Tracks prediction accuracy and adjusts confidence thresholds
-- **A/B Experiments** — Tests content variations (hooks, tones, formats) and learns from results
-- **Reflection Reports** — Periodic analysis of what worked and what didn't
-
-## Supported Platforms
-
-| Platform    | Status | Post Format                       |
-|-------------|--------|-----------------------------------|
-| Bluesky     | Live   | 300 chars, optional link facets   |
-| Twitter / X | Live   | 280 chars, hashtags, threads      |
-| LinkedIn    | Live   | 3000 chars, professional tone     |
-
-## Key Features
-
-- **Fully Autonomous** — Runs without human intervention after initial setup
-- **Multi-Platform Publishing** — Publishes to Bluesky, Twitter/X, and LinkedIn simultaneously
-- **Confidence Gating** — Only high-quality content auto-publishes; low-confidence drafts held for review
-- **Brand Voice Control** — Configure tone, themes, industry, target audience, content pillars
-- **Analytics Feedback Loop** — Performance data feeds into the next cycle for continuous improvement
-- **Trend-Aware** — Integrates Google Trends, NewsAPI, and custom RSS feeds
-- **Multi-Tenant** — Each client gets independent strategy, voice, and schedule
-- **Self-Learning** — Agent memory, A/B testing, and confidence calibration improve over time
-- **Self-Healing** — SRE agent monitors health; CI fix agent auto-repairs build failures
-
-## API Endpoints
-
-### Public
-
-- `POST https://app.ortobahn.com/api/onboard` — Create a new account
-  - Body: `{ name, company, email, password, industry, website, brand_voice }`
-  - Returns: `{ client_id, api_key, session_token, message }`
-
-- `GET https://app.ortobahn.com/api/public/stats` — Platform statistics
-  - Returns: `{ total_clients, total_posts_published, platforms_supported }`
-
-### Authenticated (session cookie or API key)
-
-- `GET /my/dashboard` — Client dashboard with recent posts, metrics, strategy
-- `POST /my/generate` — Trigger a pipeline run
-- `GET /my/settings` — Account settings, connected platforms, API keys
-- `POST /my/settings` — Update brand profile and content sources
-- `POST /my/credentials/{platform}` — Connect a social platform
-- `GET /my/subscribe` — Start a paid subscription (Stripe Checkout)
-- `POST /my/billing` — Manage subscription (Stripe Customer Portal)
-
-### Webhook
-
-- `POST /api/stripe-webhook` — Stripe payment event handler
-
-## Architecture
-
-- **Runtime:** Python 3.12 on AWS ECS Fargate
-- **Database:** PostgreSQL (AWS RDS)
-- **AI Model:** Claude (Anthropic API) for all agent reasoning
-- **Auth:** AWS Cognito (user pool with email verification)
-- **Payments:** Stripe (subscriptions with 14-day trial)
-- **CI/CD:** GitHub Actions → ECR → ECS rolling deployment
-- **Monitoring:** CloudWatch alarms, SNS email alerts
-
-## Onboarding Flow
-
-1. User visits ortobahn.com and fills in company info + brand voice
-2. Account created in Cognito + database, 14-day trial starts
-3. CEO agent generates initial strategy based on brand profile
-4. User connects social platform credentials (Bluesky/Twitter/LinkedIn)
-5. Pipeline begins autonomous publishing on configured schedule
-
-## Use Cases
-
-- **Startups** — Maintain consistent social presence without a marketing hire
-- **Agencies** — Manage multiple client brands from one platform
-- **Solo Founders** — Focus on product while Ortobahn handles marketing
-- **Small Businesses** — Professional social media presence at $49/month
-- **Content Teams** — Augment human marketers with autonomous content generation
-
-## Competitive Positioning
-
-Ortobahn is not a writing assistant or scheduling tool. It is a complete autonomous marketing organization:
-- Unlike Buffer/Hootsuite: Ortobahn generates content, not just schedules it
-- Unlike Jasper/Copy.ai: Ortobahn runs end-to-end (strategy → creation → publishing)
-- Unlike human agencies: Ortobahn operates 24/7 with zero labor costs
-- The confidence-gating system provides quality control without human bottlenecks
-
-## Technical Integrations
-
-- **Google Trends** — Real-time trending topic discovery
-- **NewsAPI** — Breaking news and industry headlines
-- **RSS Feeds** — Custom content source monitoring
-- **Bluesky AT Protocol** — Native API publishing
-- **Twitter/X API v2** — OAuth 2.0 posting
-- **LinkedIn API** — Share API for company pages and profiles
-- **Stripe** — Subscription billing and customer portal
-- **AWS Cognito** — User authentication and email verification
-
-## Contact
+Ortobahn uses a pipeline of specialized AI agents to generate strategy, create content, and publish across Bluesky, Twitter/X, and LinkedIn — fully autonomous, no humans in the loop.
 
 - Website: https://ortobahn.com
 - App: https://app.ortobahn.com
-- Sign up: https://ortobahn.com/#request-access
+- Pricing: $49/month, 14-day free trial
 - Built by: Vaultscaler (https://vaultscaler.com)
-- Bluesky: https://bsky.app/profile/vaultscaler.bsky.social
 
-## Links
+## How It Works
+5-agent pipeline running on a schedule:
+1. Analytics Agent — analyzes past performance
+2. CEO Agent — sets strategy and direction
+3. Strategist Agent — creates content plans from trending topics
+4. Creator Agent — writes platform-native posts
+5. Publisher Agent — confidence-gates and publishes
 
-- Landing page: https://ortobahn.com
-- Application: https://app.ortobahn.com
-- API: https://app.ortobahn.com/openapi.json
-- LLMs.txt: https://ortobahn.com/llms.txt
-- AI Plugin: https://ortobahn.com/.well-known/ai-plugin.json
-- Sitemap: https://ortobahn.com/sitemap.xml
+## Get Started
+Sign up: https://ortobahn.com/#request-access
+API: POST https://app.ortobahn.com/api/onboard
+
+## Full Documentation
+https://ortobahn.com/llms-full.txt

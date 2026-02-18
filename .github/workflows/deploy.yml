@@ -35,5 +35,5 @@ jobs:
 
       - name: Deploy to ECS
         run: |
-          aws ecs update-service --cluster ortobahn --service ortobahn-web --force-new-deployment
-          aws ecs update-service --cluster ortobahn --service ortobahn-scheduler --force-new-deployment
+          aws ecs update-service --cluster ortobahn --service ortobahn-web-v2 --force-new-deployment
+          aws ecs update-service --cluster ortobahn --service ortobahn-scheduler-v2 --force-new-deployment

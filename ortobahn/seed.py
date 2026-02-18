@@ -103,6 +103,36 @@ def seed_ortobahn(db: Database) -> str:
     return cid
 
 
+def seed_ortobahn_credentials(db: Database, settings) -> None:
+    """Migrate Ortobahn Bluesky credentials from env vars to per-tenant storage."""
+    if not settings.secret_key:
+        return
+    if not settings.ortobahn_bluesky_handle or not settings.ortobahn_bluesky_app_password:
+        return
+
+    from ortobahn.credentials import get_platform_credentials, save_platform_credentials
+
+    # Determine ortobahn client ID (could be 'ortobahn' or 'default')
+    ortobahn_id = "ortobahn"
+    existing = db.get_client("ortobahn")
+    if not existing:
+        existing = db.get_client("default")
+        if existing and existing.get("name") == "Ortobahn":
+            ortobahn_id = "default"
+        else:
+            return  # No ortobahn client found
+
+    creds = get_platform_credentials(db, ortobahn_id, "bluesky", settings.secret_key)
+    if not creds:
+        save_platform_credentials(
+            db,
+            ortobahn_id,
+            "bluesky",
+            {"handle": settings.ortobahn_bluesky_handle, "app_password": settings.ortobahn_bluesky_app_password},
+            settings.secret_key,
+        )
+
+
 def seed_vaultscaler_credentials(db: Database, settings) -> None:
     """Migrate Vaultscaler credentials from env vars to per-tenant storage."""
     if not settings.secret_key:
@@ -238,5 +268,6 @@ def seed_all(db: Database, settings=None) -> list[str]:
     ids = [seed_vaultscaler(db), seed_ortobahn(db)]
     if settings:
         seed_vaultscaler_credentials(db, settings)
+        seed_ortobahn_credentials(db, settings)
     seed_cto_backlog(db)
     return ids

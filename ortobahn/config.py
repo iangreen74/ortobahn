@@ -102,6 +102,10 @@ class Settings:
     cifix_auto_pr: bool = True
     cifix_max_llm_attempts: int = 2
 
+    # Ortobahn self-marketing Bluesky credentials
+    ortobahn_bluesky_handle: str = ""
+    ortobahn_bluesky_app_password: str = ""
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
@@ -215,4 +219,6 @@ def load_settings() -> Settings:
         cognito_user_pool_id=os.environ.get("COGNITO_USER_POOL_ID", ""),
         cognito_client_id=os.environ.get("COGNITO_CLIENT_ID", ""),
         cognito_region=os.environ.get("COGNITO_REGION", "us-west-2"),
+        ortobahn_bluesky_handle=os.environ.get("ORTOBAHN_BLUESKY_HANDLE", ""),
+        ortobahn_bluesky_app_password=os.environ.get("ORTOBAHN_BLUESKY_APP_PASSWORD", ""),
     )

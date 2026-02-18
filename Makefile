@@ -79,8 +79,8 @@ deploy-ecs:
 	docker build -t ortobahn .
 	docker tag ortobahn:latest $(ECR_REPO):latest
 	docker push $(ECR_REPO):latest
-	aws ecs update-service --cluster ortobahn --service ortobahn-web --force-new-deployment --region us-west-2
-	aws ecs update-service --cluster ortobahn --service ortobahn-scheduler --force-new-deployment --region us-west-2
+	aws ecs update-service --cluster ortobahn --service ortobahn-web-v2 --force-new-deployment --region us-west-2
+	aws ecs update-service --cluster ortobahn --service ortobahn-scheduler-v2 --force-new-deployment --region us-west-2
 	@echo "\nECS services updating."
 
 clean:

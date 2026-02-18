@@ -10,8 +10,13 @@
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <link rel="canonical" href="https://ortobahn.com/">
 
+    <!-- Performance -->
+    <link rel="preconnect" href="https://app.ortobahn.com">
+    <link rel="dns-prefetch" href="https://app.ortobahn.com">
+
     <!-- Agentic Discovery -->
     <link rel="alternate" type="text/plain" href="https://ortobahn.com/llms.txt" title="LLM-readable product information">
+    <link rel="alternate" type="text/plain" href="https://ortobahn.com/llms-full.txt" title="Detailed LLM-readable documentation">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
@@ -72,6 +77,10 @@
         "publisher": {
             "@type": "Organization",
             "name": "Ortobahn"
+        },
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://app.ortobahn.com/api/public/stats"
         }
     }
     </script>
@@ -111,6 +120,7 @@
             "@type": "Offer",
             "price": "49",
             "priceCurrency": "USD",
+            "billingIncrement": "P1M",
             "priceValidUntil": "2027-12-31",
             "availability": "https://schema.org/InStock",
             "description": "Ortobahn Pro — 14-day free trial, then $49/month",
@@ -141,8 +151,10 @@
             "@type": "Offer",
             "price": "49",
             "priceCurrency": "USD",
+            "billingIncrement": "P1M",
             "priceValidUntil": "2027-12-31",
             "availability": "https://schema.org/InStock",
+            "url": "https://ortobahn.com/#pricing",
             "priceSpecification": {
                 "@type": "UnitPriceSpecification",
                 "price": "49",
@@ -389,6 +401,7 @@
             <div class="container">
                 <h2>Live Proof: It's Already Running</h2>
                 <p class="section-sub">Ortobahn autonomously publishes content for Vaultscaler on Bluesky. No human writes, reviews, or schedules these posts.</p>
+                <p class="section-sub"><span id="live-stats"></span></p>
 
                 <div class="proof-card">
                     <div class="proof-header">
@@ -568,6 +581,18 @@
             if (btn.textContent === 'Creating account...') btn.textContent = 'Create Account';
         }
     });
+    </script>
+
+    <!-- Live stats -->
+    <script>
+    fetch('https://app.ortobahn.com/api/public/stats')
+      .then(r => r.json())
+      .then(d => {
+        const el = document.getElementById('live-stats');
+        if (el && d.total_posts_published) {
+          el.textContent = d.total_posts_published + ' posts published autonomously';
+        }
+      }).catch(() => {});
     </script>
 </body>
 </html>

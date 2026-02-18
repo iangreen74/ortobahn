@@ -459,3 +459,22 @@ class PreflightResult(BaseModel):
     @property
     def warnings(self) -> list[PreflightIssue]:
         return [i for i in self.issues if i.severity == PreflightSeverity.WARNING]
+
+
+# --- Support Agent output ---
+
+
+class SupportTicket(BaseModel):
+    client_id: str = ""
+    severity: str = "info"  # critical, warning, info
+    category: str = ""  # onboarding, credentials, pipeline, billing, engagement
+    summary: str = ""
+    recommendation: str = ""
+
+
+class SupportReport(BaseModel):
+    tickets: list[SupportTicket] = Field(default_factory=list)
+    health_summary: str = ""
+    at_risk_clients: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    total_clients_checked: int = 0

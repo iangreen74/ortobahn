@@ -14,6 +14,7 @@ from ortobahn.auth import _LoginRedirect
 from ortobahn.cognito import CognitoClient
 from ortobahn.config import load_settings
 from ortobahn.db import Database, create_database
+from ortobahn.web.rate_limit import RateLimitMiddleware
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -53,6 +54,12 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
+    )
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=settings.rate_limit_enabled,
+        default_rpm=settings.rate_limit_default,
     )
 
     @app.get("/health")

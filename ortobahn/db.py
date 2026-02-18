@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 from ortobahn.models import AnalyticsReport, PostPerformance
 
 logger = logging.getLogger("ortobahn.db")
+
+# Default timeout (seconds) when waiting for a connection from the pool.
+_POOL_CHECKOUT_TIMEOUT: float = 5.0
+
+
+class PoolExhaustedError(Exception):
+    """Raised when all connections in the pool are in use and the timeout expires."""
 
 
 def to_datetime(value: Any) -> datetime:
@@ -24,14 +33,126 @@ def to_datetime(value: Any) -> datetime:
     raise TypeError(f"Cannot convert {type(value).__name__} to datetime: {value!r}")
 
 
-class Database:
-    def __init__(self, db_path: Path | None = None, database_url: str = ""):
-        if database_url:
-            import psycopg2
-            import psycopg2.pool
+class _HealthCheckedPool:
+    """Wrapper around psycopg2 ThreadedConnectionPool that adds:
 
+    * **Test-on-borrow**: every connection returned from ``getconn`` is verified
+      with a lightweight ``SELECT 1`` ping.  Dead connections are discarded and
+      a fresh one is transparently acquired.
+    * **Wait-with-timeout**: when the underlying pool raises ``PoolError``
+      (pool exhausted), we wait on a ``threading.Condition`` up to
+      *checkout_timeout* seconds.  If no connection is released in time a clear
+      ``PoolExhaustedError`` is raised instead of the cryptic psycopg2 error.
+    * **Bookkeeping**: ``checked_out`` tracks how many connections are currently
+      lent out, which is useful for tests and monitoring.
+    """
+
+    def __init__(
+        self,
+        minconn: int,
+        maxconn: int,
+        dsn: str,
+        checkout_timeout: float = _POOL_CHECKOUT_TIMEOUT,
+    ):
+        import psycopg2.pool
+
+        self._inner = psycopg2.pool.ThreadedConnectionPool(
+            minconn=minconn,
+            maxconn=maxconn,
+            dsn=dsn,
+        )
+        self._maxconn = maxconn
+        self._checkout_timeout = checkout_timeout
+        self._cond = threading.Condition(threading.Lock())
+        self.checked_out = 0
+
+    # -- public API --------------------------------------------------------
+
+    def getconn(self) -> Any:
+        """Borrow a connection from the pool, with health-check and timeout."""
+        import psycopg2
+
+        while True:
+            conn = None
+            with self._cond:
+                while conn is None:
+                    try:
+                        conn = self._inner.getconn()
+                    except psycopg2.pool.PoolError:
+                        # Pool exhausted -- wait for a putconn notification.
+                        got_signal = self._cond.wait(timeout=self._checkout_timeout)
+                        if not got_signal:
+                            raise PoolExhaustedError(
+                                f"Could not obtain a database connection within "
+                                f"{self._checkout_timeout}s (pool max={self._maxconn})"
+                            ) from None
+                        continue  # retry after being woken up
+
+            # Health check (test on borrow) -- outside the lock.
+            if not self._ping(conn):
+                logger.warning("Stale connection detected; discarding and getting a new one")
+                self._discard(conn)
+                continue  # loop back to get a fresh connection
+
+            with self._cond:
+                self.checked_out += 1
+
+            return conn
+
+    def putconn(self, conn: Any, close: bool = False) -> None:
+        """Return a connection to the pool and notify waiters."""
+        with self._cond:
+            self._inner.putconn(conn, close=close)
+            self.checked_out = max(0, self.checked_out - 1)
+            self._cond.notify()
+
+    def closeall(self) -> None:
+        self._inner.closeall()
+
+    @property
+    def closed(self) -> bool:
+        return self._inner.closed
+
+    # -- internal helpers --------------------------------------------------
+
+    @staticmethod
+    def _ping(conn: Any) -> bool:
+        """Return True if the connection is alive."""
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            # If the connection was left in an error state, reset it.
+            if conn.info.transaction_status != 0:  # IDLE
+                conn.rollback()
+            return True
+        except Exception:
+            return False
+
+    def _discard(self, conn: Any) -> None:
+        """Close a bad connection and remove it from the pool."""
+        try:
+            self._inner.putconn(conn, close=True)
+        except Exception:
+            # If putconn also fails, just close the raw connection.
+            with contextlib.suppress(Exception):
+                conn.close()
+
+
+class Database:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        database_url: str = "",
+        pool_min: int = 2,
+        pool_max: int = 10,
+    ):
+        if database_url:
             self.backend = "postgresql"
-            self._pool = psycopg2.pool.ThreadedConnectionPool(minconn=2, maxconn=10, dsn=database_url)
+            self._pool: _HealthCheckedPool | None = _HealthCheckedPool(
+                minconn=pool_min,
+                maxconn=pool_max,
+                dsn=database_url,
+            )
             self._sqlite_conn = None
         else:
             self.backend = "sqlite"
@@ -43,6 +164,27 @@ class Database:
 
         self._create_tables()
         self._run_migrations()
+
+    # ------------------------------------------------------------------
+    # Connection context manager (PostgreSQL pool checkout/return)
+    # ------------------------------------------------------------------
+
+    @contextlib.contextmanager
+    def _pg_conn(self) -> Generator[Any, None, None]:
+        """Checkout a PostgreSQL connection, yield it, then return it.
+
+        On exception the transaction is rolled back before the connection is
+        returned to the pool.
+        """
+        assert self._pool is not None
+        conn = self._pool.getconn()
+        try:
+            yield conn
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
 
     # ------------------------------------------------------------------
     # Low-level DB helpers (backend-agnostic)
@@ -58,17 +200,11 @@ class Database:
         """Execute a query. Returns the cursor (sqlite) or None (pg)."""
         query = self._convert_query(query)
         if self.backend == "postgresql":
-            conn = self._pool.getconn()  # type: ignore[union-attr]
-            try:
+            with self._pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, tuple(params))
                 if commit:
                     conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                self._pool.putconn(conn)  # type: ignore[union-attr]
             return None
         else:
             result = self._sqlite_conn.execute(query, params)  # type: ignore[union-attr]
@@ -82,14 +218,11 @@ class Database:
         if self.backend == "postgresql":
             import psycopg2.extras
 
-            conn = self._pool.getconn()  # type: ignore[union-attr]
-            try:
+            with self._pg_conn() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute(query, tuple(params))
                     row = cur.fetchone()
                     return dict(row) if row else None
-            finally:
-                self._pool.putconn(conn)  # type: ignore[union-attr]
         else:
             row = self._sqlite_conn.execute(query, params).fetchone()  # type: ignore[union-attr]
             return dict(row) if row else None
@@ -100,14 +233,11 @@ class Database:
         if self.backend == "postgresql":
             import psycopg2.extras
 
-            conn = self._pool.getconn()  # type: ignore[union-attr]
-            try:
+            with self._pg_conn() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute(query, tuple(params))
                     rows = cur.fetchall()
                     return [dict(r) for r in rows]
-            finally:
-                self._pool.putconn(conn)  # type: ignore[union-attr]
         else:
             rows = self._sqlite_conn.execute(query, params).fetchall()  # type: ignore[union-attr]
             return [dict(r) for r in rows]
@@ -893,10 +1023,13 @@ class Database:
         return (row["successes"] or 0) / total if total > 0 else 0.0
 
     def close(self):
+        """Close the database. For PostgreSQL this closes all pooled connections."""
         if self.backend == "postgresql" and self._pool:
             self._pool.closeall()
+            self._pool = None
         elif self._sqlite_conn:
             self._sqlite_conn.close()
+            self._sqlite_conn = None
 
 
 def create_database(settings) -> Database:
@@ -904,4 +1037,6 @@ def create_database(settings) -> Database:
     return Database(
         db_path=settings.db_path if not settings.database_url else None,
         database_url=settings.database_url,
+        pool_min=getattr(settings, "db_pool_min", 2),
+        pool_max=getattr(settings, "db_pool_max", 10),
     )

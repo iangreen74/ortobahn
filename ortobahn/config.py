@@ -46,6 +46,8 @@ class Settings:
     # Database
     database_url: str = ""  # PostgreSQL: postgresql://user:pass@host:5432/dbname
     db_path: Path = Path("data/ortobahn.db")  # SQLite fallback (ignored if database_url set)
+    db_pool_min: int = 2  # Minimum connections in PostgreSQL pool
+    db_pool_max: int = 10  # Maximum connections in PostgreSQL pool
 
     # Pipeline
     post_confidence_threshold: float = 0.7
@@ -67,6 +69,8 @@ class Settings:
 
     # Rate limiting
     post_delay_seconds: int = 30
+    rate_limit_enabled: bool = True
+    rate_limit_default: int = 60
 
     # Slack alerting
     slack_webhook_url: str = ""
@@ -186,6 +190,8 @@ def load_settings() -> Settings:
         bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
         database_url=os.environ.get("DATABASE_URL", ""),
         db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
+        db_pool_min=int(os.environ.get("DB_POOL_MIN", "2")),
+        db_pool_max=int(os.environ.get("DB_POOL_MAX", "10")),
         post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),
         pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "8")),
         max_posts_per_cycle=int(os.environ.get("MAX_POSTS_PER_CYCLE", "4")),
@@ -195,6 +201,8 @@ def load_settings() -> Settings:
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         default_monthly_budget=float(os.environ.get("DEFAULT_MONTHLY_BUDGET", "0")),
         post_delay_seconds=int(os.environ.get("POST_DELAY_SECONDS", "30")),
+        rate_limit_enabled=os.environ.get("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"),
+        rate_limit_default=int(os.environ.get("RATE_LIMIT_DEFAULT", "60")),
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
         backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
         backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),

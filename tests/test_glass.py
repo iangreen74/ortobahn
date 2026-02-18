@@ -130,7 +130,8 @@ class TestGlassAgents:
         db = app.state.db
         db.start_pipeline_run("a-run", mode="single", client_id="default")
         db.log_agent(
-            "a-run", "ceo",
+            "a-run",
+            "ceo",
             output_summary="Set strategy for Q1",
             reasoning="Market analysis shows AI trending",
             input_tokens=5000,
@@ -147,7 +148,8 @@ class TestGlassAgents:
         db = app.state.db
         db.start_pipeline_run("raw-run", mode="single", client_id="default")
         db.log_agent(
-            "raw-run", "creator",
+            "raw-run",
+            "creator",
             output_summary="Created post",
             reasoning="topic relevant",
             raw_response="FULL SECRET PROMPT AND RESPONSE DATA",
@@ -183,13 +185,15 @@ class TestGlassRuns:
     def test_runs_hides_external_clients(self, tmp_path):
         app = _create_test_app(tmp_path)
         db = app.state.db
-        db.create_client({
-            "id": "external-corp",
-            "name": "Secret Corp",
-            "industry": "finance",
-            "target_audience": "traders",
-            "brand_voice": "formal",
-        })
+        db.create_client(
+            {
+                "id": "external-corp",
+                "name": "Secret Corp",
+                "industry": "finance",
+                "target_audience": "traders",
+                "brand_voice": "formal",
+            }
+        )
         db.start_pipeline_run("ext-run", mode="single", client_id="external-corp")
         db.complete_pipeline_run("ext-run", posts_published=5)
         client = TestClient(app)
@@ -225,13 +229,15 @@ class TestGlassPosts:
     def test_posts_hides_external_clients(self, tmp_path):
         app = _create_test_app(tmp_path)
         db = app.state.db
-        db.create_client({
-            "id": "secret-client",
-            "name": "Secret",
-            "industry": "tech",
-            "target_audience": "devs",
-            "brand_voice": "casual",
-        })
+        db.create_client(
+            {
+                "id": "secret-client",
+                "name": "Secret",
+                "industry": "tech",
+                "target_audience": "devs",
+                "brand_voice": "casual",
+            }
+        )
         db.save_post(
             text="This is secret external content",
             run_id="s-run",

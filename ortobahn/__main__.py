@@ -140,6 +140,12 @@ def cmd_schedule(args):
     platforms = [Platform(p.strip()) for p in args.platforms.split(",") if p.strip()]
 
     pipeline = Pipeline(settings, dry_run=dry_run)
+
+    # Seed internal clients (idempotent)
+    from ortobahn.seed import seed_all
+
+    seed_all(pipeline.db, settings=settings)
+
     cycle_num = 0
 
     try:

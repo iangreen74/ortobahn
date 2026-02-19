@@ -258,27 +258,30 @@ class Watchdog:
     def _act(self, fixable: list[Finding]) -> list[RemediationResult]:
         results = []
         for f in fixable:
+            if not f.ref_id:
+                continue
+            ref_id: str = f.ref_id
             try:
                 if f.probe == "stale_run":
-                    self._fix_stale_run(f.ref_id)
+                    self._fix_stale_run(ref_id)
                     results.append(
                         RemediationResult(
                             finding=f,
-                            action=f"Marked stale run {f.ref_id} as failed",
+                            action=f"Marked stale run {ref_id} as failed",
                             success=True,
                         )
                     )
                 elif f.probe == "post_delivery":
-                    self._fix_phantom_post(f.ref_id)
+                    self._fix_phantom_post(ref_id)
                     results.append(
                         RemediationResult(
                             finding=f,
-                            action=f"Marked phantom post {f.ref_id} as failed",
+                            action=f"Marked phantom post {ref_id} as failed",
                             success=True,
                         )
                     )
                 elif f.probe == "client_health":
-                    self._fix_client_subscription(f.ref_id)
+                    self._fix_client_subscription(ref_id)
                     results.append(
                         RemediationResult(
                             finding=f,

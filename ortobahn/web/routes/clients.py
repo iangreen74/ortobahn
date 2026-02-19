@@ -44,7 +44,8 @@ async def client_create(
             "target_audience": target_audience,
             "brand_voice": brand_voice,
             "website": website,
-        }
+        },
+        start_trial=False,
     )
     return RedirectResponse("/clients/", status_code=303)
 

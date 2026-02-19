@@ -152,6 +152,14 @@ async def tenant_settings(request: Request, client: AuthClient):
         if row:
             connected_platforms.append(platform)
 
+    # Check for credential validation errors from redirect
+    error_code = request.query_params.get("error")
+    credential_error = None
+    if error_code == "bluesky_handle_format":
+        credential_error = (
+            "Bluesky handle should be in the format 'you.bsky.social', not an email address."
+        )
+
     return templates.TemplateResponse(
         "tenant_settings.html",
         {
@@ -159,6 +167,7 @@ async def tenant_settings(request: Request, client: AuthClient):
             "client": client,
             "api_keys": api_keys,
             "connected_platforms": connected_platforms,
+            "credential_error": credential_error,
         },
     )
 
@@ -208,6 +217,13 @@ async def tenant_save_credentials(
 
     form = await request.form()
     creds = {k: v for k, v in form.items() if k != "platform" and v}
+
+    # Validate Bluesky handle format
+    if platform == "bluesky" and "handle" in creds:
+        handle = creds["handle"].strip()
+        if "@" in handle or "." not in handle:
+            return RedirectResponse("/my/settings?error=bluesky_handle_format", status_code=303)
+        creds["handle"] = handle
 
     save_platform_credentials(db, client["id"], platform, creds, secret_key)
     return RedirectResponse("/my/settings", status_code=303)

@@ -1,6 +1,6 @@
 """Tests for database operations."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class TestDatabaseTables:
@@ -313,3 +313,28 @@ class TestContentApproval:
 
         twitter = test_db.get_all_posts(platform="twitter")
         assert len(twitter) == 1
+
+
+class TestClientTrial:
+    def test_create_client_starts_trial_by_default(self, test_db):
+        """Non-internal clients get subscription_status='trialing' and trial_ends_at set."""
+        cid = test_db.create_client({"name": "Trial Corp"})
+        client = test_db.get_client(cid)
+        assert client["subscription_status"] == "trialing"
+        assert client["trial_ends_at"] is not None
+
+    def test_create_client_no_trial_when_disabled(self, test_db):
+        """Explicitly disabling start_trial leaves subscription_status as 'none'."""
+        cid = test_db.create_client({"name": "Admin Corp"}, start_trial=False)
+        client = test_db.get_client(cid)
+        assert client["subscription_status"] == "none"
+        assert client["trial_ends_at"] is None
+
+    def test_trial_ends_approximately_14_days_from_now(self, test_db):
+        cid = test_db.create_client({"name": "Timing Corp"})
+        client = test_db.get_client(cid)
+        trial_end = datetime.fromisoformat(client["trial_ends_at"])
+        if trial_end.tzinfo is None:
+            trial_end = trial_end.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        assert timedelta(days=13) < (trial_end - now) < timedelta(days=15)

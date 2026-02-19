@@ -132,11 +132,19 @@
 <h2>Platform Credentials</h2>
 <p><small>Credentials are encrypted at rest. Only provide fields relevant to each platform.</small></p>
 
+{% if credential_error %}
+<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1rem;">
+    {{ credential_error }}
+</article>
+{% endif %}
+
 <article>
     <header>Bluesky {% if "bluesky" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
     <form method="post" action="/my/credentials/bluesky">
         <label for="bs_handle">Handle</label>
-        <input type="text" id="bs_handle" name="handle" placeholder="you.bsky.social">
+        <input type="text" id="bs_handle" name="handle" placeholder="you.bsky.social"
+               pattern="^[^@\s]+\.[^@\s]+"
+               title="Enter your Bluesky handle (e.g. you.bsky.social), not an email address">
         <label for="bs_password">App Password</label>
         <input type="password" id="bs_password" name="app_password" placeholder="xxxx-xxxx-xxxx-xxxx">
         <button type="submit" class="outline">Save Bluesky</button>

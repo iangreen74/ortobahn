@@ -449,6 +449,19 @@ def _migration_016_add_cache_token_tracking(db: Database) -> None:
     _safe_add_column(db, "pipeline_runs", "total_cache_read_tokens INTEGER DEFAULT 0")
 
 
+def _migration_017_backfill_client_trials(db: Database) -> None:
+    """Grant a 14-day trial to non-internal clients stuck at subscription_status='none'."""
+    from datetime import datetime, timedelta, timezone
+
+    trial_end = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
+    db.execute(
+        """UPDATE clients SET subscription_status='trialing', trial_ends_at=?
+           WHERE internal=0 AND subscription_status='none'""",
+        (trial_end,),
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -466,6 +479,7 @@ MIGRATIONS = {
     14: _migration_014_add_trial_ends_at,
     15: _migration_015_add_client_trends_and_schedule,
     16: _migration_016_add_cache_token_tracking,
+    17: _migration_017_backfill_client_trials,
 }
 
 

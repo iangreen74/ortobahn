@@ -61,7 +61,7 @@ def seed_vaultscaler(db: Database) -> str:
     if existing:
         db.execute("UPDATE clients SET internal=1, auto_publish=1 WHERE id='vaultscaler'", commit=True)
         return "vaultscaler"
-    cid = db.create_client(VAULTSCALER_CLIENT)
+    cid = db.create_client(VAULTSCALER_CLIENT, start_trial=False)
     db.execute("UPDATE clients SET internal=1, auto_publish=1 WHERE id=?", (cid,), commit=True)
     return cid
 
@@ -98,7 +98,7 @@ def seed_ortobahn(db: Database) -> str:
         db.execute("UPDATE clients SET internal=1, auto_publish=1 WHERE id='default'", commit=True)
         return "default"
 
-    cid = db.create_client(ORTOBAHN_CLIENT)
+    cid = db.create_client(ORTOBAHN_CLIENT, start_trial=False)
     db.execute("UPDATE clients SET internal=1, auto_publish=1 WHERE id=?", (cid,), commit=True)
     return cid
 

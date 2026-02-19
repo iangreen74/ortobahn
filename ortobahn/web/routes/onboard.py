@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -117,11 +116,10 @@ async def onboard(request: Request, body: OnboardRequest):
             status_code=400,
         )
 
-    # Store the Cognito sub and start 14-day free trial
-    trial_end = datetime.now(timezone.utc) + timedelta(days=14)
+    # Store the Cognito sub (trial already started by create_client)
     db.execute(
-        "UPDATE clients SET cognito_sub=?, subscription_status='trialing', trial_ends_at=? WHERE id=?",
-        (cognito_sub, trial_end.isoformat(), client_id),
+        "UPDATE clients SET cognito_sub=? WHERE id=?",
+        (cognito_sub, client_id),
         commit=True,
     )
 

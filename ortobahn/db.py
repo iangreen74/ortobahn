@@ -338,13 +338,21 @@ class Database:
 
     # --- Clients ---
 
-    def create_client(self, client_data: dict) -> str:
+    def create_client(self, client_data: dict, start_trial: bool = True) -> str:
         cid = client_data.get("id") or str(uuid.uuid4())
+        if start_trial:
+            from datetime import datetime, timedelta, timezone
+
+            sub_status = "trialing"
+            trial_ends_at = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
+        else:
+            sub_status = "none"
+            trial_ends_at = None
         self.execute(
             """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice,
                website, email, status, products, competitive_positioning, key_messages,
-               content_pillars, company_story)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               content_pillars, company_story, subscription_status, trial_ends_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 cid,
                 client_data["name"],
@@ -360,6 +368,8 @@ class Database:
                 client_data.get("key_messages", ""),
                 client_data.get("content_pillars", ""),
                 client_data.get("company_story", ""),
+                sub_status,
+                trial_ends_at,
             ),
             commit=True,
         )

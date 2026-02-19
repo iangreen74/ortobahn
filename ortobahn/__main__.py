@@ -342,7 +342,7 @@ def cmd_client_add(args):
     if args.id:
         client_data["id"] = args.id
 
-    cid = db.create_client(client_data)
+    cid = db.create_client(client_data, start_trial=False)
     console.print(f"[green]Client created: {args.name} (id={cid})[/green]")
     db.close()
 

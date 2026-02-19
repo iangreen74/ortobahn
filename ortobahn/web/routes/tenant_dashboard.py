@@ -156,9 +156,7 @@ async def tenant_settings(request: Request, client: AuthClient):
     error_code = request.query_params.get("error")
     credential_error = None
     if error_code == "bluesky_handle_format":
-        credential_error = (
-            "Bluesky handle should be in the format 'you.bsky.social', not an email address."
-        )
+        credential_error = "Bluesky handle should be in the format 'you.bsky.social', not an email address."
 
     return templates.TemplateResponse(
         "tenant_settings.html",

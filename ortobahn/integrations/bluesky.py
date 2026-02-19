@@ -73,14 +73,18 @@ class BlueskyClient:
 
         return PostMetrics(uri=uri, cid="")
 
-    def verify_post_exists(self, uri: str) -> bool:
-        """Verify that a post actually exists on Bluesky."""
+    def verify_post_exists(self, uri: str) -> bool | None:
+        """Verify that a post actually exists on Bluesky.
+
+        Returns True if found, False if definitively not found, None if
+        verification was inconclusive (e.g. auth error, network error).
+        """
         try:
             response = self._call_with_retry(self.client.app.bsky.feed.get_posts, params={"uris": [uri]})
             return bool(response.posts)
         except Exception as e:
             logger.warning(f"Failed to verify post {uri}: {e}")
-            return False
+            return None
 
     def get_recent_post_uris(self, limit: int = 20) -> list[str]:
         """Get URIs of recent posts from our own feed."""

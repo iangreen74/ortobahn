@@ -223,3 +223,16 @@ class TestPublisherAgent:
 
         assert result.posts[0].status == "published"
         mock_bluesky_client.verify_post_exists.assert_called_once()
+
+    def test_verification_inconclusive_trusts_post(self, test_db, mock_bluesky_client):
+        """If verification is inconclusive (e.g. auth error), trust the post succeeded."""
+        mock_bluesky_client.verify_post_exists.return_value = None
+        agent = PublisherAgent(
+            db=test_db,
+            bluesky_client=mock_bluesky_client,
+            confidence_threshold=0.7,
+        )
+        drafts = self._make_drafts([("Inconclusive post", 0.9)], platform=Platform.BLUESKY)
+        result = agent.run(run_id="run-1", drafts=drafts)
+
+        assert result.posts[0].status == "published"

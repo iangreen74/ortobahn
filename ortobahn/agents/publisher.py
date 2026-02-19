@@ -127,11 +127,15 @@ class PublisherAgent(BaseAgent):
                     uri, platform_id = publisher.post(draft.text)
 
                     # Verify the post actually exists on the platform
+                    # Returns True (found), False (not found), or None (inconclusive)
                     verified = True
                     if hasattr(publisher, "verify_post_exists") and uri:
-                        verified = publisher.verify_post_exists(uri)
-                        if not verified:
+                        result = publisher.verify_post_exists(uri)
+                        if result is False:
+                            verified = False
                             logger.warning(f"Post verification failed for {uri}")
+                        elif result is None:
+                            logger.info(f"Post verification inconclusive for {uri}, trusting post succeeded")
 
                     if verified:
                         self.db.update_post_published(post_id, uri, platform_id)

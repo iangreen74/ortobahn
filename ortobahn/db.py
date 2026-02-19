@@ -351,8 +351,8 @@ class Database:
         self.execute(
             """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice,
                website, email, status, products, competitive_positioning, key_messages,
-               content_pillars, company_story, subscription_status, trial_ends_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               content_pillars, company_story, subscription_status, trial_ends_at, auto_publish)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 cid,
                 client_data["name"],
@@ -370,6 +370,7 @@ class Database:
                 client_data.get("company_story", ""),
                 sub_status,
                 trial_ends_at,
+                1,
             ),
             commit=True,
         )

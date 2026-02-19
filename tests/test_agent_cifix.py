@@ -243,7 +243,7 @@ class TestMigration011:
         from ortobahn.migrations import _get_schema_version
 
         version = _get_schema_version(test_db)
-        assert version == 18
+        assert version == 19
 
         # Verify ci_fix_attempts table exists with expected columns
         test_db.fetchall(
@@ -257,4 +257,4 @@ class TestMigration011:
     def test_migration_idempotent(self, test_db):
         v1 = run_migrations(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 18
+        assert v1 == v2 == 19

@@ -322,19 +322,28 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
             " ORDER BY completed_at DESC LIMIT 1",
             (client["id"],),
         )
+        drafts_row = db.fetchone(
+            "SELECT COUNT(*) as c FROM posts WHERE status='draft' AND client_id=?",
+            (client["id"],),
+        )
+        draft_count = drafts_row["c"] if drafts_row else 0
+        draft_note = f" &middot; {draft_count} draft(s) pending review" if draft_count else ""
+
         if last and last["status"] == "failed":
             html = (
                 '<div class="glass-status-card">'
                 '<span class="glass-pulse failed"></span>'
                 f" <strong>Last run failed</strong> &mdash; {_escape(str(last.get('completed_at') or 'unknown'))}"
+                f"{draft_note}"
                 "</div>"
             )
         elif last:
+            published = last.get("posts_published") or 0
             html = (
                 '<div class="glass-status-card">'
                 '<span class="glass-pulse idle"></span>'
-                f" <strong>Pipeline idle</strong> &mdash; last run published"
-                f" {last.get('posts_published') or 0} post(s)"
+                f" <strong>Pipeline idle</strong> &mdash; last run published {published} post(s)"
+                f"{draft_note}"
                 "</div>"
             )
         else:

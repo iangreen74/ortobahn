@@ -504,6 +504,11 @@ def _migration_018_add_watchdog_tables(db: Database) -> None:
     )
 
 
+def _migration_019_enable_auto_publish_default(db: Database) -> None:
+    """Enable auto_publish for all clients — autonomous operation by default."""
+    db.execute("UPDATE clients SET auto_publish=1 WHERE auto_publish=0", commit=True)
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -523,6 +528,7 @@ MIGRATIONS = {
     16: _migration_016_add_cache_token_tracking,
     17: _migration_017_backfill_client_trials,
     18: _migration_018_add_watchdog_tables,
+    19: _migration_019_enable_auto_publish_default,
 }
 
 

@@ -27,25 +27,37 @@ class BlueskyClient:
         self.client = Client()
         self._logged_in = False
 
-    def login(self):
-        if not self._logged_in:
+    def login(self, force: bool = False):
+        if force or not self._logged_in:
+            self.client = Client()
             self.client.login(self.handle, self.app_password)
             self._logged_in = True
             logger.info(f"Logged in to Bluesky as {self.handle}")
 
+    def _call_with_retry(self, fn, *args, **kwargs):
+        """Call a Bluesky API function, retrying once on auth failure."""
+        self.login()
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "auth" in error_str or "token" in error_str or "expired" in error_str:
+                logger.warning(f"Bluesky auth error, re-authenticating: {e}")
+                self._logged_in = False
+                self.login(force=True)
+                return fn(*args, **kwargs)
+            raise
+
     def post(self, text: str) -> tuple[str, str]:
         """Post text to Bluesky. Returns (uri, cid)."""
-        self.login()
-        response = self.client.send_post(text=text)
+        response = self._call_with_retry(self.client.send_post, text=text)
         logger.info(f"Posted to Bluesky: {text[:50]}...")
         return response.uri, response.cid
 
     def get_post_metrics(self, uri: str) -> PostMetrics:
         """Get engagement metrics for a specific post."""
-        self.login()
         try:
-            # Use get_posts to fetch post details
-            response = self.client.app.bsky.feed.get_posts(params={"uris": [uri]})
+            response = self._call_with_retry(self.client.app.bsky.feed.get_posts, params={"uris": [uri]})
             if response.posts:
                 post = response.posts[0]
                 return PostMetrics(
@@ -61,11 +73,22 @@ class BlueskyClient:
 
         return PostMetrics(uri=uri, cid="")
 
+    def verify_post_exists(self, uri: str) -> bool:
+        """Verify that a post actually exists on Bluesky."""
+        try:
+            response = self._call_with_retry(self.client.app.bsky.feed.get_posts, params={"uris": [uri]})
+            return bool(response.posts)
+        except Exception as e:
+            logger.warning(f"Failed to verify post {uri}: {e}")
+            return False
+
     def get_recent_post_uris(self, limit: int = 20) -> list[str]:
         """Get URIs of recent posts from our own feed."""
-        self.login()
         try:
-            response = self.client.app.bsky.feed.get_author_feed(params={"actor": self.handle, "limit": limit})
+            response = self._call_with_retry(
+                self.client.app.bsky.feed.get_author_feed,
+                params={"actor": self.handle, "limit": limit},
+            )
             return [item.post.uri for item in response.feed]
         except Exception as e:
             logger.warning(f"Failed to get recent posts: {e}")
@@ -73,9 +96,11 @@ class BlueskyClient:
 
     def get_profile(self) -> dict:
         """Get our profile info (follower count, etc)."""
-        self.login()
         try:
-            profile = self.client.app.bsky.actor.get_profile(params={"actor": self.handle})
+            profile = self._call_with_retry(
+                self.client.app.bsky.actor.get_profile,
+                params={"actor": self.handle},
+            )
             return {
                 "handle": profile.handle,
                 "display_name": profile.display_name,

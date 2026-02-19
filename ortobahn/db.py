@@ -513,8 +513,16 @@ class Database:
         return self.fetchall(query, params)
 
     def get_recent_posts_with_metrics(self, limit: int = 20, client_id: str | None = None) -> list[dict]:
-        query = """SELECT p.*, m.like_count, m.repost_count, m.reply_count, m.quote_count
-               FROM posts p LEFT JOIN metrics m ON p.id = m.post_id
+        query = """SELECT p.*,
+                   COALESCE(latest_m.like_count, 0) AS like_count,
+                   COALESCE(latest_m.repost_count, 0) AS repost_count,
+                   COALESCE(latest_m.reply_count, 0) AS reply_count,
+                   COALESCE(latest_m.quote_count, 0) AS quote_count
+               FROM posts p
+               LEFT JOIN metrics latest_m ON p.id = latest_m.post_id
+                   AND latest_m.measured_at = (
+                       SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id
+                   )
                WHERE p.status = 'published'"""
         params: list = []
         if client_id:
@@ -587,6 +595,16 @@ class Database:
     def save_metrics(
         self, post_id: str, like_count: int = 0, repost_count: int = 0, reply_count: int = 0, quote_count: int = 0
     ) -> str:
+        # Upsert: update existing metrics row or insert new one
+        existing = self.fetchone("SELECT id FROM metrics WHERE post_id=?", (post_id,))
+        if existing:
+            self.execute(
+                """UPDATE metrics SET like_count=?, repost_count=?, reply_count=?, quote_count=?,
+                   measured_at=CURRENT_TIMESTAMP WHERE post_id=?""",
+                (like_count, repost_count, reply_count, quote_count, post_id),
+                commit=True,
+            )
+            return existing["id"]
         mid = str(uuid.uuid4())
         self.execute(
             """INSERT INTO metrics (id, post_id, like_count, repost_count, reply_count, quote_count)
@@ -711,10 +729,11 @@ class Database:
 
         for p in posts:
             row = self.fetchone(
-                """SELECT COALESCE(SUM(like_count),0) as likes,
-                          COALESCE(SUM(repost_count),0) as reposts,
-                          COALESCE(SUM(reply_count),0) as replies
-                   FROM metrics WHERE post_id=?""",
+                """SELECT COALESCE(like_count,0) as likes,
+                          COALESCE(repost_count,0) as reposts,
+                          COALESCE(reply_count,0) as replies
+                   FROM metrics WHERE post_id=?
+                   ORDER BY measured_at DESC LIMIT 1""",
                 (p["id"],),
             )
             likes = row["likes"] if row else 0

@@ -113,4 +113,5 @@ def mock_bluesky_client():
         "followers_count": 100,
         "posts_count": 25,
     }
+    client.verify_post_exists.return_value = True
     return client

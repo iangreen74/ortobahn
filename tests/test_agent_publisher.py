@@ -195,3 +195,31 @@ class TestPublisherAgent:
         )
         result = agent.run(run_id="run-1", drafts=drafts)
         assert all(p.status == "published" for p in result.posts)
+
+    def test_verification_failure_marks_post_failed(self, test_db, mock_bluesky_client):
+        """If post-publish verification fails, the post should be marked as failed."""
+        mock_bluesky_client.verify_post_exists.return_value = False
+        agent = PublisherAgent(
+            db=test_db,
+            bluesky_client=mock_bluesky_client,
+            confidence_threshold=0.7,
+        )
+        drafts = self._make_drafts([("Phantom post", 0.9)], platform=Platform.BLUESKY)
+        result = agent.run(run_id="run-1", drafts=drafts)
+
+        assert result.posts[0].status == "failed"
+        assert "verification" in result.posts[0].error.lower()
+
+    def test_verification_success_publishes(self, test_db, mock_bluesky_client):
+        """If verification passes, post should be published normally."""
+        mock_bluesky_client.verify_post_exists.return_value = True
+        agent = PublisherAgent(
+            db=test_db,
+            bluesky_client=mock_bluesky_client,
+            confidence_threshold=0.7,
+        )
+        drafts = self._make_drafts([("Verified post", 0.9)], platform=Platform.BLUESKY)
+        result = agent.run(run_id="run-1", drafts=drafts)
+
+        assert result.posts[0].status == "published"
+        mock_bluesky_client.verify_post_exists.assert_called_once()

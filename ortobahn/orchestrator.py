@@ -189,9 +189,24 @@ class Pipeline:
 
             try:
                 uri, platform_id = publisher_client.post(post["text"])
-                self.db.update_post_published(post["id"], uri, platform_id)
-                published_count += 1
-                logger.info(f"Published approved post {post['id'][:8]} to {platform_str}")
+
+                # Verify the post actually exists on the platform
+                verified = True
+                if hasattr(publisher_client, "verify_post_exists") and uri:
+                    verified = publisher_client.verify_post_exists(uri)
+                    if not verified:
+                        logger.warning(f"Post verification failed for approved post {post['id'][:8]}")
+
+                if verified:
+                    self.db.update_post_published(post["id"], uri, platform_id)
+                    published_count += 1
+                    logger.info(f"Published approved post {post['id'][:8]} to {platform_str}")
+                else:
+                    self.db.update_post_failed(
+                        post["id"],
+                        "Post verification failed — not found on platform",
+                    )
+                    logger.error(f"Approved post {post['id'][:8]} failed verification")
             except Exception as e:
                 self.db.update_post_failed(post["id"], str(e))
                 logger.error(f"Failed to publish approved post {post['id'][:8]}: {e}")

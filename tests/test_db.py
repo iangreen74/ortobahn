@@ -89,6 +89,43 @@ class TestMetrics:
         assert len(posts) == 1
         assert posts[0]["like_count"] == 10
 
+    def test_save_metrics_upserts(self, test_db):
+        """Saving metrics for the same post should update, not accumulate."""
+        pid = test_db.save_post(text="Upsert test", run_id="run-1", status="published")
+        test_db.update_post_published(pid, "at://test", "bafy")
+        test_db.save_metrics(pid, like_count=5, repost_count=1)
+        test_db.save_metrics(pid, like_count=8, repost_count=3)
+
+        # Should have exactly one metrics row, with the latest values
+        rows = test_db.fetchall("SELECT * FROM metrics WHERE post_id=?", (pid,))
+        assert len(rows) == 1
+        assert rows[0]["like_count"] == 8
+        assert rows[0]["repost_count"] == 3
+
+    def test_dashboard_no_duplicate_rows(self, test_db):
+        """Dashboard query should return one row per post even with multiple metric saves."""
+        pid = test_db.save_post(text="No dupes", run_id="run-1", status="published")
+        test_db.update_post_published(pid, "at://test", "bafy")
+        test_db.save_metrics(pid, like_count=5)
+        posts = test_db.get_recent_posts_with_metrics(limit=10)
+        assert len(posts) == 1
+        assert posts[0]["like_count"] == 5
+
+    def test_analytics_report_uses_latest_metrics(self, test_db):
+        """Analytics report should use latest metrics, not accumulate."""
+        pid = test_db.save_post(text="Analytics test", run_id="r1", status="published")
+        test_db.update_post_published(pid, "at://1", "bafy1")
+        test_db.save_metrics(pid, like_count=5, repost_count=2, reply_count=1)
+
+        report = test_db.build_analytics_report()
+        assert report.total_likes == 5
+
+        # Update metrics (upsert)
+        test_db.save_metrics(pid, like_count=10, repost_count=4, reply_count=2)
+
+        report = test_db.build_analytics_report()
+        assert report.total_likes == 10  # Should be 10, not 15
+
 
 class TestPipelineRuns:
     def test_start_and_complete_run(self, test_db):

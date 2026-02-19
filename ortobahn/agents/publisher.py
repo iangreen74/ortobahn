@@ -125,19 +125,40 @@ class PublisherAgent(BaseAgent):
             if publisher is not None:
                 try:
                     uri, platform_id = publisher.post(draft.text)
-                    self.db.update_post_published(post_id, uri, platform_id)
-                    results.append(
-                        PublishedPost(
-                            text=draft.text,
-                            uri=uri,
-                            cid=platform_id,
-                            published_at=datetime.utcnow(),
-                            status="published",
-                            platform=draft.platform,
+
+                    # Verify the post actually exists on the platform
+                    verified = True
+                    if hasattr(publisher, "verify_post_exists") and uri:
+                        verified = publisher.verify_post_exists(uri)
+                        if not verified:
+                            logger.warning(f"Post verification failed for {uri}")
+
+                    if verified:
+                        self.db.update_post_published(post_id, uri, platform_id)
+                        results.append(
+                            PublishedPost(
+                                text=draft.text,
+                                uri=uri,
+                                cid=platform_id,
+                                published_at=datetime.utcnow(),
+                                status="published",
+                                platform=draft.platform,
+                            )
                         )
-                    )
-                    published_count += 1
-                    logger.info(f"Published to {draft.platform.value}: {draft.text[:50]}...")
+                        published_count += 1
+                        logger.info(f"Published to {draft.platform.value}: {draft.text[:50]}...")
+                    else:
+                        error_msg = "Post verification failed — not found on platform"
+                        self.db.update_post_failed(post_id, error_msg)
+                        results.append(
+                            PublishedPost(
+                                text=draft.text,
+                                status="failed",
+                                platform=draft.platform,
+                                error=error_msg,
+                            )
+                        )
+
                     if self.post_delay > 0:
                         logger.info(f"Rate limiting: waiting {self.post_delay}s before next post")
                         time.sleep(self.post_delay)

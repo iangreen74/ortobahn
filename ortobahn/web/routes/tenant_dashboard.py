@@ -361,41 +361,63 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
 async def tenant_health(request: Request, client: AuthClient):
     """System health stats — polled every 30s by the dashboard."""
     db = request.app.state.db
+    cid = client["id"]
 
-    total_row = db.fetchone(
-        "SELECT COUNT(*) as c FROM pipeline_runs WHERE client_id=?",
-        (client["id"],),
-    )
-    completed_row = db.fetchone(
-        "SELECT COUNT(*) as c FROM pipeline_runs WHERE status='completed' AND client_id=?",
-        (client["id"],),
-    )
-    total = total_row["c"] if total_row else 0
-    completed = completed_row["c"] if completed_row else 0
-    success_rate = f"{completed / total * 100:.0f}%" if total > 0 else "N/A"
+    # Posts published in last 24h — the metric that matters
+    from datetime import timedelta
 
-    failed, total_posts = db.get_post_failure_rate(hours=24, client_id=client["id"])
-    failure_rate = f"{failed / total_posts * 100:.0f}%" if total_posts > 0 else "0%"
-
-    latest_hc = db.fetchone(
-        "SELECT probe, status, detail, created_at FROM health_checks"
-        " WHERE client_id=? ORDER BY created_at DESC LIMIT 1",
-        (client["id"],),
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    published_24h = db.fetchone(
+        "SELECT COUNT(*) as c FROM posts WHERE status='published' AND client_id=? AND created_at >= ?",
+        (cid, cutoff_24h),
     )
-    if latest_hc:
-        hc_display = f"{_badge(latest_hc['status'])} {_escape(latest_hc['probe'])}"
+    pub_count = published_24h["c"] if published_24h else 0
+
+    # Drafts waiting — shows content IS being generated even if not published
+    drafts_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM posts WHERE status='draft' AND client_id=?",
+        (cid,),
+    )
+    draft_count = drafts_row["c"] if drafts_row else 0
+
+    # Last successful publish timestamp
+    last_pub = db.fetchone(
+        "SELECT published_at FROM posts WHERE status='published' AND client_id=? ORDER BY published_at DESC LIMIT 1",
+        (cid,),
+    )
+    if last_pub and last_pub.get("published_at"):
+        last_pub_display = _escape(str(last_pub["published_at"])[:16])
     else:
-        hc_display = '<span class="badge completed">ok</span> no issues'
+        last_pub_display = "never"
+
+    # Pipeline runs with actual output vs empty runs
+    runs_row = db.fetchone(
+        "SELECT COUNT(*) as total,"
+        " SUM(CASE WHEN posts_published > 0 THEN 1 ELSE 0 END) as productive"
+        " FROM pipeline_runs WHERE client_id=?",
+        (cid,),
+    )
+    total_runs = runs_row["total"] if runs_row else 0
+    productive = runs_row["productive"] if runs_row and runs_row["productive"] else 0
+
+    if pub_count > 0:
+        pub_badge = "completed"
+    elif draft_count > 0:
+        pub_badge = "running"
+    else:
+        pub_badge = "failed"
 
     html = (
         '<div class="grid">'
-        f'<div class="glass-stat"><div class="value">{success_rate}</div>'
-        '<div class="label">Pipeline success rate</div></div>'
-        f'<div class="glass-stat"><div class="value">{failure_rate}</div>'
-        '<div class="label">Post failure rate (24h)</div></div>'
-        f'<div class="glass-stat"><div class="value">{hc_display}</div>'
-        '<div class="label">Latest health check</div></div>'
+        f'<div class="glass-stat"><div class="value">'
+        f'<span class="badge {pub_badge}">{pub_count}</span></div>'
+        f'<div class="label">Published (24h)</div></div>'
+        f'<div class="glass-stat"><div class="value">{draft_count}</div>'
+        '<div class="label">Drafts pending</div></div>'
+        f'<div class="glass-stat"><div class="value">{productive}/{total_runs}</div>'
+        '<div class="label">Productive runs</div></div>'
         "</div>"
+        f'<small style="opacity:0.6">Last published: {last_pub_display}</small>'
     )
     return HTMLResponse(html)
 

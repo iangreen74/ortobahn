@@ -7,12 +7,13 @@ from datetime import datetime, timezone
 
 import stripe
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
 from ortobahn.db import to_datetime
 from ortobahn.models import Platform
+from ortobahn.web.routes.glass import PIPELINE_STEPS, _badge, _escape, _step_index
 
 logger = logging.getLogger("ortobahn.web.tenant")
 
@@ -281,3 +282,160 @@ async def tenant_billing_portal(request: Request, client: AuthClient):
     )
 
     return RedirectResponse(portal_session.url, status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# HTMX fragment endpoints (auto-polled by the tenant dashboard)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/pipeline-status", response_class=HTMLResponse)
+async def tenant_pipeline_status(request: Request, client: AuthClient):
+    """Live pipeline status — polled every 5s by the dashboard."""
+    db = request.app.state.db
+
+    running = db.fetchone(
+        "SELECT id, started_at FROM pipeline_runs"
+        " WHERE status='running' AND client_id=?"
+        " ORDER BY started_at DESC LIMIT 1",
+        (client["id"],),
+    )
+
+    if running:
+        latest_agent = db.fetchone(
+            "SELECT agent_name FROM agent_logs WHERE run_id=? ORDER BY created_at DESC LIMIT 1",
+            (running["id"],),
+        )
+        step_name = latest_agent["agent_name"] if latest_agent else "initializing"
+        step_num = _step_index(step_name) if latest_agent else 0
+        total_steps = len(PIPELINE_STEPS)
+        html = (
+            '<div class="glass-status-card">'
+            '<span class="glass-pulse running"></span>'
+            f" <strong>Pipeline running</strong> &mdash; step {step_num}/{total_steps}: {_escape(step_name)}"
+            "</div>"
+        )
+    else:
+        last = db.fetchone(
+            "SELECT status, completed_at, posts_published FROM pipeline_runs"
+            " WHERE status IN ('completed','failed') AND client_id=?"
+            " ORDER BY completed_at DESC LIMIT 1",
+            (client["id"],),
+        )
+        if last and last["status"] == "failed":
+            html = (
+                '<div class="glass-status-card">'
+                '<span class="glass-pulse failed"></span>'
+                f" <strong>Last run failed</strong> &mdash; {_escape(str(last.get('completed_at') or 'unknown'))}"
+                "</div>"
+            )
+        elif last:
+            html = (
+                '<div class="glass-status-card">'
+                '<span class="glass-pulse idle"></span>'
+                f" <strong>Pipeline idle</strong> &mdash; last run published"
+                f" {last.get('posts_published') or 0} post(s)"
+                "</div>"
+            )
+        else:
+            html = (
+                '<div class="glass-status-card">'
+                '<span class="glass-pulse idle"></span>'
+                " <strong>Pipeline idle</strong> &mdash; awaiting first run"
+                "</div>"
+            )
+
+    return HTMLResponse(html)
+
+
+@router.get("/api/health", response_class=HTMLResponse)
+async def tenant_health(request: Request, client: AuthClient):
+    """System health stats — polled every 30s by the dashboard."""
+    db = request.app.state.db
+
+    total_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM pipeline_runs WHERE client_id=?",
+        (client["id"],),
+    )
+    completed_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM pipeline_runs WHERE status='completed' AND client_id=?",
+        (client["id"],),
+    )
+    total = total_row["c"] if total_row else 0
+    completed = completed_row["c"] if completed_row else 0
+    success_rate = f"{completed / total * 100:.0f}%" if total > 0 else "N/A"
+
+    failed, total_posts = db.get_post_failure_rate(hours=24, client_id=client["id"])
+    failure_rate = f"{failed / total_posts * 100:.0f}%" if total_posts > 0 else "0%"
+
+    latest_hc = db.fetchone(
+        "SELECT probe, status, detail, created_at FROM health_checks"
+        " WHERE client_id=? ORDER BY created_at DESC LIMIT 1",
+        (client["id"],),
+    )
+    if latest_hc:
+        hc_display = f"{_badge(latest_hc['status'])} {_escape(latest_hc['probe'])}"
+    else:
+        hc_display = '<span class="badge completed">ok</span> no issues'
+
+    html = (
+        '<div class="grid">'
+        f'<div class="glass-stat"><div class="value">{success_rate}</div>'
+        '<div class="label">Pipeline success rate</div></div>'
+        f'<div class="glass-stat"><div class="value">{failure_rate}</div>'
+        '<div class="label">Post failure rate (24h)</div></div>'
+        f'<div class="glass-stat"><div class="value">{hc_display}</div>'
+        '<div class="label">Latest health check</div></div>'
+        "</div>"
+    )
+    return HTMLResponse(html)
+
+
+@router.get("/api/watchdog", response_class=HTMLResponse)
+async def tenant_watchdog(request: Request, client: AuthClient):
+    """Watchdog activity — polled every 30s by the dashboard."""
+    db = request.app.state.db
+
+    checks = db.fetchall(
+        "SELECT probe, status, detail, created_at FROM health_checks"
+        " WHERE client_id=? ORDER BY created_at DESC LIMIT 10",
+        (client["id"],),
+    )
+
+    rems = db.fetchall(
+        "SELECT finding_type, action, success, verified, created_at FROM watchdog_remediations"
+        " WHERE client_id=? ORDER BY created_at DESC LIMIT 5",
+        (client["id"],),
+    )
+
+    if not checks and not rems:
+        return HTMLResponse('<p style="opacity:0.6">Watchdog: all systems normal. No issues detected.</p>')
+
+    parts = []
+
+    if rems:
+        parts.append("<h4>Recent Remediations</h4>")
+        for r in rems:
+            icon = "completed" if r.get("success") else "failed"
+            verified = ""
+            if r.get("verified") is not None:
+                verified = " (verified)" if r["verified"] else " (unverified)"
+            parts.append(
+                f'<div style="margin-bottom:0.5rem">'
+                f"{_badge(icon)} {_escape(r.get('action') or r.get('finding_type', ''))}"
+                f"<small>{verified} &mdash; {_escape(str(r.get('created_at', '')))}</small>"
+                f"</div>"
+            )
+
+    if checks:
+        parts.append("<h4>Recent Health Checks</h4>")
+        for c in checks:
+            parts.append(
+                f'<div style="margin-bottom:0.25rem">'
+                f"{_badge(c['status'])} <strong>{_escape(c['probe'])}</strong>"
+                f" &mdash; {_escape(c.get('detail') or '')}"
+                f' <small style="opacity:0.6">{_escape(str(c.get("created_at", "")))}</small>'
+                f"</div>"
+            )
+
+    return HTMLResponse("".join(parts))

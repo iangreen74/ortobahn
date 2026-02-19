@@ -51,6 +51,16 @@
     </article>
 </div>
 
+<h2>System Health</h2>
+<article hx-get="/my/api/health" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <p style="opacity:0.6">Loading health data...</p>
+</article>
+
+<h2>Watchdog Monitor</h2>
+<article hx-get="/my/api/watchdog" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <p style="opacity:0.6">Loading watchdog data...</p>
+</article>
+
 <h2>Generate Content</h2>
 <article>
     <form method="post" action="/my/generate">
@@ -72,7 +82,13 @@
         </div>
         <button type="submit" {% if not client.internal and subscription_status not in ('active', 'trialing') %}disabled title="Subscribe to generate content"{% endif %}>Generate Content</button>
     </form>
-    <small>Runs in background. {% if not auto_publish %}Drafts will appear below for review.{% else %}Posts will be published automatically.{% endif %}</small>
+</article>
+
+<article hx-get="/my/api/pipeline-status" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <div class="glass-status-card">
+        <span class="glass-pulse idle"></span>
+        <strong>Pipeline idle</strong> &mdash; checking status...
+    </div>
 </article>
 
 {% if connected_platforms %}

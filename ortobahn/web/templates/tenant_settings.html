@@ -21,7 +21,7 @@
             {% elif client.subscription_status == 'trialing' %}
             <span class="badge running">Free Trial</span>
             {% if client.trial_ends_at %}
-            <small style="margin-left: 0.5rem;">Ends: {{ client.trial_ends_at[:10] }}</small>
+            <small style="margin-left: 0.5rem;">Ends: {{ (client.trial_ends_at | string)[:10] }}</small>
             {% endif %}
             {% elif client.subscription_status == 'past_due' %}
             <span class="badge failed">Past Due</span>

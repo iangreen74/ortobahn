@@ -152,6 +152,20 @@ def cmd_schedule(args):
         while running:
             cycle_num += 1
             console.print(f"\n[cyan]--- Cycle {cycle_num} ---[/cyan]")
+            # Run watchdog at start of every cycle
+            if settings.watchdog_enabled:
+                try:
+                    from ortobahn.watchdog import Watchdog
+
+                    watchdog = Watchdog(db=pipeline.db, settings=settings)
+                    wd_report = watchdog.run()
+                    if wd_report.has_issues:
+                        console.print(f"  [yellow]Watchdog: {wd_report.summary}[/yellow]")
+                    else:
+                        console.print("  [dim]Watchdog: all clear[/dim]")
+                except Exception as e:
+                    console.print(f"  [red]Watchdog failed: {e}[/red]")
+
             try:
                 if args.client:
                     # Single-client mode (explicit --client flag)
@@ -750,6 +764,48 @@ def cmd_cifix(args):
     db.close()
 
 
+def cmd_watchdog(args):
+    """Run the watchdog (one-shot health check and auto-remediation)."""
+    from ortobahn.config import load_settings
+    from ortobahn.db import create_database
+    from ortobahn.watchdog import Watchdog
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+
+    db = create_database(settings)
+    watchdog = Watchdog(db=db, settings=settings)
+
+    console.print("\n[bold cyan]ORTOBAHN WATCHDOG[/bold cyan] - Self-Monitoring System")
+    console.print("=" * 50)
+
+    report = watchdog.run()
+
+    if not report.findings:
+        console.print("[green]No issues detected — all clear![/green]")
+    else:
+        for f in report.findings:
+            icon = {"ok": "[green]OK[/green]", "warning": "[yellow]WARN[/yellow]", "critical": "[red]CRIT[/red]"}.get(
+                f.severity, f.severity
+            )
+            client_tag = f" ({f.client_id})" if f.client_id else ""
+            console.print(f"  {icon} [{f.probe}]{client_tag} {f.detail}")
+
+    if report.remediations:
+        console.print("\n[bold]Auto-Remediations:[/bold]")
+        for r in report.remediations:
+            icon = "[green]OK[/green]" if r.success else "[red]FAIL[/red]"
+            verified_tag = ""
+            if r.verified is True:
+                verified_tag = " (verified)"
+            elif r.verified is False:
+                verified_tag = " [red](verification failed)[/red]"
+            console.print(f"  {icon} {r.action}{verified_tag}")
+
+    console.print(f"\nSummary: {report.summary}")
+    db.close()
+
+
 def cmd_web(args):
     """Start the web dashboard."""
     from ortobahn.config import load_settings
@@ -907,6 +963,10 @@ def main():
     cifix_parser = subparsers.add_parser("ci-fix", help="Run CI fix agent (diagnose and fix CI/CD failures)")
     cifix_parser.add_argument("--no-pr", action="store_true", help="Don't create a pull request for the fix")
     cifix_parser.set_defaults(func=cmd_cifix)
+
+    # watchdog
+    watchdog_parser = subparsers.add_parser("watchdog", help="Run watchdog health check and auto-remediation")
+    watchdog_parser.set_defaults(func=cmd_watchdog)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

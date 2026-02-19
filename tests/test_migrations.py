@@ -8,7 +8,7 @@ from ortobahn.migrations import _get_schema_version, _set_schema_version, run_mi
 
 class TestSchemaVersion:
     def test_version_after_init(self, test_db):
-        assert _get_schema_version(test_db) == 17
+        assert _get_schema_version(test_db) == 18
 
     def test_set_and_get_version(self, test_db):
         _set_schema_version(test_db, 5)
@@ -80,10 +80,17 @@ class TestMigrations:
             "SELECT id, run_id, gh_run_id, failure_category, fix_strategy, status, validation_passed FROM ci_fix_attempts LIMIT 1"
         )
 
+        # Verify watchdog tables (migration 018)
+        test_db.fetchall("SELECT error_message FROM posts LIMIT 1")
+        test_db.fetchall("SELECT id, probe, status, detail, client_id FROM health_checks LIMIT 1")
+        test_db.fetchall(
+            "SELECT id, finding_type, client_id, action, success, verified FROM watchdog_remediations LIMIT 1"
+        )
+
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 17
+        assert v1 == v2 == 18
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         db = Database(tmp_path / "test.db")

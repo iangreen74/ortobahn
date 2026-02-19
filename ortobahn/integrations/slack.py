@@ -49,3 +49,44 @@ def format_sre_alert(health_status: str, alerts: list, recommendations: list) ->
             lines.append(f"  - {r}")
 
     return "\n".join(lines)
+
+
+def format_watchdog_alert(findings: list, remediations: list) -> str:
+    """Format a Watchdog report as a Slack message."""
+    critical = [f for f in findings if getattr(f, "severity", "") == "critical"]
+    warnings = [f for f in findings if getattr(f, "severity", "") == "warning"]
+
+    if critical:
+        emoji = ":rotating_light:"
+        status = "CRITICAL"
+    elif warnings:
+        emoji = ":warning:"
+        status = "WARNING"
+    else:
+        emoji = ":white_check_mark:"
+        status = "OK"
+
+    lines = [f"{emoji} *Ortobahn Watchdog: {status}*"]
+
+    for f in findings:
+        if f.severity == "ok":
+            continue
+        sev_emoji = {
+            "critical": ":rotating_light:",
+            "warning": ":warning:",
+        }.get(f.severity, ":information_source:")
+        client_tag = f" (client: {f.client_id})" if f.client_id else ""
+        lines.append(f"  {sev_emoji} [{f.probe}]{client_tag} {f.detail}")
+
+    if remediations:
+        lines.append("\n*Auto-Remediations:*")
+        for r in remediations:
+            status_icon = ":white_check_mark:" if r.success else ":x:"
+            verified_tag = ""
+            if r.verified is True:
+                verified_tag = " (verified)"
+            elif r.verified is False:
+                verified_tag = " (verification failed)"
+            lines.append(f"  {status_icon} {r.action}{verified_tag}")
+
+    return "\n".join(lines)

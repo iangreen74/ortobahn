@@ -462,6 +462,48 @@ def _migration_017_backfill_client_trials(db: Database) -> None:
     )
 
 
+def _migration_018_add_watchdog_tables(db: Database) -> None:
+    """Add error_message to posts, health_checks and watchdog_remediations tables."""
+    _safe_add_column(db, "posts", "error_message TEXT")
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS health_checks (
+            id TEXT PRIMARY KEY,
+            probe TEXT NOT NULL,
+            status TEXT NOT NULL,
+            detail TEXT,
+            client_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_health_checks_probe ON health_checks(probe, created_at)",
+        commit=True,
+    )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS watchdog_remediations (
+            id TEXT PRIMARY KEY,
+            finding_type TEXT NOT NULL,
+            client_id TEXT,
+            action TEXT NOT NULL,
+            success INTEGER NOT NULL DEFAULT 0,
+            verified INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_watchdog_remediations_type ON watchdog_remediations(finding_type, created_at)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -480,6 +522,7 @@ MIGRATIONS = {
     15: _migration_015_add_client_trends_and_schedule,
     16: _migration_016_add_cache_token_tracking,
     17: _migration_017_backfill_client_trials,
+    18: _migration_018_add_watchdog_tables,
 }
 
 

@@ -116,6 +116,13 @@ class Settings:
     stripe_webhook_secret: str = ""
     stripe_price_id: str = ""
 
+    # Watchdog
+    watchdog_enabled: bool = True
+    watchdog_stale_run_minutes: int = 60
+    watchdog_post_verify_hours: int = 6
+    watchdog_credential_check: bool = True
+    watchdog_max_verify_posts: int = 5
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -229,4 +236,9 @@ def load_settings() -> Settings:
         cognito_region=os.environ.get("COGNITO_REGION", "us-west-2"),
         ortobahn_bluesky_handle=os.environ.get("ORTOBAHN_BLUESKY_HANDLE", ""),
         ortobahn_bluesky_app_password=os.environ.get("ORTOBAHN_BLUESKY_APP_PASSWORD", ""),
+        watchdog_enabled=os.environ.get("WATCHDOG_ENABLED", "true").lower() in ("true", "1", "yes"),
+        watchdog_stale_run_minutes=int(os.environ.get("WATCHDOG_STALE_RUN_MINUTES", "60")),
+        watchdog_post_verify_hours=int(os.environ.get("WATCHDOG_POST_VERIFY_HOURS", "6")),
+        watchdog_credential_check=os.environ.get("WATCHDOG_CREDENTIAL_CHECK", "true").lower() in ("true", "1", "yes"),
+        watchdog_max_verify_posts=int(os.environ.get("WATCHDOG_MAX_VERIFY_POSTS", "5")),
     )

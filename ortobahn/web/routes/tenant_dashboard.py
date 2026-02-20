@@ -116,6 +116,39 @@ async def tenant_generate(
     return RedirectResponse("/my/dashboard", status_code=303)
 
 
+def _publish_drafts(settings, client_id: str):
+    """Approve all pending drafts and publish them."""
+    from ortobahn.orchestrator import Pipeline
+
+    pipeline = Pipeline(settings)
+    try:
+        # Approve all drafts for this client
+        drafts = pipeline.db.get_drafts_for_review(client_id=client_id)
+        for d in drafts:
+            pipeline.db.approve_post(d["id"])
+        logger.info(f"Approved {len(drafts)} drafts for {client_id}")
+
+        # Publish approved posts
+        published = pipeline.publish_approved_drafts(client_id=client_id)
+        logger.info(f"Published {published} approved drafts for {client_id}")
+    except Exception as e:
+        logger.error(f"Bulk publish failed for {client_id}: {e}")
+    finally:
+        pipeline.close()
+
+
+@router.post("/publish-drafts")
+async def tenant_publish_drafts(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    client: AuthClient,
+):
+    """Approve and publish all pending drafts for this tenant."""
+    settings = request.app.state.settings
+    background_tasks.add_task(_publish_drafts, settings, client["id"])
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
 @router.post("/auto-publish")
 async def tenant_toggle_auto_publish(
     request: Request,
@@ -390,12 +423,13 @@ async def tenant_health(request: Request, client: AuthClient):
     else:
         last_pub_display = "never"
 
-    # Pipeline runs with actual output vs empty runs
+    # Pipeline runs with actual output vs empty runs (last 7 days only)
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     runs_row = db.fetchone(
         "SELECT COUNT(*) as total,"
         " SUM(CASE WHEN posts_published > 0 THEN 1 ELSE 0 END) as productive"
-        " FROM pipeline_runs WHERE client_id=?",
-        (cid,),
+        " FROM pipeline_runs WHERE client_id=? AND started_at >= ?",
+        (cid, cutoff_7d),
     )
     total_runs = runs_row["total"] if runs_row else 0
     productive = runs_row["productive"] if runs_row and runs_row["productive"] else 0
@@ -415,7 +449,7 @@ async def tenant_health(request: Request, client: AuthClient):
         f'<div class="glass-stat"><div class="value">{draft_count}</div>'
         '<div class="label">Drafts pending</div></div>'
         f'<div class="glass-stat"><div class="value">{productive}/{total_runs}</div>'
-        '<div class="label">Productive runs</div></div>'
+        '<div class="label">Productive runs (7d)</div></div>'
         "</div>"
         f'<small style="opacity:0.6">Last published: {last_pub_display}</small>'
     )

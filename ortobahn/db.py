@@ -538,12 +538,12 @@ class Database:
                    AND latest_m.measured_at = (
                        SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id
                    )
-               WHERE p.status = 'published'"""
+               WHERE p.status IN ('published', 'failed')"""
         params: list = []
         if client_id:
             query += " AND p.client_id=?"
             params.append(client_id)
-        query += " ORDER BY p.published_at DESC LIMIT ?"
+        query += " ORDER BY COALESCE(p.published_at, p.created_at) DESC LIMIT ?"
         params.append(limit)
         return self.fetchall(query, params)
 

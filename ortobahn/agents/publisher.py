@@ -128,6 +128,8 @@ class PublisherAgent(BaseAgent):
 
                     # Verify the post actually exists on the platform
                     # Returns True (found), False (not found), or None (inconclusive)
+                    # Brief delay for eventual consistency before verification
+                    time.sleep(2)
                     verified = True
                     if hasattr(publisher, "verify_post_exists") and uri:
                         result = publisher.verify_post_exists(uri)

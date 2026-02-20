@@ -84,6 +84,12 @@
     </form>
 </article>
 
+{% if total_drafts > 0 %}
+<form method="post" action="/my/publish-drafts" style="margin-bottom: 1rem;">
+    <button type="submit" class="outline">Publish {{ total_drafts }} pending draft{{ 's' if total_drafts != 1 else '' }}</button>
+</form>
+{% endif %}
+
 <article hx-get="/my/api/pipeline-status" hx-trigger="load, every 5s" hx-swap="innerHTML">
     <div class="glass-status-card">
         <span class="glass-pulse idle"></span>
@@ -125,7 +131,12 @@
     <tbody>
         {% for p in posts %}
         <tr>
-            <td>{{ p.text[:80] }}{% if p.text|length > 80 %}...{% endif %}</td>
+            <td>
+                {{ p.text[:80] }}{% if p.text|length > 80 %}...{% endif %}
+                {% if p.status == 'failed' and p.error_message %}
+                <br><small style="color: #ef4444;">{{ p.error_message[:120] }}</small>
+                {% endif %}
+            </td>
             <td>
                 {% if p.status == 'published' %}
                 <span class="badge completed">published</span>

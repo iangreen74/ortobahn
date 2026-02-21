@@ -338,3 +338,46 @@ class TestClientTrial:
             trial_end = trial_end.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         assert timedelta(days=13) < (trial_end - now) < timedelta(days=15)
+
+
+class TestChatMessages:
+    def test_save_and_get_chat_messages(self, test_db):
+        cid = test_db.create_client({"name": "ChatClient"})
+        test_db.save_chat_message(cid, "user", "Hello")
+        test_db.save_chat_message(cid, "assistant", "Hi!")
+
+        messages = test_db.get_chat_history(cid, limit=10)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "Hello"
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["content"] == "Hi!"
+
+    def test_chat_history_scoped_by_client(self, test_db):
+        cid1 = test_db.create_client({"name": "Client1"})
+        cid2 = test_db.create_client({"name": "Client2"})
+        test_db.save_chat_message(cid1, "user", "Message for client 1")
+        test_db.save_chat_message(cid2, "user", "Message for client 2")
+
+        history1 = test_db.get_chat_history(cid1)
+        assert len(history1) == 1
+        assert history1[0]["content"] == "Message for client 1"
+
+    def test_chat_history_limit(self, test_db):
+        cid = test_db.create_client({"name": "ChatLimit"})
+        for i in range(25):
+            test_db.save_chat_message(cid, "user", f"Message {i}")
+
+        history = test_db.get_chat_history(cid, limit=10)
+        assert len(history) == 10
+
+    def test_chat_history_chronological_order(self, test_db):
+        cid = test_db.create_client({"name": "ChatOrder"})
+        test_db.save_chat_message(cid, "user", "First")
+        test_db.save_chat_message(cid, "assistant", "Second")
+        test_db.save_chat_message(cid, "user", "Third")
+
+        history = test_db.get_chat_history(cid)
+        assert history[0]["content"] == "First"
+        assert history[1]["content"] == "Second"
+        assert history[2]["content"] == "Third"

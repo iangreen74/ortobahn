@@ -193,4 +193,33 @@
     </tbody>
 </table>
 {% endif %}
+
+<!-- Chat Widget -->
+<div id="chat-widget" class="chat-widget">
+    <button id="chat-toggle" class="chat-toggle" onclick="document.getElementById('chat-panel').classList.toggle('open'); if(document.getElementById('chat-panel').classList.contains('open')){htmx.trigger('#chat-messages','load');}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+    </button>
+    <div id="chat-panel" class="chat-panel">
+        <div class="chat-header">
+            <strong>Support Chat</strong>
+            <button class="chat-close" onclick="document.getElementById('chat-panel').classList.remove('open')">&times;</button>
+        </div>
+        <div id="chat-messages" class="chat-messages"
+             hx-get="/my/chat/history"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <p style="opacity:0.6">Loading...</p>
+        </div>
+        <form class="chat-input-form"
+              hx-post="/my/chat/send"
+              hx-target="#chat-messages"
+              hx-swap="innerHTML"
+              hx-on::after-request="this.reset(); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;">
+            <input type="text" name="message" placeholder="Ask a question..." autocomplete="off" required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+</div>
 {% endblock %}

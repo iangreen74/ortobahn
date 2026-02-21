@@ -509,6 +509,26 @@ def _migration_019_enable_auto_publish_default(db: Database) -> None:
     db.execute("UPDATE clients SET auto_publish=1 WHERE auto_publish=0", commit=True)
 
 
+def _migration_020_add_chat_messages(db: Database) -> None:
+    """Add chat_messages table for tenant support chatbot."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES clients(id),
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_client ON chat_messages(client_id, created_at)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -529,6 +549,7 @@ MIGRATIONS = {
     17: _migration_017_backfill_client_trials,
     18: _migration_018_add_watchdog_tables,
     19: _migration_019_enable_auto_publish_default,
+    20: _migration_020_add_chat_messages,
 }
 
 

@@ -1119,6 +1119,26 @@ class Database:
         total = row["total"]
         return (row["successes"] or 0) / total if total > 0 else 0.0
 
+    # --- Chat Messages ---
+
+    def save_chat_message(self, client_id: str, role: str, content: str) -> str:
+        """Save a chat message and return its ID."""
+        mid = str(uuid.uuid4())
+        self.execute(
+            "INSERT INTO chat_messages (id, client_id, role, content) VALUES (?, ?, ?, ?)",
+            (mid, client_id, role, content),
+            commit=True,
+        )
+        return mid
+
+    def get_chat_history(self, client_id: str, limit: int = 20) -> list[dict]:
+        """Get recent chat messages for a client, oldest first."""
+        rows = self.fetchall(
+            "SELECT role, content, created_at FROM chat_messages WHERE client_id=? ORDER BY created_at DESC LIMIT ?",
+            (client_id, limit),
+        )
+        return rows[::-1]
+
     def close(self):
         """Close the database. For PostgreSQL this closes all pooled connections."""
         if self.backend == "postgresql" and self._pool:

@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
 
     from ortobahn.web.routes import (
         auth,
+        chat,
         clients,
         content,
         dashboard,
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
 
     # Tenant self-service routes (per-client auth)
     app.include_router(tenant_dashboard.router)
+    app.include_router(chat.router)
 
     # Protected routes (admin auth dependency on each router)
     app.include_router(dashboard.router)

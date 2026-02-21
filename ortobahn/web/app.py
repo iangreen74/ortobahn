@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -76,6 +78,42 @@ def create_app() -> FastAPI:
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):
         return RedirectResponse(f"/api/auth/login?next={exc.next_url}")
 
+    @app.middleware("http")
+    async def access_log_middleware(request: Request, call_next):
+        """Log non-trivial HTTP requests for security monitoring."""
+        path = request.url.path
+        # Skip static, health, and glass polling to keep volume low
+        if path.startswith("/static") or path == "/health" or path.startswith("/glass/api/"):
+            return await call_next(request)
+
+        start = time.time()
+        response = await call_next(request)
+        elapsed_ms = (time.time() - start) * 1000
+
+        # Only log suspicious or non-200 requests to keep DB lean
+        is_suspicious = any(probe in path.lower() for probe in (".env", "/admin", "/wp-", "/phpmyadmin", "/.git"))
+        if is_suspicious or response.status_code >= 400:
+            try:
+                db = request.app.state.db
+                db.execute(
+                    "INSERT INTO access_logs (id, method, path, status_code, source_ip, user_agent, response_time_ms) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()),
+                        request.method,
+                        path[:500],
+                        response.status_code,
+                        request.client.host if request.client else "",
+                        (request.headers.get("user-agent") or "")[:500],
+                        elapsed_ms,
+                    ),
+                    commit=True,
+                )
+            except Exception:
+                pass  # Never let logging break a request
+
+        return response
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     from ortobahn.web.routes import (
@@ -85,6 +123,7 @@ def create_app() -> FastAPI:
         content,
         dashboard,
         glass,
+        legal,
         onboard,
         payments,
         pipeline,
@@ -97,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(payments.router, prefix="/api/payments")
     app.include_router(glass.router)
+    app.include_router(legal.router)
 
     # Tenant self-service routes (per-client auth)
     app.include_router(tenant_dashboard.router)

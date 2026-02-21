@@ -19,11 +19,15 @@ PIPELINE_STEPS = [
     "analytics",
     "reflection",
     "trends",
+    "support",
+    "security",
+    "legal",
     "ceo",
     "strategist",
     "creator",
     "publisher",
-    "support",
+    "cfo",
+    "ops",
     "marketing",
     "learning",
 ]
@@ -151,7 +155,7 @@ async def glass_status(request: Request):
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse running"></span>'
-            f" <strong>Pipeline RUNNING</strong> &mdash; step {step_num}/12: {_escape(step_name)}"
+            f" <strong>Pipeline RUNNING</strong> &mdash; step {step_num}/{len(PIPELINE_STEPS)}: {_escape(step_name)}"
             "</div>"
         )
     elif last and last["status"] == "failed":

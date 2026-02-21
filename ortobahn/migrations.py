@@ -529,6 +529,70 @@ def _migration_020_add_chat_messages(db: Database) -> None:
     )
 
 
+def _migration_021_add_legal_security_directives(db: Database) -> None:
+    """Add tables for legal documents, access logs, and executive directives."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS legal_documents (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            document_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            version TEXT NOT NULL DEFAULT '1.0',
+            effective_date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT DEFAULT 'legal_agent'
+        )
+    """,
+        commit=True,
+    )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS access_logs (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            method TEXT,
+            path TEXT,
+            status_code INTEGER,
+            source_ip TEXT,
+            user_agent TEXT,
+            response_time_ms REAL DEFAULT 0
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_access_logs_path ON access_logs(path, timestamp)",
+        commit=True,
+    )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS executive_directives (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            priority TEXT NOT NULL,
+            category TEXT NOT NULL,
+            directive TEXT NOT NULL,
+            target_agent TEXT NOT NULL,
+            reasoning TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            processed_at TEXT
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_directives_status ON executive_directives(status, created_at)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -550,6 +614,7 @@ MIGRATIONS = {
     18: _migration_018_add_watchdog_tables,
     19: _migration_019_enable_auto_publish_default,
     20: _migration_020_add_chat_messages,
+    21: _migration_021_add_legal_security_directives,
 }
 
 

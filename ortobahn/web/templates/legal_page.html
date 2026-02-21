@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Ortobahn</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="container">
+        <ul>
+            <li><strong><a href="/">Ortobahn</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="/legal/terms">Terms of Service</a></li>
+            <li><a href="/legal/privacy">Privacy Policy</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <article>
+            <header>
+                <h1>{{ title }}</h1>
+                {% if version %}<small>Version {{ version }}{% if effective_date %} &middot; Effective {{ effective_date }}{% endif %}</small>{% endif %}
+            </header>
+            <div class="legal-content">
+                {{ content | safe }}
+            </div>
+        </article>
+    </main>
+
+    <footer class="container">
+        <p><small>Ortobahn - Autonomous AI Marketing Engine by <a href="https://vaultscaler.com">Vaultscaler</a></small></p>
+    </footer>
+</body>
+</html>

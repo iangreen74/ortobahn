@@ -8,7 +8,7 @@ from ortobahn.migrations import _get_schema_version, _set_schema_version, run_mi
 
 class TestSchemaVersion:
     def test_version_after_init(self, test_db):
-        assert _get_schema_version(test_db) == 20
+        assert _get_schema_version(test_db) == 21
 
     def test_set_and_get_version(self, test_db):
         _set_schema_version(test_db, 5)
@@ -93,7 +93,7 @@ class TestMigrations:
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 20
+        assert v1 == v2 == 21
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         db = Database(tmp_path / "test.db")

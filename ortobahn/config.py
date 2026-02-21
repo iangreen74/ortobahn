@@ -38,6 +38,8 @@ class Settings:
     thinking_budget_ceo: int = 10_000
     thinking_budget_strategist: int = 8_000
     thinking_budget_creator: int = 6_000
+    thinking_budget_legal: int = 10_000
+    thinking_budget_security: int = 8_000
 
     # Bedrock (uses IAM auth instead of API key)
     use_bedrock: bool = False
@@ -193,6 +195,8 @@ def load_settings() -> Settings:
         thinking_budget_ceo=int(os.environ.get("THINKING_BUDGET_CEO", "10000")),
         thinking_budget_strategist=int(os.environ.get("THINKING_BUDGET_STRATEGIST", "8000")),
         thinking_budget_creator=int(os.environ.get("THINKING_BUDGET_CREATOR", "6000")),
+        thinking_budget_legal=int(os.environ.get("THINKING_BUDGET_LEGAL", "10000")),
+        thinking_budget_security=int(os.environ.get("THINKING_BUDGET_SECURITY", "8000")),
         use_bedrock=os.environ.get("USE_BEDROCK", "false").lower() in ("true", "1", "yes"),
         bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
         database_url=os.environ.get("DATABASE_URL", ""),

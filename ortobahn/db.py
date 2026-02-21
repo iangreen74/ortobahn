@@ -1139,6 +1139,105 @@ class Database:
         )
         return rows[::-1]
 
+    # --- Legal Documents ---
+
+    def save_legal_document(self, data: dict) -> str:
+        """Save or update a legal document. Returns the document ID."""
+        doc_id = data.get("id") or str(uuid.uuid4())
+        # Upsert: update if same client_id + document_type exists
+        existing = self.fetchone(
+            "SELECT id FROM legal_documents WHERE client_id=? AND document_type=?",
+            (data.get("client_id", "default"), data["document_type"]),
+        )
+        if existing:
+            doc_id = existing["id"]
+            self.execute(
+                "UPDATE legal_documents SET content=?, version=?, title=?, effective_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (data["content"], data.get("version", "1.0"), data["title"], data.get("effective_date", ""), doc_id),
+                commit=True,
+            )
+        else:
+            self.execute(
+                "INSERT INTO legal_documents (id, client_id, document_type, title, content, version, effective_date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    doc_id,
+                    data.get("client_id", "default"),
+                    data["document_type"],
+                    data["title"],
+                    data["content"],
+                    data.get("version", "1.0"),
+                    data.get("effective_date", ""),
+                    data.get("created_by", "legal_agent"),
+                ),
+                commit=True,
+            )
+        return doc_id
+
+    def get_legal_documents(self, client_id: str = "default") -> list[dict]:
+        """Get all legal documents for a client."""
+        return self.fetchall(
+            "SELECT * FROM legal_documents WHERE client_id=? ORDER BY updated_at DESC",
+            (client_id,),
+        )
+
+    def get_legal_document(self, document_type: str, client_id: str = "default") -> dict | None:
+        """Get a specific legal document by type."""
+        return self.fetchone(
+            "SELECT * FROM legal_documents WHERE client_id=? AND document_type=? ORDER BY updated_at DESC LIMIT 1",
+            (client_id, document_type),
+        )
+
+    # --- Access Logs ---
+
+    def log_access(
+        self, method: str, path: str, status_code: int, source_ip: str, user_agent: str, response_time_ms: float = 0
+    ) -> None:
+        """Log an HTTP access request for security monitoring."""
+        self.execute(
+            "INSERT INTO access_logs (id, method, path, status_code, source_ip, user_agent, response_time_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), method, path, status_code, source_ip, user_agent[:500], response_time_ms),
+            commit=True,
+        )
+
+    def get_suspicious_access_logs(self, hours: int = 24) -> list[dict]:
+        """Get suspicious access log entries from the last N hours."""
+        return self.fetchall(
+            "SELECT method, path, status_code, source_ip, user_agent, timestamp FROM access_logs "
+            "WHERE (path LIKE '%%.env%%' OR path LIKE '%%/admin%%' OR path LIKE '%%/wp-%%' OR path LIKE '%%/phpmyadmin%%' OR status_code = 403) "
+            "AND timestamp >= datetime('now', ? || ' hours') ORDER BY timestamp DESC LIMIT 100",
+            (str(-hours),),
+        )
+
+    def cleanup_access_logs(self, days: int = 7) -> int:
+        """Remove access logs older than N days. Returns count deleted."""
+        result = self.execute(
+            "DELETE FROM access_logs WHERE timestamp < datetime('now', ? || ' days')",
+            (str(-days),),
+            commit=True,
+        )
+        return result.rowcount if hasattr(result, "rowcount") else 0
+
+    # --- Executive Directives ---
+
+    def save_directive(self, run_id: str, client_id: str, directive: dict) -> str:
+        """Save a CEO executive directive for audit trail."""
+        did = str(uuid.uuid4())
+        self.execute(
+            "INSERT INTO executive_directives (id, run_id, client_id, priority, category, directive, target_agent, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                did,
+                run_id,
+                client_id,
+                directive.get("priority", "medium"),
+                directive.get("category", ""),
+                directive.get("directive", ""),
+                directive.get("target_agent", ""),
+                directive.get("reasoning", ""),
+            ),
+            commit=True,
+        )
+        return did
+
     def close(self):
         """Close the database. For PostgreSQL this closes all pooled connections."""
         if self.backend == "postgresql" and self._pool:

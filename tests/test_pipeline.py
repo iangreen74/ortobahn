@@ -12,14 +12,77 @@ from ortobahn.config import Settings
 from ortobahn.orchestrator import Pipeline
 
 # Valid JSON responses for each agent
+SRE_JSON = json.dumps(
+    {
+        "health_status": "healthy",
+        "avg_confidence_trend": "stable",
+        "alerts": [],
+        "recommendations": [],
+    }
+)
+
+ANALYTICS_JSON = json.dumps(
+    {
+        "top_themes": [],
+        "summary": "No data yet.",
+        "recommendations": [],
+    }
+)
+
+REFLECTION_JSON = json.dumps(
+    {
+        "confidence_accuracy": 0.0,
+        "confidence_bias": "neutral",
+        "content_patterns": None,
+        "new_memories": [],
+        "recommendations": [],
+        "summary": "No data for reflection.",
+    }
+)
+
+SUPPORT_JSON = json.dumps(
+    {
+        "total_clients_checked": 0,
+        "at_risk_clients": [],
+        "tickets": [],
+        "recommendations": [],
+        "summary": "No clients to check.",
+    }
+)
+
+SECURITY_JSON = json.dumps(
+    {
+        "threat_level": "low",
+        "threats_detected": [],
+        "recommendations": [],
+        "actions_taken": [],
+        "credential_health": {},
+        "summary": "All clear.",
+    }
+)
+
+LEGAL_JSON = json.dumps(
+    {
+        "documents_generated": [],
+        "compliance_gaps": [],
+        "recommendations": [],
+        "summary": "All documents current.",
+    }
+)
+
 CEO_JSON = json.dumps(
     {
-        "themes": ["AI autonomy", "tech culture"],
-        "tone": "bold and direct",
-        "goals": ["grow followers"],
-        "content_guidelines": "be specific",
-        "posting_frequency": "3x/day",
-        "valid_until": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+        "strategy": {
+            "themes": ["AI autonomy", "tech culture"],
+            "tone": "bold and direct",
+            "goals": ["grow followers"],
+            "content_guidelines": "be specific",
+            "posting_frequency": "3x/day",
+            "valid_until": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+        },
+        "directives": [],
+        "business_assessment": "Healthy startup trajectory",
+        "risk_flags": [],
     }
 )
 
@@ -48,23 +111,6 @@ CREATOR_JSON = json.dumps(
                 "confidence": 0.9,
             }
         ]
-    }
-)
-
-ANALYTICS_JSON = json.dumps(
-    {
-        "top_themes": [],
-        "summary": "No data yet.",
-        "recommendations": [],
-    }
-)
-
-SRE_JSON = json.dumps(
-    {
-        "health_status": "healthy",
-        "avg_confidence_trend": "stable",
-        "alerts": [],
-        "recommendations": [],
     }
 )
 
@@ -100,9 +146,25 @@ class TestFullPipeline:
         settings = _make_settings(tmp_path)
 
         # Track which call we're on to return the right response
-        # Order: SRE, CEO, Strategist, Creator, CFO, Ops
+        # On a fresh DB (no posts), Analytics and Reflection skip their LLM calls.
+        # Phase 1: SRE, (Analytics skips), (Reflection skips), Support, Security, Legal
+        # Phase 2: CEO
+        # Phase 3: Strategist, Creator
+        # Phase 4: CFO, Ops
         call_count = {"n": 0}
-        responses_in_order = [SRE_JSON, CEO_JSON, STRATEGIST_JSON, CREATOR_JSON, CFO_JSON, OPS_JSON]
+        responses_in_order = [
+            SRE_JSON,
+            # Analytics skips LLM call on fresh DB (no published posts)
+            # Reflection skips LLM call on fresh DB (no published posts)
+            SUPPORT_JSON,
+            SECURITY_JSON,
+            LEGAL_JSON,
+            CEO_JSON,
+            STRATEGIST_JSON,
+            CREATOR_JSON,
+            CFO_JSON,
+            OPS_JSON,
+        ]
 
         def fake_call_llm(**kwargs):
             idx = call_count["n"]

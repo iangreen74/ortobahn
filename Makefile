@@ -1,4 +1,4 @@
-.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 deploy-ecs clean
+.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 deploy-ecs waf-setup clean
 
 ECR_REPO = 418295677815.dkr.ecr.us-west-2.amazonaws.com/ortobahn
 
@@ -82,6 +82,12 @@ deploy-ecs:
 	aws ecs update-service --cluster ortobahn --service ortobahn-web-v2 --force-new-deployment --region us-west-2
 	aws ecs update-service --cluster ortobahn --service ortobahn-scheduler-v2 --force-new-deployment --region us-west-2
 	@echo "\nECS services updating."
+
+waf-setup:
+	@echo "Creating WAF Web ACL for Ortobahn ALB..."
+	aws wafv2 create-web-acl --region us-west-2 --cli-input-json file://ecs/waf-rules.json
+	@echo "\nWAF created. Associate it with the ALB:"
+	@echo "  aws wafv2 associate-web-acl --region us-west-2 --web-acl-arn <WAF_ARN> --resource-arn <ALB_ARN>"
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

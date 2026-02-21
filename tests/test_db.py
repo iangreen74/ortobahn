@@ -340,6 +340,164 @@ class TestClientTrial:
         assert timedelta(days=13) < (trial_end - now) < timedelta(days=15)
 
 
+class TestLegalDocuments:
+    def test_save_and_get_legal_document(self, test_db):
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "terms_of_service",
+                "title": "Terms of Service",
+                "content": "# Terms\n\nThese are the terms.",
+                "version": "1.0",
+                "effective_date": "2026-02-21",
+            }
+        )
+
+        doc = test_db.get_legal_document("terms_of_service")
+        assert doc is not None
+        assert doc["title"] == "Terms of Service"
+        assert "Terms" in doc["content"]
+
+    def test_get_all_legal_documents(self, test_db):
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "terms_of_service",
+                "title": "ToS",
+                "content": "Terms content",
+            }
+        )
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "privacy_policy",
+                "title": "Privacy",
+                "content": "Privacy content",
+            }
+        )
+
+        docs = test_db.get_legal_documents(client_id="default")
+        assert len(docs) == 2
+        types = {d["document_type"] for d in docs}
+        assert "terms_of_service" in types
+        assert "privacy_policy" in types
+
+    def test_upsert_legal_document(self, test_db):
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "terms_of_service",
+                "title": "ToS v1",
+                "content": "Version 1",
+                "version": "1.0",
+            }
+        )
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "terms_of_service",
+                "title": "ToS v2",
+                "content": "Version 2",
+                "version": "2.0",
+            }
+        )
+
+        docs = test_db.get_legal_documents(client_id="default")
+        assert len(docs) == 1
+        assert docs[0]["title"] == "ToS v2"
+        assert docs[0]["version"] == "2.0"
+
+    def test_legal_docs_scoped_by_client(self, test_db):
+        test_db.save_legal_document(
+            {
+                "client_id": "default",
+                "document_type": "terms_of_service",
+                "title": "Default ToS",
+                "content": "Default terms",
+            }
+        )
+        test_db.create_client({"id": "other", "name": "Other"})
+        test_db.save_legal_document(
+            {
+                "client_id": "other",
+                "document_type": "terms_of_service",
+                "title": "Other ToS",
+                "content": "Other terms",
+            }
+        )
+
+        default_docs = test_db.get_legal_documents(client_id="default")
+        other_docs = test_db.get_legal_documents(client_id="other")
+        assert len(default_docs) == 1
+        assert default_docs[0]["title"] == "Default ToS"
+        assert len(other_docs) == 1
+        assert other_docs[0]["title"] == "Other ToS"
+
+    def test_no_legal_document_returns_none(self, test_db):
+        assert test_db.get_legal_document("terms_of_service") is None
+
+
+class TestAccessLogs:
+    def test_log_and_retrieve_suspicious(self, test_db):
+        test_db.log_access(
+            method="GET",
+            path="/.env",
+            status_code=404,
+            source_ip="1.2.3.4",
+            user_agent="curl/7.64",
+        )
+        test_db.log_access(
+            method="GET",
+            path="/health",
+            status_code=200,
+            source_ip="10.0.0.1",
+            user_agent="ELB-HealthChecker",
+        )
+
+        suspicious = test_db.get_suspicious_access_logs(hours=1)
+        assert len(suspicious) >= 1
+        paths = [s["path"] for s in suspicious]
+        assert "/.env" in paths
+
+    def test_cleanup_access_logs(self, test_db):
+        # Insert a log with a timestamp in the past
+        import uuid
+
+        test_db.execute(
+            "INSERT INTO access_logs (id, timestamp, method, path, status_code, source_ip, user_agent) "
+            "VALUES (?, datetime('now', '-10 days'), ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), "GET", "/.env", 404, "1.2.3.4", "curl/7.64"),
+            commit=True,
+        )
+
+        # Should remove logs older than 7 days
+        test_db.cleanup_access_logs(days=7)
+
+        remaining = test_db.get_suspicious_access_logs(hours=24 * 365)
+        assert len(remaining) == 0
+
+
+class TestDirectives:
+    def test_save_directive(self, test_db):
+        test_db.save_directive(
+            run_id="run-1",
+            client_id="default",
+            directive={
+                "priority": "high",
+                "category": "legal",
+                "directive": "Generate ToS",
+                "target_agent": "legal",
+                "reasoning": "No legal documents exist",
+            },
+        )
+
+        row = test_db.fetchone("SELECT * FROM executive_directives WHERE run_id='run-1'")
+        assert row is not None
+        assert row["priority"] == "high"
+        assert row["category"] == "legal"
+        assert row["directive"] == "Generate ToS"
+
+
 class TestChatMessages:
     def test_save_and_get_chat_messages(self, test_db):
         cid = test_db.create_client({"name": "ChatClient"})

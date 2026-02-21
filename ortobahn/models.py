@@ -478,3 +478,88 @@ class SupportReport(BaseModel):
     at_risk_clients: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     total_clients_checked: int = 0
+
+
+# --- CEO Executive output ---
+
+
+class DirectivePriority(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class DirectiveCategory(str, Enum):
+    LEGAL = "legal"
+    SECURITY = "security"
+    OPERATIONS = "operations"
+    ENGINEERING = "engineering"
+    SUPPORT = "support"
+    MARKETING = "marketing"
+
+
+class ExecutiveDirective(BaseModel):
+    priority: DirectivePriority = DirectivePriority.MEDIUM
+    category: DirectiveCategory
+    directive: str
+    target_agent: str = ""  # "cto", "legal", "security", "support", "ops"
+    reasoning: str = ""
+
+
+class CEOReport(BaseModel):
+    strategy: Strategy
+    directives: list[ExecutiveDirective] = Field(default_factory=list)
+    business_assessment: str = ""
+    risk_flags: list[str] = Field(default_factory=list)
+
+
+# --- Legal Agent output ---
+
+
+class LegalDocument(BaseModel):
+    document_type: str  # "terms_of_service", "privacy_policy", "dpa"
+    title: str
+    content: str  # Full markdown text
+    version: str = "1.0"
+    effective_date: str = ""
+
+
+class ComplianceGap(BaseModel):
+    area: str  # "terms_of_service", "privacy_policy", "cookie_consent", etc.
+    severity: str = "warning"  # "critical", "warning", "info"
+    description: str = ""
+    recommendation: str = ""
+
+
+class LegalReport(BaseModel):
+    documents_generated: list[LegalDocument] = Field(default_factory=list)
+    compliance_gaps: list[ComplianceGap] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+# --- Security Agent output ---
+
+
+class SecurityThreat(BaseModel):
+    threat_type: str  # "path_probe", "brute_force", "injection_attempt"
+    severity: str = "info"  # "critical", "warning", "info"
+    source_ip: str = ""
+    details: str = ""
+    count: int = 1
+
+
+class SecurityRecommendation(BaseModel):
+    area: str  # "waf", "cors", "rate_limiting", "credentials", "headers"
+    priority: str = "medium"
+    recommendation: str = ""
+
+
+class SecurityReport(BaseModel):
+    threat_level: str = "low"  # "critical", "high", "medium", "low"
+    threats_detected: list[SecurityThreat] = Field(default_factory=list)
+    recommendations: list[SecurityRecommendation] = Field(default_factory=list)
+    actions_taken: list[str] = Field(default_factory=list)
+    credential_health: dict[str, str] = Field(default_factory=dict)
+    summary: str = ""

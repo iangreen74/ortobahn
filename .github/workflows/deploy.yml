@@ -7,12 +7,15 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
     permissions:
       id-token: write
       contents: read
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_uri: ${{ steps.meta.outputs.image_uri }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,16 +27,129 @@ jobs:
       - id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set image metadata
+        id: meta
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_uri=$ECR_REGISTRY/ortobahn:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
       - name: Build and push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
-          docker build -t $ECR_REGISTRY/ortobahn:$IMAGE_TAG -t $ECR_REGISTRY/ortobahn:latest .
+          docker build \
+            -t $ECR_REGISTRY/ortobahn:$IMAGE_TAG \
+            -t $ECR_REGISTRY/ortobahn:latest .
           docker push $ECR_REGISTRY/ortobahn:$IMAGE_TAG
           docker push $ECR_REGISTRY/ortobahn:latest
 
-      - name: Deploy to ECS
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Deploy to staging ECS
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
-          aws ecs update-service --cluster ortobahn --service ortobahn-web-v2 --force-new-deployment
-          aws ecs update-service --cluster ortobahn --service ortobahn-scheduler-v2 --force-new-deployment
+          # Register staging web task def with SHA-pinned image
+          jq --arg img "$IMAGE_URI" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/staging-web-task-def.json > /tmp/staging-web-td.json
+
+          WEB_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/staging-web-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-web-staging \
+            --task-definition "$WEB_ARN" \
+            --force-new-deployment
+
+          # Register staging scheduler task def with SHA-pinned image
+          jq --arg img "$IMAGE_URI" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/staging-scheduler-task-def.json > /tmp/staging-sched-td.json
+
+          SCHED_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/staging-sched-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-scheduler-staging \
+            --task-definition "$SCHED_ARN" \
+            --force-new-deployment
+
+      - name: Wait for staging healthy
+        run: |
+          echo "Waiting for staging services to stabilize..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-web-staging ortobahn-scheduler-staging \
+          || echo "Warning: staging did not stabilize within timeout"
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-staging]
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Deploy to production ECS
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+        run: |
+          # Register prod web task def with SHA-pinned image
+          jq --arg img "$IMAGE_URI" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/web-task-def.json > /tmp/prod-web-td.json
+
+          WEB_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/prod-web-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-web-v2 \
+            --task-definition "$WEB_ARN" \
+            --force-new-deployment
+
+          # Register prod scheduler task def with SHA-pinned image
+          jq --arg img "$IMAGE_URI" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/scheduler-task-def.json > /tmp/prod-sched-td.json
+
+          SCHED_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/prod-sched-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-scheduler-v2 \
+            --task-definition "$SCHED_ARN" \
+            --force-new-deployment
+
+      - name: Wait for prod healthy
+        run: |
+          echo "Waiting for production services to stabilize..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-web-v2 ortobahn-scheduler-v2

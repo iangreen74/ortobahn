@@ -1,0 +1,83 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to rollback to (must exist in ECR)"
+        required: true
+      service:
+        description: "Service to rollback"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - web
+          - scheduler
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Verify image exists in ECR
+        run: |
+          aws ecr describe-images --repository-name ortobahn \
+            --image-ids imageTag=${{ inputs.sha }} \
+            --region us-west-2 > /dev/null \
+            || (echo "ERROR: Image tag ${{ inputs.sha }} not found in ECR" && exit 1)
+          echo "Image ${{ inputs.sha }} found in ECR."
+
+      - name: Rollback services
+        env:
+          IMAGE_URI: 418295677815.dkr.ecr.us-west-2.amazonaws.com/ortobahn:${{ inputs.sha }}
+        run: |
+          if [[ "${{ inputs.service }}" == "all" || "${{ inputs.service }}" == "web" ]]; then
+            echo "Rolling back web service to ${{ inputs.sha }}..."
+            jq --arg img "$IMAGE_URI" \
+              '.containerDefinitions[0].image = $img' \
+              ecs/web-task-def.json > /tmp/rollback-web-td.json
+
+            WEB_ARN=$(aws ecs register-task-definition \
+              --cli-input-json file:///tmp/rollback-web-td.json \
+              --query 'taskDefinition.taskDefinitionArn' --output text)
+
+            aws ecs update-service --cluster ortobahn \
+              --service ortobahn-web-v2 \
+              --task-definition "$WEB_ARN" \
+              --force-new-deployment
+          fi
+
+          if [[ "${{ inputs.service }}" == "all" || "${{ inputs.service }}" == "scheduler" ]]; then
+            echo "Rolling back scheduler service to ${{ inputs.sha }}..."
+            jq --arg img "$IMAGE_URI" \
+              '.containerDefinitions[0].image = $img' \
+              ecs/scheduler-task-def.json > /tmp/rollback-sched-td.json
+
+            SCHED_ARN=$(aws ecs register-task-definition \
+              --cli-input-json file:///tmp/rollback-sched-td.json \
+              --query 'taskDefinition.taskDefinitionArn' --output text)
+
+            aws ecs update-service --cluster ortobahn \
+              --service ortobahn-scheduler-v2 \
+              --task-definition "$SCHED_ARN" \
+              --force-new-deployment
+          fi
+
+      - name: Wait for rollback healthy
+        run: |
+          echo "Waiting for services to stabilize..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-web-v2 ortobahn-scheduler-v2
+          echo "Rollback to ${{ inputs.sha }} complete."

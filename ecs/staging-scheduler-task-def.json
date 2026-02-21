@@ -1,0 +1,50 @@
+{
+  "family": "ortobahn-scheduler-staging",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::418295677815:role/ortobahn-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::418295677815:role/ortobahn-ecs-task",
+  "containerDefinitions": [
+    {
+      "name": "ortobahn-scheduler",
+      "image": "418295677815.dkr.ecr.us-west-2.amazonaws.com/ortobahn:latest",
+      "essential": true,
+      "command": ["python", "-m", "ortobahn", "schedule", "--platforms", "bluesky"],
+      "environment": [
+        {"name": "AUTONOMOUS_MODE", "value": "true"},
+        {"name": "BACKUP_ENABLED", "value": "false"},
+        {"name": "COGNITO_REGION", "value": "us-west-2"},
+        {"name": "PIPELINE_INTERVAL_HOURS", "value": "8"},
+        {"name": "LOG_LEVEL", "value": "INFO"},
+        {"name": "USE_BEDROCK", "value": "true"},
+        {"name": "BEDROCK_REGION", "value": "us-west-2"},
+        {"name": "ENVIRONMENT", "value": "staging"}
+      ],
+      "secrets": [
+        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:ANTHROPIC_API_KEY::"},
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:DATABASE_URL::"},
+        {"name": "ORTOBAHN_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:ORTOBAHN_SECRET_KEY::"},
+        {"name": "BLUESKY_HANDLE", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:BLUESKY_HANDLE::"},
+        {"name": "BLUESKY_APP_PASSWORD", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:BLUESKY_APP_PASSWORD::"},
+        {"name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_SECRET_KEY::"},
+        {"name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_PUBLISHABLE_KEY::"},
+        {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_WEBHOOK_SECRET::"},
+        {"name": "STRIPE_PRICE_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_PRICE_ID::"},
+        {"name": "COGNITO_USER_POOL_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:COGNITO_USER_POOL_ID::"},
+        {"name": "COGNITO_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:COGNITO_CLIENT_ID::"},
+        {"name": "GH_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:GH_TOKEN::"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ortobahn",
+          "awslogs-region": "us-west-2",
+          "awslogs-stream-prefix": "staging-scheduler"
+        }
+      },
+      "stopTimeout": 30
+    }
+  ]
+}

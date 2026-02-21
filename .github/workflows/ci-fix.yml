@@ -99,5 +99,3 @@ jobs:
             --body-file /tmp/pr_body.md \
             --base "$BASE_BRANCH")
           echo "Created PR: $PR_URL"
-          gh pr merge "$PR_URL" --auto --squash
-          echo "Auto-merge enabled"

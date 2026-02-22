@@ -605,8 +605,7 @@ class TestProbeEngagementDecline:
         pid = str(uuid.uuid4())
         published_at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
         db.execute(
-            "INSERT INTO posts (id, text, status, run_id, client_id, published_at) "
-            "VALUES (?, ?, 'published', ?, ?, ?)",
+            "INSERT INTO posts (id, text, status, run_id, client_id, published_at) VALUES (?, ?, 'published', ?, ?, ?)",
             (pid, "test post", "run-eng", client_id, published_at),
             commit=True,
         )

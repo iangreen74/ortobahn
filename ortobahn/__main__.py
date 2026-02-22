@@ -166,6 +166,13 @@ def cmd_schedule(args):
                 except Exception as e:
                     console.print(f"  [red]Watchdog failed: {e}[/red]")
 
+            # Refresh engagement metrics from all platforms (non-fatal)
+            try:
+                pipeline.analytics._refresh_metrics()
+                console.print("  [dim]Metrics refreshed[/dim]")
+            except Exception as e:
+                console.print(f"  [yellow]Metric refresh warning: {e}[/yellow]")
+
             try:
                 if args.client:
                     # Single-client mode (explicit --client flag)
@@ -173,7 +180,8 @@ def cmd_schedule(args):
                 else:
                     # All active, non-paused clients
                     rows = pipeline.db.fetchall(
-                        "SELECT id, name, posting_interval_hours FROM clients WHERE active=1 AND status != 'paused' ORDER BY name"
+                        "SELECT id, name, posting_interval_hours, timezone, preferred_posting_hours "
+                        "FROM clients WHERE active=1 AND status NOT IN ('paused', 'credential_issue') ORDER BY name"
                     )
                     clients_to_check = (
                         rows
@@ -209,6 +217,38 @@ def cmd_schedule(args):
                                 continue  # Not due yet
                         except (ValueError, TypeError):
                             pass  # Run if we can't parse the timestamp
+
+                    # Adaptive scheduling: check if current hour is within posting hours
+                    try:
+                        from zoneinfo import ZoneInfo
+
+                        client_tz_str = client.get("timezone") or ""
+                        preferred_hours_str = client.get("preferred_posting_hours") or ""
+
+                        if client_tz_str:
+                            try:
+                                client_tz = ZoneInfo(client_tz_str)
+                                local_now = _dt.now(_tz.utc).astimezone(client_tz)
+                                current_hour = local_now.hour
+
+                                if preferred_hours_str:
+                                    allowed_hours = [
+                                        int(h.strip()) for h in preferred_hours_str.split(",") if h.strip().isdigit()
+                                    ]
+                                else:
+                                    # Default: allow posting between 8am-8pm local time
+                                    allowed_hours = list(range(8, 21))
+
+                                if current_hour not in allowed_hours:
+                                    console.print(
+                                        f"  [dim]Skipping {client.get('name', cid)}: "
+                                        f"hour {current_hour} not in posting hours ({client_tz_str})[/dim]"
+                                    )
+                                    continue
+                            except (KeyError, ValueError):
+                                pass  # Invalid timezone — skip the check, allow posting
+                    except ImportError:
+                        pass  # zoneinfo not available — skip the check
 
                     console.print(f"  [dim]Running for client: {client.get('name', cid)} (interval: {interval}h)[/dim]")
                     try:

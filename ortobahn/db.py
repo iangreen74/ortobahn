@@ -413,6 +413,7 @@ class Database:
             "rss_feeds",
             "posting_interval_hours",
             "timezone",
+            "preferred_posting_hours",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:

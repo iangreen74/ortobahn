@@ -80,6 +80,8 @@ async def tenant_dashboard(request: Request, client: AuthClient):
         except (ValueError, TypeError):
             pass
 
+    credential_issue = client.get("status") == "credential_issue"
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -94,6 +96,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "auto_publish": client.get("auto_publish", 0),
             "trial_days_remaining": trial_days_remaining,
             "subscription_status": client.get("subscription_status", "none"),
+            "credential_issue": credential_issue,
         },
     )
 
@@ -258,6 +261,12 @@ async def tenant_save_credentials(
         creds["handle"] = handle
 
     save_platform_credentials(db, client["id"], platform, creds, secret_key)
+
+    # Re-activate client if they were paused due to credential issues
+    if client.get("status") == "credential_issue" and creds:
+        db.update_client(client["id"], {"status": "active"})
+        logger.info(f"Client {client['id']} re-activated after credential update")
+
     return RedirectResponse("/my/settings", status_code=303)
 
 

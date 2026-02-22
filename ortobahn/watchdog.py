@@ -94,6 +94,9 @@ class Watchdog:
         findings.extend(self.probe_post_delivery())
         findings.extend(self.probe_client_health())
         findings.extend(self.probe_failure_rate())
+        findings.extend(self.probe_failure_rate_trend())
+        findings.extend(self.probe_credential_expiry())
+        findings.extend(self.probe_engagement_decline())
         if self.settings.watchdog_credential_check:
             findings.extend(self.probe_credential_health())
         if self.settings.auto_rollback_enabled:
@@ -199,7 +202,8 @@ class Watchdog:
                             severity="warning",
                             detail=f"Bluesky login failed for {client['name']}: {e}",
                             client_id=client["id"],
-                            auto_fixable=False,
+                            auto_fixable=True,
+                            ref_id=client["id"],
                         )
                     )
 
@@ -254,6 +258,180 @@ class Watchdog:
                     )
                 )
 
+        return findings
+
+    # --- Predictive probes ---
+
+    def _get_post_failure_rate_window(
+        self, client_id: str, start_hours_ago: int, end_hours_ago: int
+    ) -> tuple[int, int]:
+        """Return (failed_count, total_count) for posts in a time window."""
+        now = datetime.now(timezone.utc)
+        start = (now - timedelta(hours=start_hours_ago)).isoformat()
+        end = (now - timedelta(hours=end_hours_ago)).isoformat()
+        total_row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM posts"
+            " WHERE client_id=? AND created_at >= ? AND created_at < ?"
+            " AND status IN ('published', 'failed')",
+            (client_id, start, end),
+        )
+        failed_row = self.db.fetchone(
+            "SELECT COUNT(*) as cnt FROM posts"
+            " WHERE client_id=? AND created_at >= ? AND created_at < ?"
+            " AND status='failed'",
+            (client_id, start, end),
+        )
+        total = total_row["cnt"] if total_row else 0
+        failed = failed_row["cnt"] if failed_row else 0
+        return failed, total
+
+    def probe_failure_rate_trend(self) -> list[Finding]:
+        """Compare post failure rate in last 24h vs previous 24h per client."""
+        findings = []
+        clients = self.db.fetchall("SELECT id, name FROM clients WHERE active=1")
+        for client in clients:
+            cid = client["id"]
+            failed_recent, total_recent = self._get_post_failure_rate_window(cid, 24, 0)
+            failed_prev, total_prev = self._get_post_failure_rate_window(cid, 48, 24)
+
+            if total_recent == 0 or total_prev == 0:
+                continue
+
+            rate_recent = failed_recent / total_recent * 100
+            rate_prev = failed_prev / total_prev * 100
+
+            if rate_recent - rate_prev > 25:
+                findings.append(
+                    Finding(
+                        probe="failure_rate_trend",
+                        severity="warning",
+                        detail=(
+                            f"Client {client['name']} failure rate rose from "
+                            f"{rate_prev:.0f}% to {rate_recent:.0f}% "
+                            f"(prev 24h: {failed_prev}/{total_prev}, "
+                            f"last 24h: {failed_recent}/{total_recent})"
+                        ),
+                        client_id=cid,
+                    )
+                )
+        return findings
+
+    def probe_credential_expiry(self) -> list[Finding]:
+        """Warn if platform credentials haven't been rotated in >60 days."""
+        findings = []
+        rows = self.db.fetchall(
+            "SELECT pc.client_id, pc.platform, pc.last_rotated_at, c.name"
+            " FROM platform_credentials pc"
+            " JOIN clients c ON c.id = pc.client_id"
+            " WHERE c.active=1 AND c.internal=0 AND c.status NOT IN ('paused')"
+        )
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            last_rotated = row.get("last_rotated_at")
+            if not last_rotated:
+                findings.append(
+                    Finding(
+                        probe="credential_expiry",
+                        severity="warning",
+                        detail=(
+                            f"Client {row['name']} has {row['platform']} credentials "
+                            f"with no rotation date recorded"
+                        ),
+                        client_id=row["client_id"],
+                    )
+                )
+                continue
+
+            try:
+                rotated_dt = datetime.fromisoformat(str(last_rotated).replace(" ", "T"))
+                if rotated_dt.tzinfo is None:
+                    rotated_dt = rotated_dt.replace(tzinfo=timezone.utc)
+                days_since = (now - rotated_dt).days
+                if days_since > 60:
+                    findings.append(
+                        Finding(
+                            probe="credential_expiry",
+                            severity="warning",
+                            detail=(
+                                f"Client {row['name']} {row['platform']} credentials "
+                                f"last rotated {days_since} days ago"
+                            ),
+                            client_id=row["client_id"],
+                        )
+                    )
+            except (ValueError, TypeError):
+                findings.append(
+                    Finding(
+                        probe="credential_expiry",
+                        severity="warning",
+                        detail=(
+                            f"Client {row['name']} has {row['platform']} credentials "
+                            f"with unparseable rotation date"
+                        ),
+                        client_id=row["client_id"],
+                    )
+                )
+        return findings
+
+    def probe_engagement_decline(self) -> list[Finding]:
+        """Warn if average engagement this week vs last week declined >30%."""
+        findings = []
+        now = datetime.now(timezone.utc)
+        week_ago = (now - timedelta(days=7)).isoformat()
+        two_weeks_ago = (now - timedelta(days=14)).isoformat()
+
+        clients = self.db.fetchall("SELECT id, name FROM clients WHERE active=1")
+        for client in clients:
+            cid = client["id"]
+
+            this_week = self.db.fetchall(
+                "SELECT COALESCE(m.like_count, 0) AS like_count,"
+                " COALESCE(m.repost_count, 0) AS repost_count,"
+                " COALESCE(m.reply_count, 0) AS reply_count"
+                " FROM posts p LEFT JOIN metrics m ON p.id = m.post_id"
+                " WHERE p.client_id=? AND p.status='published'"
+                " AND p.published_at >= ?",
+                (cid, week_ago),
+            )
+            last_week = self.db.fetchall(
+                "SELECT COALESCE(m.like_count, 0) AS like_count,"
+                " COALESCE(m.repost_count, 0) AS repost_count,"
+                " COALESCE(m.reply_count, 0) AS reply_count"
+                " FROM posts p LEFT JOIN metrics m ON p.id = m.post_id"
+                " WHERE p.client_id=? AND p.status='published'"
+                " AND p.published_at >= ? AND p.published_at < ?",
+                (cid, two_weeks_ago, week_ago),
+            )
+
+            if len(this_week) < 3 or len(last_week) < 3:
+                continue
+
+            def _avg_engagement(rows: list[dict]) -> float:
+                total = sum(
+                    (r.get("like_count") or 0)
+                    + (r.get("repost_count") or 0)
+                    + (r.get("reply_count") or 0)
+                    for r in rows
+                )
+                return total / len(rows)
+
+            avg_this = _avg_engagement(this_week)
+            avg_last = _avg_engagement(last_week)
+
+            if avg_last > 0 and (avg_last - avg_this) / avg_last > 0.30:
+                pct_drop = (avg_last - avg_this) / avg_last * 100
+                findings.append(
+                    Finding(
+                        probe="engagement_decline",
+                        severity="warning",
+                        detail=(
+                            f"Client {client['name']} avg engagement dropped "
+                            f"{pct_drop:.0f}% (last week: {avg_last:.1f}, "
+                            f"this week: {avg_this:.1f})"
+                        ),
+                        client_id=cid,
+                    )
+                )
         return findings
 
     def probe_deploy_health(self) -> list[Finding]:
@@ -338,6 +516,15 @@ class Watchdog:
                             success=True,
                         )
                     )
+                elif f.probe == "credential_health":
+                    success = self._fix_credential_issue(f)
+                    results.append(
+                        RemediationResult(
+                            finding=f,
+                            action=f"Set client {f.client_id} status to credential_issue",
+                            success=success,
+                        )
+                    )
                 elif f.probe == "deploy_health":
                     deploy = self.db.fetchone("SELECT * FROM deployments WHERE id=?", (ref_id,))
                     if deploy and deploy.get("previous_sha"):
@@ -376,6 +563,21 @@ class Watchdog:
             commit=True,
         )
         logger.info(f"Watchdog: granted trial to client {client_id}")
+
+    def _fix_credential_issue(self, finding: Finding) -> bool:
+        """Pause a client whose credentials are failing."""
+        if not finding.ref_id:
+            return False
+        self.db.update_client(finding.ref_id, {"status": "credential_issue"})
+        logger.info(f"Watchdog: set client {finding.ref_id} status to credential_issue")
+        return True
+
+    def _verify_credential_fix(self, finding: Finding) -> bool:
+        """Check that the client was set to credential_issue status."""
+        if not finding.ref_id:
+            return False
+        client = self.db.get_client(finding.ref_id)
+        return client is not None and client.get("status") == "credential_issue"
 
     def _fix_deploy_rollback(self, deploy_id: str, previous_sha: str) -> bool:
         """Trigger rollback via GitHub Actions workflow dispatch."""
@@ -433,6 +635,8 @@ class Watchdog:
                         (r.finding.ref_id,),
                     )
                     r.verified = row is not None and row["subscription_status"] == "trialing"
+                elif r.finding.probe == "credential_health":
+                    r.verified = self._verify_credential_fix(r.finding)
                 elif r.finding.probe == "deploy_health":
                     row = self.db.fetchone(
                         "SELECT status FROM deployments WHERE id=?",

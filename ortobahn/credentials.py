@@ -39,15 +39,16 @@ def save_platform_credentials(db: Database, client_id: str, platform: str, creds
     )
     if existing:
         db.execute(
-            "UPDATE platform_credentials SET credentials_encrypted=?, updated_at=CURRENT_TIMESTAMP "
-            "WHERE client_id=? AND platform=?",
+            "UPDATE platform_credentials SET credentials_encrypted=?, updated_at=CURRENT_TIMESTAMP, "
+            "last_rotated_at=CURRENT_TIMESTAMP WHERE client_id=? AND platform=?",
             (encrypted, client_id, platform),
             commit=True,
         )
         return existing["id"]
     cid = str(uuid.uuid4())
     db.execute(
-        "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted) VALUES (?, ?, ?, ?)",
+        "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted, last_rotated_at) "
+        "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
         (cid, client_id, platform, encrypted),
         commit=True,
     )

@@ -261,16 +261,17 @@ class Pipeline:
         client = Client(**client_data) if client_data else None
         platforms = target_platforms or [Platform.GENERIC]
 
-        # Budget guard: skip paused clients (no run recorded)
-        if client_data and client_data.get("status") == "paused":
-            logger.info(f"Client {client_id} is paused (budget exceeded). Skipping cycle.")
+        # Budget guard: skip paused or credential_issue clients (no run recorded)
+        if client_data and client_data.get("status") in ("paused", "credential_issue"):
+            reason = "budget exceeded" if client_data.get("status") == "paused" else "credential issue"
+            logger.info(f"Client {client_id} is {client_data.get('status')} ({reason}). Skipping cycle.")
             return {
                 "run_id": run_id,
                 "posts_published": 0,
                 "total_drafts": 0,
                 "input_tokens": 0,
                 "output_tokens": 0,
-                "errors": ["client_paused"],
+                "errors": [f"client_{client_data.get('status')}"],
             }
 
         # Check trial expiry before subscription guard

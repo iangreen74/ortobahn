@@ -488,3 +488,228 @@ class TestDBUpdatePostFailed:
         row = test_db.fetchone(f"SELECT status, error_message FROM posts WHERE id='{pid}'")
         assert row["status"] == "failed"
         assert row["error_message"] == "Something went wrong"
+
+
+class TestProbeFailureRateTrend:
+    def _insert_post(self, db, status, client_id, hours_ago):
+        pid = str(uuid.uuid4())
+        created = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+        db.execute(
+            "INSERT INTO posts (id, text, status, run_id, client_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (pid, "test", status, "run-trend", client_id, created),
+            commit=True,
+        )
+
+    def test_detects_rising_failure_rate(self, test_db):
+        """Failure rate jumped from 0% (prev 24h) to 50% (last 24h) = +50 pp."""
+        cid = "trend-client"
+        test_db.create_client({"name": "Trend Corp", "id": cid}, start_trial=True)
+
+        # Previous 24h (25-48h ago): 4 published, 0 failed = 0% failure rate
+        for _ in range(4):
+            self._insert_post(test_db, "published", cid, hours_ago=30)
+
+        # Last 24h (0-24h ago): 2 failed, 2 published = 50% failure rate
+        for _ in range(2):
+            self._insert_post(test_db, "failed", cid, hours_ago=6)
+        for _ in range(2):
+            self._insert_post(test_db, "published", cid, hours_ago=6)
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_failure_rate_trend()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 1
+        assert matching[0].probe == "failure_rate_trend"
+        assert matching[0].severity == "warning"
+
+    def test_no_finding_when_stable(self, test_db):
+        """Same failure rate in both periods should not trigger."""
+        cid = "stable-client"
+        test_db.create_client({"name": "Stable Corp", "id": cid}, start_trial=True)
+
+        # Both windows: 1 failed, 3 published = 25% each
+        for hours_ago in [6, 30]:
+            self._insert_post(test_db, "failed", cid, hours_ago=hours_ago)
+            for _ in range(3):
+                self._insert_post(test_db, "published", cid, hours_ago=hours_ago)
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_failure_rate_trend()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 0
+
+
+class TestProbeCredentialExpiry:
+    def test_detects_old_credentials(self, test_db):
+        cid = "expiry-client"
+        test_db.create_client({"name": "Expiry Corp", "id": cid}, start_trial=True)
+
+        old_date = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        test_db.execute(
+            "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted, last_rotated_at) "
+            "VALUES (?, ?, 'bluesky', 'encrypted-data', ?)",
+            (str(uuid.uuid4()), cid, old_date),
+            commit=True,
+        )
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_credential_expiry()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 1
+        assert matching[0].probe == "credential_expiry"
+        assert "90 days" in matching[0].detail
+
+    def test_detects_null_rotation_date(self, test_db):
+        cid = "null-rot-client"
+        test_db.create_client({"name": "NullRot Corp", "id": cid}, start_trial=True)
+
+        test_db.execute(
+            "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted) "
+            "VALUES (?, ?, 'bluesky', 'encrypted-data')",
+            (str(uuid.uuid4()), cid),
+            commit=True,
+        )
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_credential_expiry()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 1
+        assert "no rotation date" in matching[0].detail
+
+    def test_skips_paused_clients(self, test_db):
+        cid = "paused-cred-client"
+        test_db.create_client({"name": "Paused Corp", "id": cid}, start_trial=True)
+        test_db.update_client(cid, {"status": "paused"})
+
+        old_date = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        test_db.execute(
+            "INSERT INTO platform_credentials (id, client_id, platform, credentials_encrypted, last_rotated_at) "
+            "VALUES (?, ?, 'bluesky', 'encrypted-data', ?)",
+            (str(uuid.uuid4()), cid, old_date),
+            commit=True,
+        )
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_credential_expiry()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 0
+
+
+class TestProbeEngagementDecline:
+    def _insert_published_post(self, db, client_id, days_ago, likes=0, reposts=0, replies=0):
+        pid = str(uuid.uuid4())
+        published_at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+        db.execute(
+            "INSERT INTO posts (id, text, status, run_id, client_id, published_at) "
+            "VALUES (?, ?, 'published', ?, ?, ?)",
+            (pid, "test post", "run-eng", client_id, published_at),
+            commit=True,
+        )
+        db.save_metrics(pid, like_count=likes, repost_count=reposts, reply_count=replies)
+
+    def test_insufficient_data_no_finding(self, test_db):
+        """Probe requires >=3 posts in EACH period; <3 should produce no findings."""
+        cid = "low-data-client"
+        test_db.create_client({"name": "LowData Corp", "id": cid}, start_trial=True)
+
+        for d in [1, 2]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=10)
+        for d in [8, 9]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=20)
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_engagement_decline()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 0
+
+    def test_detects_decline(self, test_db):
+        """Engagement drop of >30% should be detected."""
+        cid = "decline-client"
+        test_db.create_client({"name": "Decline Corp", "id": cid}, start_trial=True)
+
+        for d in [8, 9, 10]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=20, reposts=5, replies=5)
+
+        for d in [1, 2, 3]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=5, reposts=3, replies=2)
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_engagement_decline()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 1
+        assert matching[0].probe == "engagement_decline"
+        assert matching[0].severity == "warning"
+
+    def test_no_decline_no_finding(self, test_db):
+        """Stable engagement should produce no findings."""
+        cid = "stable-eng-client"
+        test_db.create_client({"name": "StableEng Corp", "id": cid}, start_trial=True)
+
+        for d in [8, 9, 10]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=10, reposts=5)
+        for d in [1, 2, 3]:
+            self._insert_published_post(test_db, cid, days_ago=d, likes=10, reposts=5)
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_engagement_decline()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 0
+
+
+class TestAutoRemediation:
+    def test_fix_credential_issue_sets_status(self, test_db):
+        """_fix_credential_issue should set client status to 'credential_issue'."""
+        cid = "cred-fix-client"
+        test_db.create_client({"name": "CredFix Corp", "id": cid}, start_trial=True)
+
+        finding = Finding(
+            probe="credential_health",
+            severity="warning",
+            detail="Bluesky login failed",
+            client_id=cid,
+            auto_fixable=True,
+            ref_id=cid,
+        )
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        result = watchdog._fix_credential_issue(finding)
+
+        assert result is True
+        client = test_db.get_client(cid)
+        assert client["status"] == "credential_issue"
+
+    def test_verify_credential_fix(self, test_db):
+        """_verify_credential_fix should confirm the status change."""
+        cid = "cred-verify-client"
+        test_db.create_client({"name": "CredVerify Corp", "id": cid}, start_trial=True)
+        test_db.update_client(cid, {"status": "credential_issue"})
+
+        finding = Finding(
+            probe="credential_health",
+            severity="warning",
+            detail="Bluesky login failed",
+            client_id=cid,
+            auto_fixable=True,
+            ref_id=cid,
+        )
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        assert watchdog._verify_credential_fix(finding) is True
+
+    def test_credential_issue_blocks_pipeline(self, test_db):
+        """Client with credential_issue status should be skipped by orchestrator."""
+        cid = "blocked-client"
+        test_db.create_client({"name": "Blocked Corp", "id": cid}, start_trial=True)
+        test_db.update_client(cid, {"status": "credential_issue"})
+
+        client = test_db.get_client(cid)
+        assert client["status"] == "credential_issue"
+        assert client["status"] in ("paused", "credential_issue")

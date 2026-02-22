@@ -189,6 +189,31 @@ jobs:
             exit 1
           fi
 
+      - name: Pipeline dry-run smoke test
+        if: success()
+        continue-on-error: true
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Running pipeline dry-run on staging..."
+          RESPONSE=$(curl -s -m 180 \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.ORTOBAHN_SECRET_KEY }}" \
+            "$STAGING_URL/api/internal/pipeline-dry-run")
+          echo "Response: $RESPONSE"
+
+          SUCCESS=$(echo "$RESPONSE" | jq -r '.success // false')
+          DRAFTS=$(echo "$RESPONSE" | jq -r '.drafts_generated // 0')
+
+          if [ "$SUCCESS" = "true" ] && [ "$DRAFTS" -gt 0 ]; then
+            echo "Pipeline dry-run passed: $DRAFTS drafts generated"
+          else
+            echo "Pipeline dry-run warning: success=$SUCCESS, drafts=$DRAFTS"
+            echo "This is non-blocking — staging may lack API keys"
+          fi
+
       - name: Register staging deploy
         env:
           STAGING_URL: ${{ secrets.STAGING_URL }}

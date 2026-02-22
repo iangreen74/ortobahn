@@ -101,6 +101,46 @@ def create_app() -> FastAPI:
         deploy_id = db.record_deploy(sha=sha, environment=environment, previous_sha=previous_sha)
         return {"deploy_id": deploy_id, "sha": sha, "previous_sha": previous_sha}
 
+    @app.post("/api/internal/pipeline-dry-run")
+    async def pipeline_dry_run(request: Request):
+        """Run a single pipeline cycle in dry-run mode for smoke testing."""
+        import asyncio
+
+        from ortobahn.orchestrator import Pipeline
+
+        # Auth: require ORTOBAHN_SECRET_KEY as Bearer token
+        auth = request.headers.get("authorization", "")
+        expected = f"Bearer {request.app.state.settings.secret_key}"
+        if auth != expected:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+        settings = request.app.state.settings
+        db = request.app.state.db
+
+        # Get default client for dry run
+        default_client = db.get_client("default")
+        if not default_client:
+            return JSONResponse({"detail": "Default client not found"}, status_code=500)
+
+        try:
+            pipeline = Pipeline(settings, dry_run=True)
+            # Run in thread executor since pipeline is sync
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, lambda: pipeline.run_cycle(client_id="default", generate_only=True)
+            )
+            return JSONResponse({
+                "success": True,
+                "drafts_generated": result.get("total_drafts", 0) if isinstance(result, dict) else 0,
+                "errors": result.get("errors", []) if isinstance(result, dict) else [],
+            })
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "drafts_generated": 0,
+                "errors": [str(e)],
+            })
+
     @app.exception_handler(_LoginRedirect)
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):
         return RedirectResponse(f"/api/auth/login?next={exc.next_url}")

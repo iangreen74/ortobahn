@@ -616,6 +616,21 @@ def _migration_022_add_deployments(db: Database) -> None:
     )
 
 
+def _migration_023_add_intelligence_upgrades(db: Database) -> None:
+    """Add columns for adaptive scheduling and credential rotation tracking."""
+    # Item 4: Adaptive scheduling — preferred posting hours per client
+    _safe_add_column(db, "clients", "preferred_posting_hours TEXT NOT NULL DEFAULT ''")
+
+    # Item 5: Credential rotation tracking
+    _safe_add_column(db, "platform_credentials", "last_rotated_at TIMESTAMP")
+
+    # Backfill last_rotated_at from updated_at for existing rows
+    db.execute(
+        "UPDATE platform_credentials SET last_rotated_at = updated_at WHERE last_rotated_at IS NULL",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -639,6 +654,7 @@ MIGRATIONS = {
     20: _migration_020_add_chat_messages,
     21: _migration_021_add_legal_security_directives,
     22: _migration_022_add_deployments,
+    23: _migration_023_add_intelligence_upgrades,
 }
 
 

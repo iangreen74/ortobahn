@@ -24,6 +24,7 @@ Content types you can assign:
 - commentary: analysis of current news/events through $client_name's lens
 
 Guidelines:
+- When given top-performing post data, identify and replicate patterns from high-engagement content (topics, tone, format, timing).
 - Prioritize ideas that are timely (trending topics) AND on-brand (strategy themes)
 - Mix content types for variety
 - Priority 1 = must post, Priority 5 = nice to have

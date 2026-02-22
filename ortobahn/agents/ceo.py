@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.db import to_datetime
@@ -25,7 +26,63 @@ from ortobahn.models import (
     SupportReport,
 )
 
+if TYPE_CHECKING:
+    from ortobahn.db import Database
+
 logger = logging.getLogger("ortobahn.ceo")
+
+
+def _compute_engagement_trend(db: Database, client_id: str) -> dict | None:
+    """Compare average engagement this week vs last week.
+
+    Returns a dict with direction ('rising'/'falling'/'stable') and percentage change,
+    or None if there are fewer than 3 posts in either period.
+    """
+    now = datetime.now(timezone.utc)
+    this_week_start = (now - timedelta(days=7)).isoformat()
+    last_week_start = (now - timedelta(days=14)).isoformat()
+    this_week_end = now.isoformat()
+    last_week_end = this_week_start
+
+    this_week_rows = db.fetchall(
+        """SELECT COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0) + COALESCE(m.reply_count, 0) AS engagement
+           FROM posts p
+           LEFT JOIN metrics m ON p.id = m.post_id
+               AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)
+           WHERE p.status = 'published' AND p.client_id = ? AND p.published_at > ? AND p.published_at <= ?""",
+        (client_id, this_week_start, this_week_end),
+    )
+
+    last_week_rows = db.fetchall(
+        """SELECT COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0) + COALESCE(m.reply_count, 0) AS engagement
+           FROM posts p
+           LEFT JOIN metrics m ON p.id = m.post_id
+               AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)
+           WHERE p.status = 'published' AND p.client_id = ? AND p.published_at > ? AND p.published_at <= ?""",
+        (client_id, last_week_start, last_week_end),
+    )
+
+    if len(this_week_rows) < 3 or len(last_week_rows) < 3:
+        return None
+
+    this_avg = sum(r["engagement"] for r in this_week_rows) / len(this_week_rows)
+    last_avg = sum(r["engagement"] for r in last_week_rows) / len(last_week_rows)
+
+    if last_avg == 0:
+        if this_avg > 0:
+            return {"direction": "rising", "percentage": 100.0}
+        return {"direction": "stable", "percentage": 0.0}
+
+    pct_change = ((this_avg - last_avg) / last_avg) * 100
+
+    if pct_change > 5:
+        direction = "rising"
+    elif pct_change < -5:
+        direction = "falling"
+    else:
+        direction = "stable"
+
+    return {"direction": direction, "percentage": round(pct_change, 1)}
 
 
 class CEOAgent(BaseAgent):
@@ -105,6 +162,14 @@ class CEOAgent(BaseAgent):
 
         if performance_insights:
             parts.append(f"\n{performance_insights}")
+
+        # Inject engagement trend (week-over-week)
+        try:
+            trend = _compute_engagement_trend(self.db, client_id)
+            if trend:
+                parts.append(f"\nEngagement trend: {trend['direction']} ({trend['percentage']}% change week-over-week)")
+        except Exception as e:
+            logger.warning(f"Could not compute engagement trend: {e}")
 
         # Inject reflection report insights
         if reflection_report:

@@ -8,6 +8,7 @@
 | Environment | URL | Purpose |
 |-------------|-----|---------|
 | Production app | `https://app.ortobahn.com` | ECS web service (FastAPI) |
+| Staging app | `http://ortobahn-alb-v2-1644127875.us-west-2.elb.amazonaws.com:8080` | Staging ECS (HTTP, port 8080) |
 | Landing page | `https://ortobahn.com` | Static S3 + CloudFront |
 | Glass dashboard | `https://app.ortobahn.com/glass` | Public operational transparency |
 | Health check | `https://app.ortobahn.com/health` | ALB/ECS health probe (JSON) |
@@ -63,6 +64,30 @@
 |----------|------|
 | Web ACL | `ortobahn-waf` |
 | Rules | CommonRuleSet, KnownBadInputs, SQLiRuleSet |
+
+## ALB / Networking
+
+| Resource | Identifier |
+|----------|------------|
+| ALB | `ortobahn-alb-v2` (`app/ortobahn-alb-v2/8deb99e9e3870572`) |
+| ALB DNS | `ortobahn-alb-v2-1644127875.us-west-2.elb.amazonaws.com` |
+| ALB security group | `sg-090ade0bb03864ab3` |
+| ECS security group | `sg-01fb9e64417406da9` |
+| Prod target group | `ortobahn-tg-v2` |
+| Staging target group | `ortobahn-tg-staging` |
+| Prod listener | HTTPS :443 → `ortobahn-tg-v2` |
+| HTTP redirect listener | HTTP :80 → HTTPS |
+| Staging listener | HTTP :8080 → `ortobahn-tg-staging` |
+| VPC | `vpc-0ec0aabd936179b84` |
+| Subnets | `subnet-0abb5d31aa473c65c`, `subnet-02e43b3f96dd5a654` |
+
+## IAM Roles
+
+| Role | Key Permissions |
+|------|----------------|
+| `ortobahn-deploy` | ECR push, ECS RegisterTaskDefinition/UpdateService/DescribeServices, S3/CloudFront (landing), PassRole |
+| `ortobahn-ecs-execution` | AmazonECSTaskExecutionRolePolicy + SecretsManagerRead (prod + staging ARNs) |
+| `ortobahn-ecs-task` | Bedrock, S3, other runtime permissions |
 
 ## EC2 Fallback
 

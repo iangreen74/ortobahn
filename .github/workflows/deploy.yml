@@ -147,10 +147,10 @@ jobs:
           if [ -z "$STAGING_URL" ]; then exit 0; fi
 
           echo "Testing dashboard endpoint..."
-          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/" || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/")
 
-          # 200 = dashboard, 302/307 = redirect to login (both valid)
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+          # 200 = dashboard, 302/307 = redirect to login, 401 = auth required (all valid)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Dashboard returned HTTP $HTTP_CODE"
           else
             echo "FAIL: Dashboard returned HTTP $HTTP_CODE"
@@ -164,7 +164,7 @@ jobs:
           if [ -z "$STAGING_URL" ]; then exit 0; fi
 
           echo "Testing glass dashboard..."
-          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/glass" || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/glass")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "PASS: Glass dashboard returned HTTP 200"
           else
@@ -323,8 +323,8 @@ jobs:
 
           # Dashboard check
           echo "Checking prod dashboard..."
-          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/" || echo "000")
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/")
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Prod dashboard returned HTTP $HTTP_CODE"
           else
             echo "FAIL: Prod dashboard returned HTTP $HTTP_CODE"
@@ -333,7 +333,7 @@ jobs:
 
           # Glass dashboard check
           echo "Checking prod glass..."
-          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/glass" || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/glass")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "PASS: Prod glass dashboard returned HTTP 200"
           else

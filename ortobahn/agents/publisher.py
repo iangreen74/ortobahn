@@ -134,8 +134,13 @@ class PublisherAgent(BaseAgent):
                     if hasattr(publisher, "verify_post_exists") and uri:
                         result = publisher.verify_post_exists(uri)
                         if result is False:
+                            # Retry once after a longer delay — platform may still be propagating
+                            logger.info(f"Post not found on first check, retrying in 5s: {uri}")
+                            time.sleep(5)
+                            result = publisher.verify_post_exists(uri)
+                        if result is False:
                             verified = False
-                            logger.warning(f"Post verification failed for {uri}")
+                            logger.warning(f"Post verification failed after retry for {uri}")
                         elif result is None:
                             logger.info(f"Post verification inconclusive for {uri}, trusting post succeeded")
 

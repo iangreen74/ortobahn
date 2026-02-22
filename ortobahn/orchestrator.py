@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from ortobahn.agents.analytics import AnalyticsAgent
@@ -198,12 +199,19 @@ class Pipeline:
 
                 # Verify the post actually exists on the platform
                 # Returns True (found), False (not found), or None (inconclusive)
+                # Brief delay for eventual consistency before verification
+                time.sleep(2)
                 verified = True
                 if hasattr(publisher_client, "verify_post_exists") and uri:
                     result = publisher_client.verify_post_exists(uri)
                     if result is False:
+                        # Retry once after a longer delay — platform may still be propagating
+                        logger.info(f"Post not found on first check, retrying in 5s: {post['id'][:8]}")
+                        time.sleep(5)
+                        result = publisher_client.verify_post_exists(uri)
+                    if result is False:
                         verified = False
-                        logger.warning(f"Post verification failed for approved post {post['id'][:8]}")
+                        logger.warning(f"Post verification failed after retry for approved post {post['id'][:8]}")
                     elif result is None:
                         logger.info(f"Post verification inconclusive for {post['id'][:8]}, trusting post succeeded")
 

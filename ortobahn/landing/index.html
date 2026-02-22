@@ -490,7 +490,7 @@
                         </div>
                         <div class="form-group form-full">
                             <label for="website">Website</label>
-                            <input type="url" id="website" name="website" placeholder="https://acme.com">
+                            <input type="text" id="website" name="website" placeholder="acme.com">
                         </div>
                         <div class="form-group form-full">
                             <label for="brand_voice">Describe your brand voice</label>
@@ -550,6 +550,11 @@
         btn.textContent = 'Creating account...';
         status.textContent = '';
         status.className = 'form-status';
+
+        // Normalize website URL — accept bare domains
+        if (data.website && !/^https?:\/\//i.test(data.website)) {
+            data.website = 'https://' + data.website.replace(/^www\./i, '');
+        }
 
         try {
             const resp = await fetch('https://app.ortobahn.com/api/onboard', {

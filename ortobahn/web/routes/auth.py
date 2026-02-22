@@ -116,6 +116,23 @@ async def confirm(request: Request, body: ConfirmRequest):
     return {"message": "Email confirmed. You may now log in."}
 
 
+class ResendRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/resend")
+async def resend_confirmation(request: Request, body: ResendRequest):
+    """Resend the email verification code."""
+    cognito = request.app.state.cognito
+
+    try:
+        cognito.resend_confirmation(body.email)
+    except CognitoError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from None
+
+    return {"message": "Verification code resent. Check your email (and spam folder)."}
+
+
 # ---------------------------------------------------------------------------
 # Forgot password
 # ---------------------------------------------------------------------------

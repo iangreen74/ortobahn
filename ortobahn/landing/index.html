@@ -566,7 +566,7 @@
             const result = await resp.json();
             if (resp.ok) {
                 const email = data.email || document.getElementById('email').value;
-                status.innerHTML = '<strong>Account created!</strong> Check your email for a verification code.<br>'
+                status.innerHTML = '<strong>Account created!</strong> Check your email for a verification code (check spam — look for <code>no-reply@verificationemail.com</code>).<br>'
                     + (result.api_key ? '<small>Save your API key for programmatic access: <code style="display:inline-block;margin:0.5rem 0;padding:0.25rem 0.5rem;background:#1a1a2e;border-radius:4px;user-select:all">'
                     + result.api_key + '</code></small><br>' : '')
                     + '<a href="https://app.ortobahn.com/api/auth/confirm?email=' + encodeURIComponent(email) + '" style="color:#00d4aa">Enter Verification Code &rarr;</a>';

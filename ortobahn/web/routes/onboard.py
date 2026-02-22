@@ -68,9 +68,20 @@ class OnboardRequest(BaseModel):
     brand_voice: str = ""
 
 
+def _normalize_url(url: str) -> str:
+    """Accept bare domains like acme.com and prepend https://."""
+    url = url.strip()
+    if not url:
+        return url
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    return url
+
+
 @router.post("/onboard")
 async def onboard(request: Request, body: OnboardRequest):
     db = request.app.state.db
+    body.website = _normalize_url(body.website)
 
     # Check for duplicate email
     existing = db.fetchone("SELECT id FROM clients WHERE email=?", (body.email,))

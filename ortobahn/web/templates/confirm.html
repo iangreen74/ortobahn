@@ -12,12 +12,16 @@
     <form id="confirm-form">
         <label for="code">Confirmation Code</label>
         <input type="text" id="code" name="code" placeholder="123456" maxlength="6" pattern="\d{6}" inputmode="numeric" autocomplete="one-time-code" required>
-        <small>Check your inbox (and spam folder) for the verification email.</small>
+        <small>Check your inbox (and spam folder) for an email from <code>no-reply@verificationemail.com</code>.</small>
 
         <div id="confirm-error" style="display:none; color: var(--pico-del-color); margin-top: 0.5rem;"></div>
+        <div id="resend-status" style="display:none; color: var(--pico-ins-color); margin-top: 0.5rem;"></div>
 
         <button type="submit">Confirm</button>
     </form>
+    <p style="margin-top: 1rem; text-align: center;">
+        Didn't get the code? <a href="#" id="resend-link">Resend verification email</a>
+    </p>
 </article>
 
 <script>
@@ -46,6 +50,37 @@ document.getElementById("confirm-form").addEventListener("submit", async functio
     } catch (err) {
         errorEl.textContent = "Network error. Please try again.";
         errorEl.style.display = "block";
+    }
+});
+
+document.getElementById("resend-link").addEventListener("click", async function(e) {
+    e.preventDefault();
+    const resendEl = document.getElementById("resend-status");
+    const errorEl = document.getElementById("confirm-error");
+    errorEl.style.display = "none";
+    resendEl.style.display = "none";
+    this.textContent = "Sending...";
+
+    try {
+        const resp = await fetch("/api/auth/resend", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({email: "{{ email }}"}),
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            resendEl.textContent = "Code resent! Check your inbox and spam folder.";
+            resendEl.style.display = "block";
+        } else {
+            errorEl.textContent = data.detail || "Failed to resend code.";
+            errorEl.style.display = "block";
+        }
+    } catch (err) {
+        errorEl.textContent = "Network error. Please try again.";
+        errorEl.style.display = "block";
+    } finally {
+        this.textContent = "Resend verification email";
     }
 });
 </script>

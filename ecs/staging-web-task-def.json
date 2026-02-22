@@ -31,17 +31,17 @@
         {"name": "DEPLOY_SHA", "value": "unknown"}
       ],
       "secrets": [
-        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:ANTHROPIC_API_KEY::"},
-        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:DATABASE_URL::"},
-        {"name": "ORTOBAHN_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:ORTOBAHN_SECRET_KEY::"},
-        {"name": "BLUESKY_HANDLE", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:BLUESKY_HANDLE::"},
-        {"name": "BLUESKY_APP_PASSWORD", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:BLUESKY_APP_PASSWORD::"},
-        {"name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_SECRET_KEY::"},
-        {"name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_PUBLISHABLE_KEY::"},
-        {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_WEBHOOK_SECRET::"},
-        {"name": "STRIPE_PRICE_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:STRIPE_PRICE_ID::"},
-        {"name": "COGNITO_USER_POOL_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:COGNITO_USER_POOL_ID::"},
-        {"name": "COGNITO_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:COGNITO_CLIENT_ID::"}
+        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:ANTHROPIC_API_KEY::"},
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:DATABASE_URL::"},
+        {"name": "ORTOBAHN_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:ORTOBAHN_SECRET_KEY::"},
+        {"name": "BLUESKY_HANDLE", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:BLUESKY_HANDLE::"},
+        {"name": "BLUESKY_APP_PASSWORD", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:BLUESKY_APP_PASSWORD::"},
+        {"name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:STRIPE_SECRET_KEY::"},
+        {"name": "STRIPE_PUBLISHABLE_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:STRIPE_PUBLISHABLE_KEY::"},
+        {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:STRIPE_WEBHOOK_SECRET::"},
+        {"name": "STRIPE_PRICE_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:STRIPE_PRICE_ID::"},
+        {"name": "COGNITO_USER_POOL_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:COGNITO_USER_POOL_ID::"},
+        {"name": "COGNITO_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-2vpqOw:COGNITO_CLIENT_ID::"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

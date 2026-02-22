@@ -48,7 +48,7 @@
 | Secret | Path | Keys stored |
 |--------|------|-------------|
 | Production | `ortobahn/prod` (ARN suffix: `-TaDxEG`) | ANTHROPIC_API_KEY, DATABASE_URL, ORTOBAHN_SECRET_KEY, BLUESKY_HANDLE, BLUESKY_APP_PASSWORD, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, GH_TOKEN |
-| Staging | `ortobahn/staging-CHANGE_ME` | Same keys (placeholder suffix - replace after creating) |
+| Staging | `ortobahn/staging` (ARN suffix: `-2vpqOw`) | Same keys as prod |
 
 ## CloudFront / S3
 

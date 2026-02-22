@@ -334,8 +334,7 @@ class Watchdog:
                         probe="credential_expiry",
                         severity="warning",
                         detail=(
-                            f"Client {row['name']} has {row['platform']} credentials "
-                            f"with no rotation date recorded"
+                            f"Client {row['name']} has {row['platform']} credentials with no rotation date recorded"
                         ),
                         client_id=row["client_id"],
                     )
@@ -353,8 +352,7 @@ class Watchdog:
                             probe="credential_expiry",
                             severity="warning",
                             detail=(
-                                f"Client {row['name']} {row['platform']} credentials "
-                                f"last rotated {days_since} days ago"
+                                f"Client {row['name']} {row['platform']} credentials last rotated {days_since} days ago"
                             ),
                             client_id=row["client_id"],
                         )
@@ -365,8 +363,7 @@ class Watchdog:
                         probe="credential_expiry",
                         severity="warning",
                         detail=(
-                            f"Client {row['name']} has {row['platform']} credentials "
-                            f"with unparseable rotation date"
+                            f"Client {row['name']} has {row['platform']} credentials with unparseable rotation date"
                         ),
                         client_id=row["client_id"],
                     )
@@ -408,9 +405,7 @@ class Watchdog:
 
             def _avg_engagement(rows: list[dict]) -> float:
                 total = sum(
-                    (r.get("like_count") or 0)
-                    + (r.get("repost_count") or 0)
-                    + (r.get("reply_count") or 0)
+                    (r.get("like_count") or 0) + (r.get("repost_count") or 0) + (r.get("reply_count") or 0)
                     for r in rows
                 )
                 return total / len(rows)

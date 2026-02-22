@@ -129,17 +129,21 @@ def create_app() -> FastAPI:
             result = await loop.run_in_executor(
                 None, lambda: pipeline.run_cycle(client_id="default", generate_only=True)
             )
-            return JSONResponse({
-                "success": True,
-                "drafts_generated": result.get("total_drafts", 0) if isinstance(result, dict) else 0,
-                "errors": result.get("errors", []) if isinstance(result, dict) else [],
-            })
+            return JSONResponse(
+                {
+                    "success": True,
+                    "drafts_generated": result.get("total_drafts", 0) if isinstance(result, dict) else 0,
+                    "errors": result.get("errors", []) if isinstance(result, dict) else [],
+                }
+            )
         except Exception as e:
-            return JSONResponse({
-                "success": False,
-                "drafts_generated": 0,
-                "errors": [str(e)],
-            })
+            return JSONResponse(
+                {
+                    "success": False,
+                    "drafts_generated": 0,
+                    "errors": [str(e)],
+                }
+            )
 
     @app.exception_handler(_LoginRedirect)
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):

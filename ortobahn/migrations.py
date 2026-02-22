@@ -593,6 +593,29 @@ def _migration_021_add_legal_security_directives(db: Database) -> None:
     )
 
 
+def _migration_022_add_deployments(db: Database) -> None:
+    """Add deployments table for tracking deploy history and enabling auto-rollback."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deployments (
+            id TEXT PRIMARY KEY,
+            sha TEXT NOT NULL,
+            environment TEXT NOT NULL DEFAULT 'production',
+            status TEXT NOT NULL DEFAULT 'deployed',
+            previous_sha TEXT,
+            deployed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            validated_at TIMESTAMP,
+            rolled_back_at TIMESTAMP
+        )
+        """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deployments_env_status ON deployments(environment, status, deployed_at)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -615,6 +638,7 @@ MIGRATIONS = {
     19: _migration_019_enable_auto_publish_default,
     20: _migration_020_add_chat_messages,
     21: _migration_021_add_legal_security_directives,
+    22: _migration_022_add_deployments,
 }
 
 

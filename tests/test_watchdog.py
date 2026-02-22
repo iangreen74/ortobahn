@@ -296,6 +296,184 @@ class TestFullCycle:
             mock_send.assert_called_once()
 
 
+class TestDeployTracking:
+    def test_record_and_get_deploy(self, test_db):
+        deploy_id = test_db.record_deploy(sha="abc1234", environment="production")
+        deploy = test_db.get_current_deploy("production")
+        assert deploy is not None
+        assert deploy["sha"] == "abc1234"
+        assert deploy["status"] == "deployed"
+        assert deploy["id"] == deploy_id
+
+    def test_previous_sha_tracking(self, test_db):
+        test_db.record_deploy(sha="first123", environment="production")
+        test_db.record_deploy(sha="second456", environment="production", previous_sha="first123")
+
+        deploy = test_db.get_current_deploy("production")
+        assert deploy["sha"] == "second456"
+        assert deploy["previous_sha"] == "first123"
+
+    def test_mark_validated(self, test_db):
+        deploy_id = test_db.record_deploy(sha="val123", environment="production")
+        test_db.mark_deploy_validated(deploy_id)
+
+        deploy = test_db.fetchone("SELECT * FROM deployments WHERE id=?", (deploy_id,))
+        assert deploy["status"] == "validated"
+        assert deploy["validated_at"] is not None
+
+    def test_mark_rolled_back(self, test_db):
+        deploy_id = test_db.record_deploy(sha="roll123", environment="production")
+        test_db.mark_deploy_rolled_back(deploy_id)
+
+        deploy = test_db.fetchone("SELECT * FROM deployments WHERE id=?", (deploy_id,))
+        assert deploy["status"] == "rolled_back"
+        assert deploy["rolled_back_at"] is not None
+
+    def test_get_recent_deploys(self, test_db):
+        for i in range(3):
+            test_db.record_deploy(sha=f"sha{i}", environment="production")
+
+        deploys = test_db.get_recent_deploys("production", limit=2)
+        assert len(deploys) == 2
+
+    def test_environment_isolation(self, test_db):
+        test_db.record_deploy(sha="staging1", environment="staging")
+        test_db.record_deploy(sha="prod1", environment="production")
+
+        staging = test_db.get_current_deploy("staging")
+        prod = test_db.get_current_deploy("production")
+        assert staging["sha"] == "staging1"
+        assert prod["sha"] == "prod1"
+
+
+class TestProbeDeployHealth:
+    def test_no_finding_without_deploy(self, test_db):
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True),
+        )
+        findings = watchdog.probe_deploy_health()
+        assert len(findings) == 0
+
+    def test_no_finding_for_old_deploy(self, test_db):
+        # Deploy from 2 hours ago — outside the 30 minute window
+        old_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        test_db.execute(
+            "INSERT INTO deployments (id, sha, environment, status, previous_sha, deployed_at) "
+            "VALUES (?, ?, 'production', 'deployed', ?, ?)",
+            ("old-deploy", "newsha", "oldsha", old_time),
+            commit=True,
+        )
+
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True),
+        )
+        findings = watchdog.probe_deploy_health()
+        assert len(findings) == 0
+
+    def test_no_finding_without_previous_sha(self, test_db):
+        # Recent deploy but no previous SHA to rollback to
+        test_db.record_deploy(sha="first-ever", environment="production")
+
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True),
+        )
+        findings = watchdog.probe_deploy_health()
+        assert len(findings) == 0
+
+    def test_finding_on_critical_health_after_deploy(self, test_db):
+        # Record deploy with a slightly older timestamp so health checks are "after" it
+        deploy_time = (datetime.now(timezone.utc) - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")
+        deploy_id = str(uuid.uuid4())
+        test_db.execute(
+            "INSERT INTO deployments (id, sha, environment, status, previous_sha, deployed_at) "
+            "VALUES (?, ?, 'production', 'deployed', ?, ?)",
+            (deploy_id, "bad-sha", "good-sha", deploy_time),
+            commit=True,
+        )
+
+        # Simulate critical health checks after the deploy
+        for i in range(3):
+            test_db.save_health_check(
+                probe="stale_run",
+                status="critical",
+                detail=f"Critical issue {i}",
+            )
+
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True, auto_rollback_health_failures=3),
+        )
+        findings = watchdog.probe_deploy_health()
+
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+        assert findings[0].auto_fixable
+        assert "bad-sha" in findings[0].detail
+        assert "good-sh" in findings[0].detail  # Truncated to 7 chars
+
+    def test_finding_on_stale_runs_after_deploy(self, test_db):
+        test_db.record_deploy(
+            sha="broken-sha",
+            environment="production",
+            previous_sha="working-sha",
+        )
+
+        # Simulate a stale pipeline run
+        old_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        test_db.execute(
+            "INSERT INTO pipeline_runs (id, mode, started_at, status, client_id) VALUES (?, ?, ?, 'running', 'default')",
+            ("stale-after-deploy", "single", old_time),
+            commit=True,
+        )
+
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True),
+        )
+        findings = watchdog.probe_deploy_health()
+
+        assert len(findings) == 1
+        assert findings[0].probe == "deploy_health"
+
+    def test_rollback_remediation(self, test_db):
+        deploy_id = test_db.record_deploy(
+            sha="bad-deploy",
+            environment="production",
+            previous_sha="good-deploy",
+        )
+
+        # Simulate stale run to trigger deploy_health finding
+        old_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        test_db.execute(
+            "INSERT INTO pipeline_runs (id, mode, started_at, status, client_id) VALUES (?, ?, ?, 'running', 'default')",
+            ("stale-for-rollback", "single", old_time),
+            commit=True,
+        )
+
+        watchdog = Watchdog(
+            db=test_db,
+            settings=_make_settings(auto_rollback_enabled=True),
+        )
+
+        # Mock the gh CLI call
+        with patch("ortobahn.watchdog.subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0, "stderr": ""})()
+            report = watchdog.run()
+
+        # Find the deploy_health remediation
+        deploy_remediations = [r for r in report.remediations if r.finding.probe == "deploy_health"]
+        assert len(deploy_remediations) == 1
+        assert deploy_remediations[0].success
+        assert "good-de" in deploy_remediations[0].action
+
+        # Verify deploy was marked as rolled back
+        deploy = test_db.fetchone("SELECT status FROM deployments WHERE id=?", (deploy_id,))
+        assert deploy["status"] == "rolled_back"
+
+
 class TestDBUpdatePostFailed:
     def test_stores_error_message(self, test_db):
         pid = str(uuid.uuid4())

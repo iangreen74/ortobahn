@@ -791,6 +791,57 @@ class Database:
         )
         return rid
 
+    # --- Deployment tracking ---
+
+    def record_deploy(
+        self,
+        sha: str,
+        environment: str = "production",
+        previous_sha: str | None = None,
+    ) -> str:
+        """Record a new deployment. Returns the deploy ID."""
+        deploy_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.execute(
+            "INSERT INTO deployments (id, sha, environment, status, previous_sha, deployed_at) "
+            "VALUES (?, ?, ?, 'deployed', ?, ?)",
+            (deploy_id, sha, environment, previous_sha, now),
+            commit=True,
+        )
+        return deploy_id
+
+    def get_current_deploy(self, environment: str = "production") -> dict | None:
+        """Get the most recent active deployment for an environment."""
+        return self.fetchone(
+            "SELECT * FROM deployments WHERE environment=? AND status='deployed' ORDER BY deployed_at DESC LIMIT 1",
+            (environment,),
+        )
+
+    def get_recent_deploys(self, environment: str = "production", limit: int = 5) -> list[dict]:
+        """Get recent deployments for an environment."""
+        return self.fetchall(
+            "SELECT * FROM deployments WHERE environment=? ORDER BY deployed_at DESC LIMIT ?",
+            (environment, limit),
+        )
+
+    def mark_deploy_validated(self, deploy_id: str) -> None:
+        """Mark a deployment as validated (smoke tests passed)."""
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.execute(
+            "UPDATE deployments SET status='validated', validated_at=? WHERE id=?",
+            (now, deploy_id),
+            commit=True,
+        )
+
+    def mark_deploy_rolled_back(self, deploy_id: str) -> None:
+        """Mark a deployment as rolled back."""
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.execute(
+            "UPDATE deployments SET status='rolled_back', rolled_back_at=? WHERE id=?",
+            (now, deploy_id),
+            commit=True,
+        )
+
     # --- Analytics helpers ---
 
     def build_analytics_report(self, client_id: str | None = None) -> AnalyticsReport:

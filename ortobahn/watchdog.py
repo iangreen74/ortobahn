@@ -7,6 +7,7 @@ in the pipeline itself. Follows a Sense → Decide → Act → Verify loop.
 from __future__ import annotations
 
 import logging
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -95,6 +96,8 @@ class Watchdog:
         findings.extend(self.probe_failure_rate())
         if self.settings.watchdog_credential_check:
             findings.extend(self.probe_credential_health())
+        if self.settings.auto_rollback_enabled:
+            findings.extend(self.probe_deploy_health())
         return findings
 
     def probe_stale_runs(self) -> list[Finding]:
@@ -253,6 +256,52 @@ class Watchdog:
 
         return findings
 
+    def probe_deploy_health(self) -> list[Finding]:
+        """Detect health degradation after a recent deployment."""
+        findings: list[Finding] = []
+        deploy = self.db.get_current_deploy("production")
+        if not deploy:
+            return findings
+
+        # Only check deploys within the rollback window
+        deployed_at = datetime.fromisoformat(deploy["deployed_at"].replace(" ", "T"))
+        if deployed_at.tzinfo is None:
+            deployed_at = deployed_at.replace(tzinfo=timezone.utc)
+        window = timedelta(minutes=self.settings.auto_rollback_window_minutes)
+        if datetime.now(timezone.utc) - deployed_at > window:
+            return findings
+
+        if not deploy.get("previous_sha"):
+            return findings
+
+        # Check for health signals within the rollback window
+        stale = self.db.get_stale_runs(self.settings.watchdog_stale_run_minutes)
+        cutoff = (datetime.now(timezone.utc) - window).strftime("%Y-%m-%d %H:%M:%S")
+        recent_checks = self.db.fetchall(
+            "SELECT * FROM health_checks WHERE status='critical' AND created_at > ? ORDER BY created_at DESC LIMIT ?",
+            (cutoff, self.settings.auto_rollback_health_failures),
+        )
+
+        has_critical_health = len(recent_checks) >= self.settings.auto_rollback_health_failures
+        has_stale_runs = len(stale) > 0
+
+        if has_critical_health or has_stale_runs:
+            findings.append(
+                Finding(
+                    probe="deploy_health",
+                    severity="critical",
+                    detail=(
+                        f"Health degradation detected after deploy {deploy['sha'][:7]}. "
+                        f"Critical checks: {len(recent_checks)}, stale runs: {len(stale)}. "
+                        f"Previous known-good SHA: {deploy['previous_sha'][:7]}"
+                    ),
+                    auto_fixable=True,
+                    ref_id=deploy["id"],
+                )
+            )
+
+        return findings
+
     # --- Act phase ---
 
     def _act(self, fixable: list[Finding]) -> list[RemediationResult]:
@@ -289,6 +338,17 @@ class Watchdog:
                             success=True,
                         )
                     )
+                elif f.probe == "deploy_health":
+                    deploy = self.db.fetchone("SELECT * FROM deployments WHERE id=?", (ref_id,))
+                    if deploy and deploy.get("previous_sha"):
+                        rolled_back = self._fix_deploy_rollback(ref_id, deploy["previous_sha"])
+                        results.append(
+                            RemediationResult(
+                                finding=f,
+                                action=f"Auto-rollback triggered: {deploy['sha'][:7]} → {deploy['previous_sha'][:7]}",
+                                success=rolled_back,
+                            )
+                        )
             except Exception as e:
                 logger.error(f"Watchdog remediation failed for {f.probe}: {e}")
                 results.append(
@@ -317,6 +377,37 @@ class Watchdog:
         )
         logger.info(f"Watchdog: granted trial to client {client_id}")
 
+    def _fix_deploy_rollback(self, deploy_id: str, previous_sha: str) -> bool:
+        """Trigger rollback via GitHub Actions workflow dispatch."""
+        self.db.mark_deploy_rolled_back(deploy_id)
+        logger.warning(f"Watchdog: triggering auto-rollback to {previous_sha[:7]}")
+
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "workflow",
+                    "run",
+                    "rollback.yml",
+                    "-f",
+                    f"sha={previous_sha}",
+                    "-f",
+                    "service=all",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                logger.info(f"Watchdog: rollback workflow dispatched for {previous_sha[:7]}")
+                return True
+            else:
+                logger.error(f"Watchdog: rollback dispatch failed: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Watchdog: rollback dispatch error: {e}")
+            return False
+
     # --- Verify phase ---
 
     def _verify(self, remediations: list[RemediationResult]) -> None:
@@ -342,6 +433,12 @@ class Watchdog:
                         (r.finding.ref_id,),
                     )
                     r.verified = row is not None and row["subscription_status"] == "trialing"
+                elif r.finding.probe == "deploy_health":
+                    row = self.db.fetchone(
+                        "SELECT status FROM deployments WHERE id=?",
+                        (r.finding.ref_id,),
+                    )
+                    r.verified = row is not None and row["status"] == "rolled_back"
             except Exception as e:
                 logger.warning(f"Watchdog: verification check failed: {e}")
                 r.verified = False

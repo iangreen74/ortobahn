@@ -79,6 +79,13 @@ make deploy-ecs    # Build, push to ECR, deploy to ECS
 - **Storage**: SQLite (dev) / PostgreSQL (prod, RDS)
 - **Deployment**: Docker → ECR → ECS (web + scheduler services)
 
+## Infrastructure
+
+Infrastructure values (URLs, AWS resources, service names, ARNs) are in `INFRASTRUCTURE.md`.
+Quick reference is always loaded via MEMORY.md.
+**Never guess infrastructure values** — always use the documented values.
+Prod app: `https://app.ortobahn.com` | Landing: `https://ortobahn.com` | GitHub: `angreen74/ortobahn`
+
 ## Important Invariants
 
 See `INVARIANTS.md` for the full list. Key ones:

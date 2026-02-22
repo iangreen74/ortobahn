@@ -42,6 +42,7 @@ jobs:
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
           docker build \
+            --build-arg DEPLOY_SHA=$IMAGE_TAG \
             -t $ECR_REGISTRY/ortobahn:$IMAGE_TAG \
             -t $ECR_REGISTRY/ortobahn:latest .
           docker push $ECR_REGISTRY/ortobahn:$IMAGE_TAG
@@ -65,10 +66,12 @@ jobs:
       - name: Deploy to staging ECS
         env:
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
           # Register staging web task def with SHA-pinned image
-          jq --arg img "$IMAGE_URI" \
-            '.containerDefinitions[0].image = $img' \
+          jq --arg img "$IMAGE_URI" --arg sha "$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $img |
+             (.containerDefinitions[0].environment[] | select(.name == "DEPLOY_SHA")).value = $sha' \
             ecs/staging-web-task-def.json > /tmp/staging-web-td.json
 
           WEB_ARN=$(aws ecs register-task-definition \
@@ -81,8 +84,9 @@ jobs:
             --force-new-deployment
 
           # Register staging scheduler task def with SHA-pinned image
-          jq --arg img "$IMAGE_URI" \
-            '.containerDefinitions[0].image = $img' \
+          jq --arg img "$IMAGE_URI" --arg sha "$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $img |
+             (.containerDefinitions[0].environment[] | select(.name == "DEPLOY_SHA")).value = $sha' \
             ecs/staging-scheduler-task-def.json > /tmp/staging-sched-td.json
 
           SCHED_ARN=$(aws ecs register-task-definition \
@@ -101,13 +105,114 @@ jobs:
             --services ortobahn-web-staging ortobahn-scheduler-staging \
           || echo "Warning: staging did not stabilize within timeout"
 
-  deploy-prod:
+  smoke-test-staging:
     runs-on: ubuntu-latest
     needs: [build-and-push, deploy-staging]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Wait for new tasks to start
+        run: sleep 30
+
+      - name: Smoke test — health endpoint
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then
+            echo "STAGING_URL secret not set — skipping smoke tests"
+            exit 0
+          fi
+
+          echo "Testing health endpoint..."
+          HEALTH=$(curl -sf --retry 3 --retry-delay 10 "$STAGING_URL/health" || true)
+          echo "Response: $HEALTH"
+
+          STATUS=$(echo "$HEALTH" | jq -r '.status // "unknown"')
+          if [ "$STATUS" != "healthy" ]; then
+            echo "FAIL: Health endpoint returned status=$STATUS"
+            exit 1
+          fi
+          echo "PASS: Health endpoint healthy"
+
+      - name: Smoke test — dashboard responds
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing dashboard endpoint..."
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/" || echo "000")
+
+          # 200 = dashboard, 302/307 = redirect to login (both valid)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+            echo "PASS: Dashboard returned HTTP $HTTP_CODE"
+          else
+            echo "FAIL: Dashboard returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Smoke test — glass dashboard
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing glass dashboard..."
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/glass" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Glass dashboard returned HTTP 200"
+          else
+            echo "FAIL: Glass dashboard returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Smoke test — public stats API
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing public stats API..."
+          STATS=$(curl -sf --retry 3 --retry-delay 10 "$STAGING_URL/api/public/stats" || true)
+          echo "Response: $STATS"
+
+          if echo "$STATS" | jq -e '.total_clients' > /dev/null 2>&1; then
+            echo "PASS: Public stats API returned valid JSON"
+          else
+            echo "FAIL: Public stats API response invalid"
+            exit 1
+          fi
+
+      - name: Register staging deploy
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          DEPLOY_KEY: ${{ secrets.ORTOBAHN_SECRET_KEY }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          if [ -z "$STAGING_URL" ] || [ -z "$DEPLOY_KEY" ]; then exit 0; fi
+
+          echo "Registering staging deploy..."
+          curl -sf -X POST "$STAGING_URL/api/deploy/register" \
+            -H "Authorization: Bearer $DEPLOY_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\": \"$IMAGE_TAG\", \"environment\": \"staging\"}" \
+          || echo "Warning: deploy registration failed (non-blocking)"
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, smoke-test-staging]
     environment: production
     permissions:
       id-token: write
       contents: read
+    outputs:
+      previous_web_image: ${{ steps.capture-current.outputs.previous_web_image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,13 +221,33 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-west-2
 
+      - name: Capture current prod image for rollback
+        id: capture-current
+        run: |
+          CURRENT_TD=$(aws ecs describe-services --cluster ortobahn \
+            --services ortobahn-web-v2 \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null || echo "")
+
+          if [ -n "$CURRENT_TD" ]; then
+            CURRENT_IMAGE=$(aws ecs describe-task-definition \
+              --task-definition "$CURRENT_TD" \
+              --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null || echo "")
+            echo "previous_web_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+            echo "Current prod image: $CURRENT_IMAGE"
+          else
+            echo "previous_web_image=" >> $GITHUB_OUTPUT
+            echo "No current prod task definition found"
+          fi
+
       - name: Deploy to production ECS
         env:
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
           # Register prod web task def with SHA-pinned image
-          jq --arg img "$IMAGE_URI" \
-            '.containerDefinitions[0].image = $img' \
+          jq --arg img "$IMAGE_URI" --arg sha "$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $img |
+             (.containerDefinitions[0].environment[] | select(.name == "DEPLOY_SHA")).value = $sha' \
             ecs/web-task-def.json > /tmp/prod-web-td.json
 
           WEB_ARN=$(aws ecs register-task-definition \
@@ -135,8 +260,9 @@ jobs:
             --force-new-deployment
 
           # Register prod scheduler task def with SHA-pinned image
-          jq --arg img "$IMAGE_URI" \
-            '.containerDefinitions[0].image = $img' \
+          jq --arg img "$IMAGE_URI" --arg sha "$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $img |
+             (.containerDefinitions[0].environment[] | select(.name == "DEPLOY_SHA")).value = $sha' \
             ecs/scheduler-task-def.json > /tmp/prod-sched-td.json
 
           SCHED_ARN=$(aws ecs register-task-definition \
@@ -153,3 +279,148 @@ jobs:
           echo "Waiting for production services to stabilize..."
           aws ecs wait services-stable --cluster ortobahn \
             --services ortobahn-web-v2 ortobahn-scheduler-v2
+
+  post-deploy-validate:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-prod]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Wait for new tasks to start
+        run: sleep 30
+
+      - name: Validate prod health
+        id: validate
+        env:
+          PROD_URL: ${{ secrets.PROD_URL }}
+        run: |
+          if [ -z "$PROD_URL" ]; then
+            echo "PROD_URL secret not set — skipping post-deploy validation"
+            echo "validation_passed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PASSED=true
+
+          # Health check
+          echo "Checking prod health..."
+          HEALTH=$(curl -sf --retry 3 --retry-delay 10 "$PROD_URL/health" || true)
+          STATUS=$(echo "$HEALTH" | jq -r '.status // "unknown"')
+          if [ "$STATUS" != "healthy" ]; then
+            echo "FAIL: Prod health returned status=$STATUS"
+            PASSED=false
+          else
+            echo "PASS: Prod health endpoint healthy"
+          fi
+
+          # Dashboard check
+          echo "Checking prod dashboard..."
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/" || echo "000")
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+            echo "PASS: Prod dashboard returned HTTP $HTTP_CODE"
+          else
+            echo "FAIL: Prod dashboard returned HTTP $HTTP_CODE"
+            PASSED=false
+          fi
+
+          # Glass dashboard check
+          echo "Checking prod glass..."
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/glass" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Prod glass dashboard returned HTTP 200"
+          else
+            echo "FAIL: Prod glass dashboard returned HTTP $HTTP_CODE"
+            PASSED=false
+          fi
+
+          echo "validation_passed=$PASSED" >> $GITHUB_OUTPUT
+
+      - name: Register prod deploy
+        env:
+          PROD_URL: ${{ secrets.PROD_URL }}
+          DEPLOY_KEY: ${{ secrets.ORTOBAHN_SECRET_KEY }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          if [ -z "$PROD_URL" ] || [ -z "$DEPLOY_KEY" ]; then exit 0; fi
+
+          echo "Registering prod deploy..."
+          curl -sf -X POST "$PROD_URL/api/deploy/register" \
+            -H "Authorization: Bearer $DEPLOY_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\": \"$IMAGE_TAG\", \"environment\": \"production\"}" \
+          || echo "Warning: deploy registration failed (non-blocking)"
+
+      - name: Auto-rollback on failure
+        if: steps.validate.outputs.validation_passed == 'false'
+        env:
+          PREVIOUS_IMAGE: ${{ needs.deploy-prod.outputs.previous_web_image }}
+        run: |
+          echo "Post-deploy validation FAILED — initiating auto-rollback"
+
+          # Extract SHA from previous image URI (format: repo:sha)
+          PREVIOUS_SHA=$(echo "$PREVIOUS_IMAGE" | grep -oP ':\K[a-f0-9]+$' || echo "")
+
+          if [ -z "$PREVIOUS_SHA" ]; then
+            echo "ERROR: Cannot determine previous SHA for rollback"
+            echo "Previous image was: $PREVIOUS_IMAGE"
+            echo "Manual rollback required: make rollback SHA=<previous_sha>"
+            exit 1
+          fi
+
+          echo "Rolling back to $PREVIOUS_SHA..."
+
+          # Rollback web service
+          jq --arg img "$PREVIOUS_IMAGE" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/web-task-def.json > /tmp/rollback-web-td.json
+
+          WEB_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/rollback-web-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-web-v2 \
+            --task-definition "$WEB_ARN" \
+            --force-new-deployment
+
+          # Rollback scheduler service
+          jq --arg img "$PREVIOUS_IMAGE" \
+            '.containerDefinitions[0].image = $img' \
+            ecs/scheduler-task-def.json > /tmp/rollback-sched-td.json
+
+          SCHED_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/rollback-sched-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-scheduler-v2 \
+            --task-definition "$SCHED_ARN" \
+            --force-new-deployment
+
+          echo "Waiting for rollback to stabilize..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-web-v2 ortobahn-scheduler-v2
+
+          echo "Auto-rollback to $PREVIOUS_SHA complete."
+          exit 1  # Fail the workflow to signal the rollback occurred
+
+      - name: Notify on successful deploy
+        if: steps.validate.outputs.validation_passed == 'true'
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK" ]; then exit 0; fi
+
+          curl -sf -X POST "$SLACK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \":white_check_mark: *Ortobahn Deploy: VALIDATED*\n  Environment: production\n  SHA: \`${IMAGE_TAG:0:7}\`\n  All smoke tests passed.\"}" \
+          || echo "Warning: Slack notification failed"

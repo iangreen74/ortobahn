@@ -90,3 +90,20 @@ def format_watchdog_alert(findings: list, remediations: list) -> str:
             lines.append(f"  {status_icon} {r.action}{verified_tag}")
 
     return "\n".join(lines)
+
+
+def format_deploy_alert(sha: str, environment: str, status: str, detail: str = "") -> str:
+    """Format a deployment event as a Slack message."""
+    emoji = {
+        "deployed": ":rocket:",
+        "validated": ":white_check_mark:",
+        "rolled_back": ":rotating_light:",
+        "smoke_failed": ":x:",
+    }.get(status, ":gear:")
+
+    lines = [f"{emoji} *Ortobahn Deploy: {status.upper()}*"]
+    lines.append(f"  Environment: {environment}")
+    lines.append(f"  SHA: `{sha[:7]}`")
+    if detail:
+        lines.append(f"  {detail}")
+    return "\n".join(lines)

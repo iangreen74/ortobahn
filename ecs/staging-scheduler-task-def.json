@@ -20,7 +20,8 @@
         {"name": "LOG_LEVEL", "value": "INFO"},
         {"name": "USE_BEDROCK", "value": "true"},
         {"name": "BEDROCK_REGION", "value": "us-west-2"},
-        {"name": "ENVIRONMENT", "value": "staging"}
+        {"name": "ENVIRONMENT", "value": "staging"},
+        {"name": "DEPLOY_SHA", "value": "unknown"}
       ],
       "secrets": [
         {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/staging-CHANGE_ME:ANTHROPIC_API_KEY::"},

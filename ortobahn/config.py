@@ -125,6 +125,11 @@ class Settings:
     watchdog_credential_check: bool = True
     watchdog_max_verify_posts: int = 5
 
+    # Auto-rollback
+    auto_rollback_enabled: bool = True
+    auto_rollback_window_minutes: int = 30  # Only rollback if deploy was within this window
+    auto_rollback_health_failures: int = 3  # Consecutive health failures before rollback
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -245,4 +250,7 @@ def load_settings() -> Settings:
         watchdog_post_verify_hours=int(os.environ.get("WATCHDOG_POST_VERIFY_HOURS", "6")),
         watchdog_credential_check=os.environ.get("WATCHDOG_CREDENTIAL_CHECK", "true").lower() in ("true", "1", "yes"),
         watchdog_max_verify_posts=int(os.environ.get("WATCHDOG_MAX_VERIFY_POSTS", "5")),
+        auto_rollback_enabled=os.environ.get("AUTO_ROLLBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        auto_rollback_window_minutes=int(os.environ.get("AUTO_ROLLBACK_WINDOW_MINUTES", "30")),
+        auto_rollback_health_failures=int(os.environ.get("AUTO_ROLLBACK_HEALTH_FAILURES", "3")),
     )

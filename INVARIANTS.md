@@ -46,3 +46,9 @@ Critical system behaviors that must not regress. Each invariant maps to an autom
 |----|-----------|-------------|
 | INV-014 | Trial expiry checked before pipeline run | `check_and_expire_trial()` called in orchestrator before subscription guard. Expired trials block pipeline execution. |
 | INV-015 | Internal clients bypass subscription checks | `if not client_data.get("internal")` guard in orchestrator. Internal clients (e.g. Ortobahn default) always run regardless of subscription status. |
+
+## Infrastructure
+
+| ID | Invariant | Verification |
+|----|-----------|-------------|
+| INV-016 | All infrastructure values documented in `INFRASTRUCTURE.md` | Any change to URLs, AWS resources, service names, ARNs, or GitHub secrets must update `INFRASTRUCTURE.md`. This is the single source of truth — never hardcode infra values without documenting them here. |

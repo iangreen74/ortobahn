@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -66,13 +67,39 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        """ALB health check — verifies DB connectivity."""
+        """ALB health check — verifies DB connectivity and reports deploy info."""
         try:
             db = app.state.db
             db.fetchone("SELECT 1 AS ok")
-            return {"status": "healthy", "db": db.backend}
+            result: dict = {"status": "healthy", "db": db.backend}
+            deploy_sha = os.environ.get("DEPLOY_SHA", "")
+            if deploy_sha:
+                result["sha"] = deploy_sha
+            environment = os.environ.get("ENVIRONMENT", "production")
+            result["environment"] = environment
+            return result
         except Exception as e:
             return JSONResponse({"status": "unhealthy", "error": str(e)}, status_code=503)
+
+    @app.post("/api/deploy/register")
+    async def register_deploy(request: Request):
+        """Record a deployment for tracking. Called by CI/CD pipeline."""
+        deploy_key = os.environ.get("ORTOBAHN_SECRET_KEY", "")
+        auth_header = request.headers.get("authorization", "")
+        if not deploy_key or auth_header != f"Bearer {deploy_key}":
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        body = await request.json()
+        sha = body.get("sha", "")
+        environment = body.get("environment", "production")
+        if not sha:
+            return JSONResponse({"error": "sha required"}, status_code=400)
+
+        db = app.state.db
+        current = db.get_current_deploy(environment)
+        previous_sha = current["sha"] if current else None
+        deploy_id = db.record_deploy(sha=sha, environment=environment, previous_sha=previous_sha)
+        return {"deploy_id": deploy_id, "sha": sha, "previous_sha": previous_sha}
 
     @app.exception_handler(_LoginRedirect)
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):

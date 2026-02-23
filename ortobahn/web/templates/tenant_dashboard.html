@@ -4,6 +4,7 @@
 {% block nav_links %}
 <li><a href="/my/dashboard" {% if request.url.path == '/my/dashboard' %}class="active"{% endif %}>Overview</a></li>
 <li><a href="/my/analytics" {% if request.url.path == '/my/analytics' %}class="active"{% endif %}>Analytics</a></li>
+<li><a href="/my/articles" {% if request.url.path == '/my/articles' %}class="active"{% endif %}>Articles</a></li>
 <li><a href="/my/settings" {% if request.url.path == '/my/settings' %}class="active"{% endif %}>Settings</a></li>
 <li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
 {% endblock %}

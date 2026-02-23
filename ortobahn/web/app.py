@@ -319,6 +319,11 @@ def create_app() -> FastAPI:
             )
         return response
 
+    @app.get("/")
+    async def root_redirect():
+        """Root redirects to tenant dashboard (auth handled by tenant route)."""
+        return RedirectResponse("/my/dashboard", status_code=302)
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     from ortobahn.web.routes import (

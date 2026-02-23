@@ -157,6 +157,52 @@ jobs:
             exit 1
           fi
 
+      - name: Smoke test — root redirects to tenant dashboard
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing root redirect..."
+          REDIRECT_URL=$(curl -s -o /dev/null -w "%{redirect_url}" --retry 3 --retry-delay 10 "$STAGING_URL/")
+          if echo "$REDIRECT_URL" | grep -q "/my/dashboard"; then
+            echo "PASS: Root redirects to /my/dashboard"
+          else
+            echo "FAIL: Root did not redirect to /my/dashboard (got: $REDIRECT_URL)"
+            exit 1
+          fi
+
+      - name: Smoke test — toasts API (middleware check)
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing toasts API (catches middleware breakage)..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/api/toasts")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Toasts API returned HTTP 200"
+          else
+            echo "FAIL: Toasts API returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Smoke test — tenant dashboard auth
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          if [ -z "$STAGING_URL" ]; then exit 0; fi
+
+          echo "Testing tenant dashboard exists (expect redirect to login)..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/my/dashboard")
+          # 302 = redirect to login (expected), 200 = loaded (also ok)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+            echo "PASS: Tenant dashboard returned HTTP $HTTP_CODE"
+          else
+            echo "FAIL: Tenant dashboard returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
       - name: Smoke test — glass dashboard
         env:
           STAGING_URL: ${{ secrets.STAGING_URL }}
@@ -346,13 +392,33 @@ jobs:
             echo "PASS: Prod health endpoint healthy"
           fi
 
-          # Dashboard check
-          echo "Checking prod dashboard..."
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/")
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "401" ]; then
-            echo "PASS: Prod dashboard returned HTTP $HTTP_CODE"
+          # Root redirect check
+          echo "Checking prod root redirect..."
+          REDIRECT_URL=$(curl -s -o /dev/null -w "%{redirect_url}" --retry 3 --retry-delay 10 "$PROD_URL/")
+          if echo "$REDIRECT_URL" | grep -q "/my/dashboard"; then
+            echo "PASS: Root redirects to /my/dashboard"
           else
-            echo "FAIL: Prod dashboard returned HTTP $HTTP_CODE"
+            echo "FAIL: Root did not redirect to /my/dashboard (got: $REDIRECT_URL)"
+            PASSED=false
+          fi
+
+          # Toasts API check (catches middleware breakage like rate limiter)
+          echo "Checking prod toasts API..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/api/toasts")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Toasts API returned HTTP 200"
+          else
+            echo "FAIL: Toasts API returned HTTP $HTTP_CODE"
+            PASSED=false
+          fi
+
+          # Tenant dashboard check
+          echo "Checking prod tenant dashboard..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/my/dashboard")
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+            echo "PASS: Tenant dashboard returned HTTP $HTTP_CODE"
+          else
+            echo "FAIL: Tenant dashboard returned HTTP $HTTP_CODE"
             PASSED=false
           fi
 

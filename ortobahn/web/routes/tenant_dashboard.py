@@ -437,55 +437,19 @@ async def tenant_subscribe(request: Request, client: AuthClient):
     return RedirectResponse(str(session.url or "/my/dashboard"), status_code=303)
 
 
-@router.get("/articles", response_class=HTMLResponse)
+@router.get("/articles")
 async def tenant_articles(request: Request, client: AuthClient):
     """List articles with status badges and publication errors."""
     db = request.app.state.db
+    templates = request.app.state.templates
     articles = db.get_recent_articles(client["id"], limit=50)
-
-    if not articles:
-        return HTMLResponse(
-            '<div style="text-align:center;padding:2rem;opacity:0.6">'
-            "No articles yet. Generate your first article from the dashboard."
-            "</div>"
-        )
-
-    parts = ['<div class="glass-card" style="padding:1rem">']
+    pubs_by_article: dict = {}
     for a in articles:
-        badge = _badge(a.get("status", "draft"))
-        title = _escape(a.get("title", "Untitled"))
-        wc = a.get("word_count", 0)
-        conf = a.get("confidence", 0)
-        aid = a["id"][:8]
-        parts.append(
-            f'<div style="display:flex;justify-content:between;align-items:center;padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.1)">'
-            f'<div style="flex:1"><strong>{title}</strong><br>'
-            f"<small>{wc}w &middot; confidence: {conf:.2f} &middot; {aid}</small></div>"
-            f"<div>{badge}"
-        )
-        if a.get("status") == "draft":
-            parts.append(
-                f' <form method="post" action="/my/articles/{a["id"]}/approve" style="display:inline">'
-                f'<button class="btn btn-sm" type="submit">Approve</button></form>'
-                f' <form method="post" action="/my/articles/{a["id"]}/reject" style="display:inline">'
-                f'<button class="btn btn-sm btn-danger" type="submit">Reject</button></form>'
-                f' <form method="post" action="/my/articles/{a["id"]}/publish" style="display:inline">'
-                f'<button class="btn btn-sm btn-primary" type="submit">Publish</button></form>'
-            )
-        # Show publication errors for this article
-        pubs = db.get_article_publications(a["id"])
-        failed_pubs = [p for p in pubs if p.get("status") == "failed"]
-        for fp in failed_pubs:
-            platform_name = _escape(fp.get("platform", "unknown"))
-            error_msg = _escape((fp.get("error") or "Unknown error")[:150])
-            category = _escape(fp.get("failure_category") or "")
-            category_label = f" [{category}]" if category else ""
-            parts.append(
-                f'<br><small style="color:#ef4444">Failed on {platform_name}{category_label}: {error_msg}</small>'
-            )
-        parts.append("</div></div>")
-    parts.append("</div>")
-    return HTMLResponse("".join(parts))
+        pubs_by_article[a["id"]] = db.get_article_publications(a["id"])
+    return templates.TemplateResponse(
+        "tenant_articles.html",
+        {"request": request, "client": client, "articles": articles, "pubs_by_article": pubs_by_article},
+    )
 
 
 @router.post("/articles/{article_id}/approve")

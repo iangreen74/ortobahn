@@ -49,25 +49,19 @@ def _admin_headers(app):
 
 
 class TestDashboard:
-    def test_index_loads(self, tmp_path):
+    def test_root_redirects_to_tenant_dashboard(self, tmp_path):
         app = _create_test_app(tmp_path)
         client = TestClient(app)
-        resp = client.get("/", headers=_admin_headers(app))
-        assert resp.status_code == 200
-        assert "Ortobahn" in resp.text
-        assert "Dashboard" in resp.text
+        resp = client.get("/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/my/dashboard" in resp.headers["location"]
 
-    def test_index_shows_clients(self, tmp_path):
+    def test_root_redirect_unauthenticated(self, tmp_path):
+        """Root redirect works without auth — auth is handled by tenant route."""
         app = _create_test_app(tmp_path)
         client = TestClient(app)
-        resp = client.get("/", headers=_admin_headers(app))
-        assert "Ortobahn" in resp.text
-
-    def test_unauthenticated_returns_401(self, tmp_path):
-        app = _create_test_app(tmp_path)
-        client = TestClient(app)
-        resp = client.get("/")
-        assert resp.status_code == 401
+        resp = client.get("/", follow_redirects=False)
+        assert resp.status_code == 302
 
 
 class TestClientRoutes:

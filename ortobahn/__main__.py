@@ -915,6 +915,34 @@ def cmd_article(args):
         pipeline.close()
 
 
+def cmd_cleanup_clients(args):
+    """Deactivate all clients except vaultscaler and default."""
+    from ortobahn.config import load_settings
+    from ortobahn.db import create_database
+
+    settings = load_settings()
+    db = create_database(settings)
+
+    keep = {"vaultscaler", "default"}
+    # Raw query to get ALL clients including inactive
+    all_clients = db.fetchall("SELECT id, name, active FROM clients ORDER BY name")
+
+    deactivated = 0
+    for c in all_clients:
+        if c["id"] in keep:
+            console.print(f"  [green]KEEP[/green] {c['name']} (id={c['id']})")
+            continue
+        if not c.get("active", 1):
+            console.print(f"  [dim]SKIP[/dim] {c['name']} (already inactive)")
+            continue
+        db.execute("UPDATE clients SET active=0 WHERE id=?", (c["id"],), commit=True)
+        deactivated += 1
+        console.print(f"  [yellow]DEACTIVATED[/yellow] {c['name']} (id={c['id']})")
+
+    console.print(f"\n[green]Done: {deactivated} client(s) deactivated, {len(keep)} kept[/green]")
+    db.close()
+
+
 def cmd_web(args):
     """Start the web dashboard."""
     from ortobahn.config import load_settings
@@ -1082,6 +1110,10 @@ def main():
     article_parser.add_argument("--client", type=str, help="Client ID (default: from config)")
     article_parser.add_argument("--dry-run", action="store_true", help="Don't publish to platforms")
     article_parser.set_defaults(func=cmd_article)
+
+    # cleanup-clients
+    cleanup_parser = subparsers.add_parser("cleanup-clients", help="Deactivate all clients except vaultscaler")
+    cleanup_parser.set_defaults(func=cmd_cleanup_clients)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

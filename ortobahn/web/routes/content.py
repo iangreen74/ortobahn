@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ortobahn.auth import get_current_client
+from ortobahn.auth import get_admin_client
 
-router = APIRouter(dependencies=[Depends(get_current_client)])
+router = APIRouter(dependencies=[Depends(get_admin_client)])
 
 
 @router.get("/")

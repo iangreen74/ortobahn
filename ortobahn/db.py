@@ -523,6 +523,13 @@ class Database:
             commit=True,
         )
 
+    def update_post_failed_with_category(self, post_id: str, error: str, failure_category: str):
+        self.execute(
+            "UPDATE posts SET status='failed', error_message=?, failure_category=? WHERE id=?",
+            (error, failure_category, post_id),
+            commit=True,
+        )
+
     def get_recent_published_posts(self, days: int = 7, client_id: str | None = None) -> list[dict]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         query = "SELECT * FROM posts WHERE status='published' AND published_at > ?"

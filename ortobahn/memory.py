@@ -140,6 +140,17 @@ class MemoryStore:
             lines.append(line)
             used += len(line) + 1
 
+        # Add cross-client meta-memories (shared industry patterns)
+        if client_id != "__meta__":
+            meta_memories = self.recall(agent_name, client_id="__meta__", limit=5, min_confidence=0.2)
+            for mem in meta_memories:
+                summary = mem.content.get("summary", json.dumps(mem.content))
+                line = f"- SHARED: {summary} [confidence: {mem.confidence:.2f}]"
+                if used + len(line) + 1 > char_budget:
+                    break
+                lines.append(line)
+                used += len(line) + 1
+
         return "\n".join(lines) if len(lines) > 1 else ""
 
     def count(self, agent_name: str, client_id: str = "default") -> int:

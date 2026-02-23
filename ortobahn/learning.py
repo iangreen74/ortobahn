@@ -36,6 +36,17 @@ class LearningEngine:
         results["anomalies"] = self._detect_anomalies(client_id, run_id)
         results["theme_tracking"] = self._track_theme_performance(client_id, run_id)
         results["experiments"] = self._check_experiments(client_id, run_id)
+
+        # Cross-client meta-learning scan (non-fatal)
+        try:
+            from ortobahn.meta_learning import MetaLearning
+
+            meta = MetaLearning(self.db, self.memory)
+            results["meta_promoted"] = meta.scan_for_promotable()
+        except Exception as e:
+            logger.warning(f"Meta-learning scan failed (non-fatal): {e}")
+            results["meta_promoted"] = 0
+
         return results
 
     # ------------------------------------------------------------------

@@ -44,6 +44,7 @@ class PublisherAgent(BaseAgent):
         self.linkedin = linkedin_client
         self.confidence_threshold = confidence_threshold
         self.post_delay = post_delay_seconds
+        self._recovery_manager = None  # Wired by orchestrator if publish_retry_enabled
 
     def preflight(self, **kwargs: Any) -> PreflightResult:
         """Check that at least one platform client is available."""
@@ -176,16 +177,53 @@ class PublisherAgent(BaseAgent):
                         logger.info(f"Rate limiting: waiting {self.post_delay}s before next post")
                         time.sleep(self.post_delay)
                 except Exception as e:
-                    self.db.update_post_failed(post_id, str(e))
-                    results.append(
-                        PublishedPost(
-                            text=draft.text,
-                            status="failed",
-                            platform=draft.platform,
-                            error=str(e),
+                    # Attempt error recovery if manager is wired
+                    if self._recovery_manager:
+                        from ortobahn.publish_recovery import PublishErrorClassifier
+
+                        category = PublishErrorClassifier.classify_error(e, draft.platform.value)
+                        recovery = self._recovery_manager.attempt_recovery(
+                            post_id=post_id,
+                            draft=draft,
+                            error_category=category,
+                            platform_client=publisher,
+                            client_id=client_id,
+                            run_id=run_id,
                         )
-                    )
-                    logger.error(f"Failed to publish to {draft.platform.value}: {e}")
+                        if recovery["recovered"]:
+                            results.append(
+                                PublishedPost(
+                                    text=draft.text,
+                                    status="published",
+                                    platform=draft.platform,
+                                )
+                            )
+                            published_count += 1
+                            logger.info(f"Recovered publish to {draft.platform.value}: {recovery['action']}")
+                        else:
+                            results.append(
+                                PublishedPost(
+                                    text=draft.text,
+                                    status="failed",
+                                    platform=draft.platform,
+                                    error=str(e),
+                                )
+                            )
+                            logger.warning(f"Recovery failed for {draft.platform.value}: {recovery['action']}")
+                        if recovery.get("should_skip_remaining"):
+                            logger.warning(f"Skipping remaining posts: {recovery['action']}")
+                            break
+                    else:
+                        self.db.update_post_failed(post_id, str(e))
+                        results.append(
+                            PublishedPost(
+                                text=draft.text,
+                                status="failed",
+                                platform=draft.platform,
+                                error=str(e),
+                            )
+                        )
+                        logger.error(f"Failed to publish to {draft.platform.value}: {e}")
             else:
                 # No publisher for this platform — save as draft for manual use
                 results.append(

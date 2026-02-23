@@ -144,6 +144,20 @@ class Settings:
     # Content serialization
     serialization_enabled: bool = True
 
+    # Post feedback loop (real-time learning)
+    post_feedback_enabled: bool = True
+    post_feedback_delay_seconds: int = 600
+
+    # Cross-client meta-learning
+    meta_learning_enabled: bool = True
+
+    # Publisher error recovery
+    publish_retry_enabled: bool = True
+    publish_max_retries: int = 2
+
+    # Dynamic posting cadence
+    dynamic_cadence_enabled: bool = True
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -273,4 +287,10 @@ def load_settings() -> Settings:
         style_evolution_enabled=os.environ.get("STYLE_EVOLUTION_ENABLED", "true").lower() in ("true", "1", "yes"),
         predictive_timing_enabled=os.environ.get("PREDICTIVE_TIMING_ENABLED", "true").lower() in ("true", "1", "yes"),
         serialization_enabled=os.environ.get("SERIALIZATION_ENABLED", "true").lower() in ("true", "1", "yes"),
+        post_feedback_enabled=os.environ.get("POST_FEEDBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        post_feedback_delay_seconds=int(os.environ.get("POST_FEEDBACK_DELAY_SECONDS", "600")),
+        meta_learning_enabled=os.environ.get("META_LEARNING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        publish_retry_enabled=os.environ.get("PUBLISH_RETRY_ENABLED", "true").lower() in ("true", "1", "yes"),
+        publish_max_retries=int(os.environ.get("PUBLISH_MAX_RETRIES", "2")),
+        dynamic_cadence_enabled=os.environ.get("DYNAMIC_CADENCE_ENABLED", "true").lower() in ("true", "1", "yes"),
     )

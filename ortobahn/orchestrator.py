@@ -21,6 +21,7 @@ from ortobahn.agents.security import SecurityAgent
 from ortobahn.agents.sre import SREAgent
 from ortobahn.agents.strategist import StrategistAgent
 from ortobahn.agents.support import SupportAgent
+from ortobahn.cadence import CadenceOptimizer
 from ortobahn.config import Settings
 from ortobahn.db import create_database
 from ortobahn.integrations.bluesky import BlueskyClient
@@ -32,7 +33,9 @@ from ortobahn.integrations.twitter import TwitterClient
 from ortobahn.learning import LearningEngine
 from ortobahn.memory import MemoryStore
 from ortobahn.models import Client, DirectiveCategory, Platform, TrendingTopic
+from ortobahn.post_feedback import PostFeedbackLoop
 from ortobahn.predictive_timing import TopicVelocityTracker
+from ortobahn.publish_recovery import PublishRecoveryManager
 from ortobahn.serialization import SeriesManager
 from ortobahn.style_evolution import StyleEvolution
 
@@ -134,6 +137,25 @@ class Pipeline:
         self.topic_tracker = TopicVelocityTracker(self.db) if settings.predictive_timing_enabled else None
         self.series_manager = SeriesManager(self.db) if settings.serialization_enabled else None
         self.style_evolution = StyleEvolution(self.db) if settings.style_evolution_enabled else None
+
+        # Intelligence modules
+        self.cadence_optimizer = CadenceOptimizer(self.db) if settings.dynamic_cadence_enabled else None
+        self.post_feedback = (
+            PostFeedbackLoop(
+                self.db,
+                self.memory_store,
+                bluesky_client=self.bluesky,
+                twitter_client=self.twitter,
+                linkedin_client=self.linkedin,
+            )
+            if settings.post_feedback_enabled
+            else None
+        )
+        self.publisher._recovery_manager = (
+            PublishRecoveryManager(self.db, self.memory_store, max_retries=settings.publish_max_retries)
+            if settings.publish_retry_enabled
+            else None
+        )
 
     def gather_trends(self, client_id: str = "default") -> list[TrendingTopic]:
         """Gather trending topics from all sources, filtered by client's industry."""
@@ -524,6 +546,16 @@ class Pipeline:
             if ceo_report.directives:
                 self._process_directives(run_id, ceo_report.directives, client_id)
 
+            # 2.1 Dynamic cadence (adjust max posts based on engagement trends)
+            max_posts = self.settings.max_posts_per_cycle
+            if self.cadence_optimizer:
+                try:
+                    max_posts = self.cadence_optimizer.calculate_optimal_posts(client_id, current_max=max_posts)
+                    if max_posts != self.settings.max_posts_per_cycle:
+                        logger.info(f"  -> Dynamic cadence: {self.settings.max_posts_per_cycle} -> {max_posts} posts")
+                except Exception as e:
+                    logger.warning(f"  -> Cadence optimizer error (non-fatal): {e}")
+
             # ═══════════════════════════════════════════════════════════════
             # PHASE 3: Content Execution
             # ═══════════════════════════════════════════════════════════════
@@ -531,7 +563,7 @@ class Pipeline:
             # 3.1 Strategist
             logger.info("[9/14] Strategist Agent planning content...")
             content_plan = self.strategist.run(run_id, strategy=strategy, trending=trending, client=client)
-            content_plan.posts = content_plan.posts[: self.settings.max_posts_per_cycle]
+            content_plan.posts = content_plan.posts[:max_posts]
             logger.info(f"  -> {len(content_plan.posts)} post ideas")
 
             # 3.1a Style evolution: ensure experiment is running
@@ -653,6 +685,25 @@ class Pipeline:
                     )
                 except Exception as e:
                     logger.warning(f"  -> Engagement agent error (non-fatal): {e}")
+
+            # 3.5 Post Feedback Loop (real-time engagement check)
+            if self.post_feedback and not generate_only:
+                try:
+                    logger.info(
+                        f"[11.7/14] Waiting {self.settings.post_feedback_delay_seconds}s for early engagement..."
+                    )
+                    time.sleep(self.settings.post_feedback_delay_seconds)
+                    # Update platform clients for tenant
+                    self.post_feedback.bluesky = self.publisher.bluesky
+                    self.post_feedback.twitter = self.publisher.twitter
+                    self.post_feedback.linkedin = self.publisher.linkedin
+                    fb = self.post_feedback.check_recent_posts(run_id, client_id)
+                    logger.info(
+                        f"  -> Checked {fb['posts_checked']} posts: "
+                        f"{fb['resonating']} resonating, {fb['silent']} silent, {fb['viral']} viral"
+                    )
+                except Exception as e:
+                    logger.warning(f"  -> Post feedback error (non-fatal): {e}")
 
             # ═══════════════════════════════════════════════════════════════
             # PHASE 4: Operations & Learning

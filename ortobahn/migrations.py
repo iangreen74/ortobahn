@@ -711,6 +711,11 @@ def _migration_024_add_engagement_serialization_timing(db: Database) -> None:
     )
 
 
+def _migration_025_add_failure_category(db: Database) -> None:
+    """Add failure_category column to posts for error classification and recovery."""
+    _safe_add_column(db, "posts", "failure_category TEXT")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -736,6 +741,7 @@ MIGRATIONS = {
     22: _migration_022_add_deployments,
     23: _migration_023_add_intelligence_upgrades,
     24: _migration_024_add_engagement_serialization_timing,
+    25: _migration_025_add_failure_category,
 }
 
 

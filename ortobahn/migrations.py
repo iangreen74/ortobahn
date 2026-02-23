@@ -778,6 +778,30 @@ def _migration_026_add_articles(db: Database) -> None:
         _safe_add_column(db, "clients", col)
 
 
+def _migration_027_add_webhooks(db: Database) -> None:
+    """Add webhooks table for client event notification endpoints."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES clients(id),
+            url TEXT NOT NULL,
+            events TEXT NOT NULL DEFAULT '*',
+            secret TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_triggered_at TEXT,
+            failure_count INTEGER DEFAULT 0
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_webhooks_client ON webhooks(client_id)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -805,6 +829,7 @@ MIGRATIONS = {
     24: _migration_024_add_engagement_serialization_timing,
     25: _migration_025_add_failure_category,
     26: _migration_026_add_articles,
+    27: _migration_027_add_webhooks,
 }
 
 

@@ -8,7 +8,7 @@ from ortobahn.migrations import _get_schema_version, _set_schema_version, run_mi
 
 class TestSchemaVersion:
     def test_version_after_init(self, test_db):
-        assert _get_schema_version(test_db) == 26
+        assert _get_schema_version(test_db) == 27
 
     def test_set_and_get_version(self, test_db):
         _set_schema_version(test_db, 5)
@@ -129,10 +129,16 @@ class TestMigrations:
             "article_topics, article_length, last_article_at FROM clients LIMIT 1"
         )
 
+        # Verify webhooks table (migration 027)
+        test_db.fetchall(
+            "SELECT id, client_id, url, events, secret, active, created_at, "
+            "last_triggered_at, failure_count FROM webhooks LIMIT 1"
+        )
+
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 26
+        assert v1 == v2 == 27
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         db = Database(tmp_path / "test.db")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import stripe
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
@@ -97,6 +97,111 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "trial_days_remaining": trial_days_remaining,
             "subscription_status": client.get("subscription_status", "none"),
             "credential_issue": credential_issue,
+        },
+    )
+
+
+@router.get("/analytics")
+async def tenant_analytics(request: Request, client: AuthClient):
+    """Client-facing analytics dashboard showing content performance."""
+    db = request.app.state.db
+    templates = request.app.state.templates
+    client_id = client["id"]
+
+    # Total posts published (all time)
+    total_row = db.fetchone(
+        "SELECT COUNT(*) as count FROM posts WHERE status='published' AND client_id=?",
+        (client_id,),
+    )
+    total_posts = total_row["count"] if total_row else 0
+
+    # Per-platform breakdown: posts count, likes, reposts, replies
+    platform_rows = db.fetchall(
+        "SELECT platform, COUNT(*) as count,"
+        " SUM(COALESCE(like_count,0)) as likes,"
+        " SUM(COALESCE(repost_count,0)) as reposts,"
+        " SUM(COALESCE(reply_count,0)) as replies"
+        " FROM posts WHERE status='published' AND client_id=?"
+        " GROUP BY platform",
+        (client_id,),
+    )
+
+    # Compute totals from platform breakdown
+    total_likes = sum(r["likes"] or 0 for r in platform_rows)
+    total_reposts = sum(r["reposts"] or 0 for r in platform_rows)
+    total_replies = sum(r["replies"] or 0 for r in platform_rows)
+    total_engagement = total_likes + total_reposts + total_replies
+    avg_engagement = round(total_engagement / total_posts, 1) if total_posts > 0 else 0
+
+    # Best platform (by total engagement)
+    best_platform = "N/A"
+    if platform_rows:
+        best = max(
+            platform_rows,
+            key=lambda r: (r["likes"] or 0) + (r["reposts"] or 0) + (r["replies"] or 0),
+        )
+        best_platform = best["platform"] or "generic"
+
+    # Engagement trend (last 7 days)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    trend_rows = db.fetchall(
+        "SELECT DATE(published_at) as day, COUNT(*) as posts,"
+        " SUM(COALESCE(like_count,0)+COALESCE(repost_count,0)+COALESCE(reply_count,0)) as engagement"
+        " FROM posts WHERE status='published' AND client_id=? AND published_at >= ?"
+        " GROUP BY DATE(published_at) ORDER BY day",
+        (client_id, cutoff),
+    )
+
+    # Normalize trend for bar chart (percentage of max)
+    max_engagement = max((r["engagement"] or 0 for r in trend_rows), default=0)
+    trend_data = []
+    for r in trend_rows:
+        eng = r["engagement"] or 0
+        pct = round((eng / max_engagement) * 100) if max_engagement > 0 else 0
+        day_label = str(r["day"] or "")[-5:]  # MM-DD
+        trend_data.append({"day": day_label, "engagement": eng, "posts": r["posts"], "pct": pct})
+
+    # Best performing post
+    best_post = db.fetchone(
+        "SELECT text, platform, like_count, repost_count, reply_count, published_at"
+        " FROM posts WHERE status='published' AND client_id=?"
+        " ORDER BY (COALESCE(like_count,0)+COALESCE(repost_count,0)+COALESCE(reply_count,0)) DESC"
+        " LIMIT 1",
+        (client_id,),
+    )
+
+    # Top 5 posts by engagement
+    top_posts = db.fetchall(
+        "SELECT text, platform, like_count, repost_count, reply_count, published_at"
+        " FROM posts WHERE status='published' AND client_id=?"
+        " ORDER BY (COALESCE(like_count,0)+COALESCE(repost_count,0)+COALESCE(reply_count,0)) DESC"
+        " LIMIT 5",
+        (client_id,),
+    )
+
+    # Recent 10 posts with metrics
+    recent_posts = db.fetchall(
+        "SELECT text, platform, like_count, repost_count, reply_count, published_at"
+        " FROM posts WHERE status='published' AND client_id=?"
+        " ORDER BY published_at DESC"
+        " LIMIT 10",
+        (client_id,),
+    )
+
+    return templates.TemplateResponse(
+        "tenant_analytics.html",
+        {
+            "request": request,
+            "client": client,
+            "total_posts": total_posts,
+            "total_engagement": total_engagement,
+            "avg_engagement": avg_engagement,
+            "best_platform": best_platform,
+            "platform_rows": platform_rows,
+            "trend_data": trend_data,
+            "best_post": best_post,
+            "top_posts": top_posts,
+            "recent_posts": recent_posts,
         },
     )
 

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Analytics{% endblock %}
+{% block nav_home %}/my/dashboard{% endblock %}
+{% block nav_links %}
+<li><a href="/my/dashboard" {% if request.url.path == '/my/dashboard' %}class="active"{% endif %}>Overview</a></li>
+<li><a href="/my/analytics" {% if request.url.path == '/my/analytics' %}class="active"{% endif %}>Analytics</a></li>
+<li><a href="/my/settings" {% if request.url.path == '/my/settings' %}class="active"{% endif %}>Settings</a></li>
+<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
+{% endblock %}
+{% block content %}
+<h1>Analytics</h1>
+<p><small>Content performance for <strong>{{ client.name }}</strong></small></p>
+
+<!-- KPI Cards -->
+<div class="grid">
+    <article class="kpi-card">
+        <div class="kpi-value">{{ total_posts }}</div>
+        <div class="kpi-label">Total Posts</div>
+        <div class="kpi-sublabel">all time published</div>
+    </article>
+    <article class="kpi-card">
+        <div class="kpi-value">{{ total_engagement }}</div>
+        <div class="kpi-label">Total Engagement</div>
+        <div class="kpi-sublabel">likes + reposts + replies</div>
+    </article>
+    <article class="kpi-card">
+        <div class="kpi-value">{{ avg_engagement }}</div>
+        <div class="kpi-label">Avg Engagement / Post</div>
+        <div class="kpi-sublabel">across all platforms</div>
+    </article>
+    <article class="kpi-card">
+        <div class="kpi-value" style="font-size: 1.8rem;">{{ best_platform }}</div>
+        <div class="kpi-label">Best Platform</div>
+        <div class="kpi-sublabel">by total engagement</div>
+    </article>
+</div>
+
+<!-- Engagement Trend (last 7 days) -->
+<h2>Engagement Trend <small style="opacity: 0.5;">(last 7 days)</small></h2>
+<article>
+    {% if trend_data %}
+    <div class="bar-chart">
+        {% for day in trend_data %}
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%;">
+            <div style="flex: 1; display: flex; align-items: flex-end; width: 100%;">
+                <div class="bar" style="height: {{ day.pct }}%; width: 100%;" title="{{ day.day }}: {{ day.engagement }} engagement from {{ day.posts }} post(s)"></div>
+            </div>
+            <div class="bar-label">{{ day.day }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div style="display: flex; justify-content: space-between; padding: 0 0.25rem;">
+        {% for day in trend_data %}
+        <small style="flex: 1; text-align: center; opacity: 0.5; font-size: 0.7rem;">{{ day.engagement }}</small>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="opacity: 0.6; text-align: center;">No published posts in the last 7 days.</p>
+    {% endif %}
+</article>
+
+<!-- Platform Breakdown -->
+<h2>Platform Breakdown</h2>
+<article>
+    {% if platform_rows %}
+    <table>
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Posts</th>
+                <th>Likes</th>
+                <th>Reposts</th>
+                <th>Replies</th>
+                <th>Avg Engagement</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in platform_rows %}
+            <tr>
+                <td><span class="badge {{ row.platform or 'generic' }}">{{ row.platform or "generic" }}</span></td>
+                <td>{{ row.count }}</td>
+                <td>{{ row.likes or 0 }}</td>
+                <td>{{ row.reposts or 0 }}</td>
+                <td>{{ row.replies or 0 }}</td>
+                <td>{{ (((row.likes or 0) + (row.reposts or 0) + (row.replies or 0)) / row.count) | round(1) if row.count > 0 else 0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="opacity: 0.6; text-align: center;">No platform data yet. Publish content to see breakdown.</p>
+    {% endif %}
+</article>
+
+<!-- Top Posts -->
+<h2>Top Posts <small style="opacity: 0.5;">by engagement</small></h2>
+<article>
+    {% if top_posts %}
+    {% for post in top_posts %}
+    <div class="analytics-post-card">
+        <p>{{ post.text[:120] }}{% if post.text|length > 120 %}...{% endif %}</p>
+        <div class="analytics-post-meta">
+            <span class="badge {{ post.platform or 'generic' }}">{{ post.platform or "generic" }}</span>
+            <small>{{ (post.like_count or 0) }} likes</small>
+            <small>{{ (post.repost_count or 0) }} reposts</small>
+            <small>{{ (post.reply_count or 0) }} replies</small>
+            <small>&middot; {{ post.published_at or "N/A" }}</small>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p style="opacity: 0.6; text-align: center;">No published posts yet.</p>
+    {% endif %}
+</article>
+
+<!-- Recent Performance -->
+<h2>Recent Performance <small style="opacity: 0.5;">last 10 posts</small></h2>
+<article>
+    {% if recent_posts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Post</th>
+                <th>Platform</th>
+                <th>Likes</th>
+                <th>Reposts</th>
+                <th>Replies</th>
+                <th>Published</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in recent_posts %}
+            <tr>
+                <td class="content-text">{{ post.text[:80] }}{% if post.text|length > 80 %}...{% endif %}</td>
+                <td><span class="badge {{ post.platform or 'generic' }}">{{ post.platform or "generic" }}</span></td>
+                <td>{{ post.like_count or 0 }}</td>
+                <td>{{ post.repost_count or 0 }}</td>
+                <td>{{ post.reply_count or 0 }}</td>
+                <td><small>{{ post.published_at or "-" }}</small></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="opacity: 0.6; text-align: center;">No recent published posts.</p>
+    {% endif %}
+</article>
+{% endblock %}

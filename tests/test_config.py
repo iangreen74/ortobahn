@@ -59,10 +59,11 @@ class TestLoadSettings:
         assert s.bluesky_handle == "env.bsky.social"
 
     def test_defaults_without_env(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("BLUESKY_HANDLE", raising=False)
-        monkeypatch.delenv("BLUESKY_APP_PASSWORD", raising=False)
-        # Prevent .env file from being loaded by changing cwd
+        # Set to empty string rather than deleting — prevents load_dotenv()
+        # from re-populating the key from the project's .env file.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("BLUESKY_HANDLE", "")
+        monkeypatch.setenv("BLUESKY_APP_PASSWORD", "")
         monkeypatch.chdir(tmp_path)
         s = load_settings()
         assert s.anthropic_api_key == ""

@@ -44,10 +44,21 @@ class TwitterClient:
             logger.info("Authenticated with Twitter API v2")
         return self._client
 
+    def _call_with_retry(self, fn, *args, **kwargs):
+        """Call a Twitter API function, retrying once on auth failure."""
+        self._get_client()
+        try:
+            return fn(*args, **kwargs)
+        except (tweepy.Unauthorized, tweepy.Forbidden) as e:
+            logger.warning(f"Twitter auth error, re-authenticating: {e}")
+            self._client = None
+            self._get_client()
+            return fn(*args, **kwargs)
+
     def post(self, text: str) -> tuple[str, str]:
         """Post a tweet. Returns (tweet_url, tweet_id)."""
         client = self._get_client()
-        response = client.create_tweet(text=text)
+        response = self._call_with_retry(client.create_tweet, text=text)
         tweet_id = str(response.data["id"])
         tweet_url = f"https://x.com/i/status/{tweet_id}"
         logger.info(f"Posted to Twitter: {text[:50]}...")
@@ -57,7 +68,8 @@ class TwitterClient:
         """Get engagement metrics for a tweet."""
         client = self._get_client()
         try:
-            response = client.get_tweet(
+            response = self._call_with_retry(
+                client.get_tweet,
                 tweet_id,
                 tweet_fields=["public_metrics"],
             )
@@ -73,3 +85,41 @@ class TwitterClient:
         except Exception as e:
             logger.warning(f"Failed to get Twitter metrics for {tweet_id}: {e}")
         return TweetMetrics(tweet_id=tweet_id)
+
+    def verify_post_exists(self, tweet_id: str) -> bool | None:
+        """Verify that a tweet actually exists on Twitter.
+
+        Returns True if found, False if definitively not found, None if
+        verification was inconclusive (e.g. auth error, network error).
+        """
+        client = self._get_client()
+        try:
+            response = self._call_with_retry(
+                client.get_tweet,
+                tweet_id,
+                tweet_fields=["id"],
+            )
+            return bool(response.data)
+        except Exception as e:
+            logger.warning(f"Failed to verify tweet {tweet_id}: {e}")
+            return None
+
+    def get_profile(self) -> dict:
+        """Get our profile info (follower count, etc)."""
+        client = self._get_client()
+        try:
+            response = self._call_with_retry(
+                client.get_me,
+                user_fields=["public_metrics"],
+            )
+            if response.data:
+                m = response.data.public_metrics or {}
+                return {
+                    "username": response.data.username,
+                    "followers_count": m.get("followers_count", 0),
+                    "following_count": m.get("following_count", 0),
+                    "tweet_count": m.get("tweet_count", 0),
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get Twitter profile: {e}")
+        return {}

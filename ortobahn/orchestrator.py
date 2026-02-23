@@ -39,6 +39,13 @@ from ortobahn.predictive_timing import TopicVelocityTracker
 from ortobahn.publish_recovery import PublishRecoveryManager
 from ortobahn.serialization import SeriesManager
 from ortobahn.style_evolution import StyleEvolution
+from ortobahn.webhooks import (
+    EVENT_PIPELINE_COMPLETED,
+    EVENT_PIPELINE_FAILED,
+    EVENT_POST_FAILED,
+    EVENT_POST_PUBLISHED,
+    dispatch_event,
+)
 
 logger = logging.getLogger("ortobahn.pipeline")
 
@@ -269,15 +276,33 @@ class Pipeline:
                     self.db.update_post_published(post["id"], uri, platform_id)
                     published_count += 1
                     logger.info(f"Published approved post {post['id'][:8]} to {platform_str}")
+                    dispatch_event(
+                        self.db,
+                        post.get("client_id", "default"),
+                        EVENT_POST_PUBLISHED,
+                        {"post_id": post["id"], "platform": platform_str, "text": post["text"][:500]},
+                    )
                 else:
                     self.db.update_post_failed(
                         post["id"],
                         "Post verification failed — not found on platform",
                     )
                     logger.error(f"Approved post {post['id'][:8]} failed verification")
+                    dispatch_event(
+                        self.db,
+                        post.get("client_id", "default"),
+                        EVENT_POST_FAILED,
+                        {"post_id": post["id"], "error": "Post verification failed"},
+                    )
             except Exception as e:
                 self.db.update_post_failed(post["id"], str(e))
                 logger.error(f"Failed to publish approved post {post['id'][:8]}: {e}")
+                dispatch_event(
+                    self.db,
+                    post.get("client_id", "default"),
+                    EVENT_POST_FAILED,
+                    {"post_id": post["id"], "error": str(e)},
+                )
 
         return published_count
 
@@ -756,6 +781,12 @@ class Pipeline:
             logger.error(f"Pipeline error: {e}\n{traceback.format_exc()}")
             errors.append(str(e))
             self.db.fail_pipeline_run(run_id, errors)
+            dispatch_event(
+                self.db,
+                client_id,
+                EVENT_PIPELINE_FAILED,
+                {"run_id": run_id, "error": str(e)},
+            )
             raise
 
         # Calculate token usage from agent logs
@@ -777,6 +808,13 @@ class Pipeline:
             total_output_tokens=total_output_tokens,
             total_cache_creation_tokens=total_cache_creation,
             total_cache_read_tokens=total_cache_read,
+        )
+
+        dispatch_event(
+            self.db,
+            client_id,
+            EVENT_PIPELINE_COMPLETED,
+            {"run_id": run_id, "posts_published": posts_published},
         )
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} completed: {posts_published} posts published ===")

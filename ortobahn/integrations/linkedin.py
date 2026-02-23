@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from dataclasses import dataclass
 
-import requests
+import httpx
 
 logger = logging.getLogger("ortobahn.linkedin")
 
@@ -21,6 +22,29 @@ class LinkedInPostMetrics:
     impression_count: int = 0
 
 
+def _handle_auth_error(fn):
+    """Decorator that catches 401 HTTPStatusError and marks the client as
+    having a credential issue.  LinkedIn OAuth tokens require manual
+    user re-auth so we cannot silently refresh -- we log a warning and
+    set a flag that downstream agents (SRE, publisher) can inspect."""
+
+    @functools.wraps(fn)
+    def wrapper(self: LinkedInClient, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                logger.warning(
+                    "LinkedIn API returned 401 -- access token is expired or "
+                    "revoked.  Manual re-authentication is required."
+                )
+                self._credentials_valid = False
+                raise
+            raise
+
+    return wrapper
+
+
 class LinkedInClient:
     def __init__(self, access_token: str, person_urn: str):
         """
@@ -29,12 +53,14 @@ class LinkedInClient:
         """
         self.access_token = access_token
         self.person_urn = person_urn
+        self._credentials_valid = True
         self._headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
             "X-Restli-Protocol-Version": "2.0.0",
         }
 
+    @_handle_auth_error
     def post(self, text: str) -> tuple[str, str]:
         """Create a text post on LinkedIn. Returns (post_url, post_urn)."""
         payload = {
@@ -48,7 +74,7 @@ class LinkedInClient:
             },
             "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
         }
-        resp = requests.post(
+        resp = httpx.post(
             f"{LINKEDIN_API_BASE}/ugcPosts",
             headers=self._headers,
             json=payload,
@@ -60,10 +86,11 @@ class LinkedInClient:
         logger.info(f"Posted to LinkedIn: {text[:50]}...")
         return post_url, post_urn
 
+    @_handle_auth_error
     def get_post_metrics(self, post_urn: str) -> LinkedInPostMetrics:
         """Get metrics for a LinkedIn post."""
         try:
-            resp = requests.get(
+            resp = httpx.get(
                 f"{LINKEDIN_API_BASE}/socialActions/{post_urn}",
                 headers=self._headers,
                 timeout=30,
@@ -75,6 +102,60 @@ class LinkedInClient:
                 like_count=data.get("likesSummary", {}).get("totalLikes", 0),
                 comment_count=data.get("commentsSummary", {}).get("totalFirstLevelComments", 0),
             )
+        except httpx.HTTPStatusError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to get LinkedIn metrics for {post_urn}: {e}")
         return LinkedInPostMetrics(post_urn=post_urn)
+
+    @_handle_auth_error
+    def verify_post_exists(self, post_urn: str) -> bool | None:
+        """Verify that a post actually exists on LinkedIn.
+
+        Uses the UGC Posts endpoint to look up the post by URN.
+        Returns True if found (200), False if definitively not found (404),
+        None if verification was inconclusive (e.g. network error).
+        """
+        try:
+            resp = httpx.get(
+                f"{LINKEDIN_API_BASE}/ugcPosts/{post_urn}",
+                headers=self._headers,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return True
+            if resp.status_code == 404:
+                return False
+            resp.raise_for_status()
+            return None
+        except httpx.HTTPStatusError:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to verify LinkedIn post {post_urn}: {e}")
+            return None
+
+    @_handle_auth_error
+    def get_profile(self) -> dict:
+        """Get basic profile info from /v2/me.
+
+        Returns a dict with first_name, last_name, and vanity_name.
+        Used by SRE agent for platform health checks.
+        """
+        try:
+            resp = httpx.get(
+                f"{LINKEDIN_API_BASE}/me",
+                headers=self._headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "first_name": data.get("localizedFirstName", ""),
+                "last_name": data.get("localizedLastName", ""),
+                "vanity_name": data.get("vanityName", ""),
+            }
+        except httpx.HTTPStatusError:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to get LinkedIn profile: {e}")
+            return {}

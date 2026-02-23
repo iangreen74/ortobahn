@@ -55,7 +55,7 @@ def create_app() -> FastAPI:
             "http://localhost:8000",
         ],
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -200,6 +200,7 @@ def create_app() -> FastAPI:
         pipeline,
         sre,
         tenant_dashboard,
+        webhooks,
     )
 
     # Public routes (no auth required)
@@ -212,6 +213,7 @@ def create_app() -> FastAPI:
     # Tenant self-service routes (per-client auth)
     app.include_router(tenant_dashboard.router)
     app.include_router(chat.router)
+    app.include_router(webhooks.router)
 
     # Protected routes (admin auth dependency on each router)
     app.include_router(dashboard.router)

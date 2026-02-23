@@ -56,15 +56,9 @@ jobs:
           fi
           echo "should_skip=false" >> $GITHUB_OUTPUT
 
-      - uses: actions/setup-python@v6
-        if: steps.loop_check.outputs.should_skip != 'true'
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
       - name: Install dependencies
         if: steps.loop_check.outputs.should_skip != 'true'
-        run: pip install -e ".[dev,web]"
+        run: python3.12 -m pip install -e ".[dev,web]"
 
       - name: Configure git
         if: steps.loop_check.outputs.should_skip != 'true'

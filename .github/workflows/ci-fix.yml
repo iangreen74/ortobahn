@@ -2,7 +2,7 @@ name: CI Auto-Fix
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["CI", "Deploy"]
     types: [completed]
     branches: [main, master]
 
@@ -23,18 +23,76 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
-          fetch-depth: 0
+          fetch-depth: 5
           token: ${{ steps.app_token.outputs.token }}
 
+      - name: Circuit breaker — prevent infinite fix loops
+        id: loop_check
+        run: |
+          # If the last commit was a cifix commit, don't try again
+          LAST_MSG=$(git log -1 --format=%s)
+          if echo "$LAST_MSG" | grep -q "^cifix:"; then
+            echo "Last commit was a CI-Fix commit — stopping to prevent loop"
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # If 3+ recent commits are cifix, something is stuck
+          CIFIX_COUNT=$(git log -5 --format=%s | grep -c "^cifix:" || true)
+          if [ "$CIFIX_COUNT" -ge 3 ]; then
+            echo "3+ recent cifix commits — self-healing loop detected, stopping"
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "should_skip=false" >> $GITHUB_OUTPUT
+
+      - name: Detect failure source
+        id: detect
+        if: steps.loop_check.outputs.should_skip != 'true'
+        run: |
+          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
+          echo "workflow_name=$WORKFLOW_NAME" >> $GITHUB_OUTPUT
+          if [ "$WORKFLOW_NAME" = "Deploy" ]; then
+            echo "is_deploy=true" >> $GITHUB_OUTPUT
+            echo "Triggered by Deploy failure — will escalate to LLM agent"
+          else
+            echo "is_deploy=false" >> $GITHUB_OUTPUT
+            echo "Triggered by CI failure — will attempt mechanical fix first"
+          fi
+
+      # --- Deploy failures: skip mechanical fixes, go straight to LLM ---
+      - name: Escalate deploy failure to LLM agent
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "Deploy failure — escalating directly to LLM CI Fix Agent"
+          gh workflow run ci-fix-escalation.yml \
+            -f run_id="$RUN_ID" \
+            -f branch="${{ github.event.workflow_run.head_branch }}" \
+            -f workflow_name="Deploy"
+
+      # --- CI failures: try mechanical fix first, then escalate ---
       - uses: actions/setup-python@v5
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false'
         with:
           python-version: "3.10"
 
       - name: Install dependencies
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false'
         run: pip install -e ".[dev,web]"
 
       - name: Attempt lint/format auto-fix
         id: lint_fix
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false'
         run: |
           ruff check --fix ortobahn/ tests/ || true
           ruff format ortobahn/ tests/
@@ -45,13 +103,19 @@ jobs:
           fi
 
       - name: Validate lint fix
-        if: steps.lint_fix.outputs.changed == 'true'
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false' &&
+          steps.lint_fix.outputs.changed == 'true'
         run: |
           ruff check ortobahn/ tests/
           ruff format --check ortobahn/ tests/
 
       - name: Attempt typecheck fix
-        if: steps.lint_fix.outputs.changed == 'false'
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false' &&
+          steps.lint_fix.outputs.changed == 'false'
         id: mypy_check
         run: |
           set -o pipefail
@@ -62,13 +126,19 @@ jobs:
           fi
 
       - name: Configure git
-        if: steps.lint_fix.outputs.changed == 'true'
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false' &&
+          steps.lint_fix.outputs.changed == 'true'
         run: |
           git config user.name "Ortobahn CI Fix"
           git config user.email "cifix@ortobahn.com"
 
-      - name: Create fix PR
-        if: steps.lint_fix.outputs.changed == 'true'
+      - name: Create fix PR with auto-merge
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false' &&
+          steps.lint_fix.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
@@ -100,8 +170,14 @@ jobs:
             --base "$BASE_BRANCH")
           echo "Created PR: $PR_URL"
 
-      - name: Escalate to CI Fix Agent
-        if: steps.lint_fix.outputs.changed == 'false'
+          # Enable auto-merge so the fix flows without human intervention
+          gh pr merge "$PR_URL" --auto --squash || echo "Auto-merge not available (branch protection may require reviews)"
+
+      - name: Escalate CI failure to LLM agent
+        if: >
+          steps.loop_check.outputs.should_skip != 'true' &&
+          steps.detect.outputs.is_deploy == 'false' &&
+          steps.lint_fix.outputs.changed == 'false'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
@@ -109,4 +185,5 @@ jobs:
           echo "Mechanical fixes insufficient — escalating to LLM CI Fix Agent"
           gh workflow run ci-fix-escalation.yml \
             -f run_id="$RUN_ID" \
-            -f branch="${{ github.event.workflow_run.head_branch }}"
+            -f branch="${{ github.event.workflow_run.head_branch }}" \
+            -f workflow_name="CI"

@@ -15,6 +15,7 @@ from ortobahn.git_utils import (
     create_branch,
     current_branch,
     delete_branch,
+    enable_auto_merge,
     git_cmd,
     is_path_safe,
     push_branch,
@@ -34,6 +35,30 @@ from ortobahn.models import (
 )
 
 logger = logging.getLogger("ortobahn.cifix")
+
+# Maps smoke-test endpoints to the source files that serve them.
+# Used by _fix_deploy() to give the LLM the right context.
+ENDPOINT_SOURCE_MAP: dict[str, list[str]] = {
+    "/health": ["ortobahn/web/app.py"],
+    "/api/toasts": ["ortobahn/web/app.py"],
+    "/api/internal/pipeline-dry-run": ["ortobahn/web/app.py", "ortobahn/orchestrator.py"],
+    "/my/dashboard": ["ortobahn/web/routes/tenant_dashboard.py", "ortobahn/auth.py"],
+    "/glass": ["ortobahn/web/routes/glass.py"],
+    "/api/public/stats": ["ortobahn/web/routes/glass.py"],
+    "/api/onboard": ["ortobahn/web/routes/onboard.py"],
+    "/static/": ["ortobahn/web/app.py"],
+}
+
+# Patterns in deploy logs that indicate a deploy (not CI) failure.
+DEPLOY_LOG_PATTERNS = [
+    r"Smoke test",
+    r"Pipeline dry-run",
+    r"FAIL:.*returned HTTP",
+    r"deploy-staging|deploy-prod|smoke-test",
+    r"post-deploy-validate",
+    r"Gateway Time-out",
+    r"services-stable",
+]
 
 
 class CIFixAgent(BaseAgent):
@@ -128,6 +153,10 @@ class CIFixAgent(BaseAgent):
             elif category == CIFailureCategory.TEST:
                 fix_attempt = self._fix_tests(errors)
 
+            # Tier 4: deploy failures — map endpoints to source, LLM diagnosis
+            elif category == CIFailureCategory.DEPLOY:
+                fix_attempt = self._fix_deploy(errors, raw_logs)
+
             # Unknown / install — attempt LLM diagnosis
             else:
                 fix_attempt = self._fix_unknown(errors, raw_logs)
@@ -156,6 +185,8 @@ class CIFixAgent(BaseAgent):
                 if auto_pr:
                     push_branch(branch_name)
                     pr_url = self._create_pr(branch_name, failure, fix_attempt)
+                    if pr_url:
+                        enable_auto_merge(pr_url)
 
             # Switch back to main
             switch_branch("main")
@@ -233,22 +264,29 @@ class CIFixAgent(BaseAgent):
     # CI data fetchers
     # ------------------------------------------------------------------
 
-    def _fetch_failed_runs(self, limit: int = 5) -> list[dict] | None:
-        """Fetch recent failed CI runs via the GitHub CLI.
+    def _fetch_failed_runs(self, limit: int = 5, workflow: str = "") -> list[dict] | None:
+        """Fetch recent failed workflow runs via the GitHub CLI.
+
+        Args:
+            limit: Maximum number of runs to return.
+            workflow: Filter by workflow name (e.g. "CI", "Deploy"). Empty = all.
 
         Returns list of runs, or None if gh CLI is unavailable.
         """
         try:
+            cmd = [
+                "gh",
+                "run",
+                "list",
+                "--status=failure",
+                f"--limit={limit}",
+                "--json",
+                "databaseId,conclusion,headBranch,event,url,name,workflowName",
+            ]
+            if workflow:
+                cmd.extend(["--workflow", workflow])
             result = subprocess.run(
-                [
-                    "gh",
-                    "run",
-                    "list",
-                    "--status=failure",
-                    f"--limit={limit}",
-                    "--json",
-                    "databaseId,conclusion,headBranch,event,url,name",
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -287,6 +325,11 @@ class CIFixAgent(BaseAgent):
 
     def _categorize_failure(self, logs: str) -> CIFailureCategory:
         """Determine the failure category from raw CI logs."""
+        # Deploy: smoke test failures, HTTP errors from staging/prod checks
+        deploy_hits = sum(1 for pat in DEPLOY_LOG_PATTERNS if re.search(pat, logs, re.IGNORECASE))
+        if deploy_hits >= 2:
+            return CIFailureCategory.DEPLOY
+
         # Typecheck: mypy errors (check before lint — mypy lines also match py:line:col)
         if re.search(r"error:.*\[", logs) and re.search(r"\.py:\d+:\s*error:", logs):
             return CIFailureCategory.TYPECHECK
@@ -352,6 +395,42 @@ class CIFixAgent(BaseAgent):
                         file_path=match.group(1),
                         message=f"Test failed: {match.group(2)}",
                         code=match.group(2),
+                        category=category,
+                    )
+                )
+
+        elif category == CIFailureCategory.DEPLOY:
+            # Pattern: FAIL: <description> returned HTTP <code>
+            for match in re.finditer(
+                r"FAIL:\s*(.+?)(?:returned HTTP (\d+))?(?:\s*\(([^)]+)\))?\s*$", logs, re.MULTILINE
+            ):
+                desc = match.group(1).strip()
+                http_code = match.group(2) or ""
+                detail = match.group(3) or ""
+                # Try to extract the endpoint from the description
+                endpoint = ""
+                ep_match = re.search(r"(/[\w/.-]+)", desc)
+                if ep_match:
+                    endpoint = ep_match.group(1)
+                errors.append(
+                    CIError(
+                        file_path=endpoint,
+                        message=f"{desc} {detail}".strip(),
+                        code=f"HTTP_{http_code}" if http_code else "DEPLOY_FAIL",
+                        category=category,
+                    )
+                )
+            # Also catch crash signatures in deploy response bodies
+            for match in re.finditer(
+                r"(?:ImportError|ModuleNotFoundError|SyntaxError|AttributeError|NameError|TypeError):\s*(.+?)$",
+                logs,
+                re.MULTILINE,
+            ):
+                errors.append(
+                    CIError(
+                        file_path="",
+                        message=match.group(0).strip(),
+                        code="RUNTIME_CRASH",
                         category=category,
                     )
                 )
@@ -532,6 +611,60 @@ class CIFixAgent(BaseAgent):
             tokens_used=response.input_tokens + response.output_tokens,
         )
 
+    def _fix_deploy(self, errors: list[CIError], raw_logs: str) -> FixAttempt:
+        """Fix deploy failures by mapping endpoints to source files and calling LLM."""
+        context_parts: list[str] = []
+
+        # Collect source files relevant to the failed endpoints
+        source_files_seen: set[str] = set()
+        for err in errors:
+            endpoint = err.file_path  # file_path stores the endpoint for DEPLOY errors
+            # Find matching source files
+            matched_sources: list[str] = []
+            for pattern, sources in ENDPOINT_SOURCE_MAP.items():
+                if pattern in endpoint or endpoint in pattern:
+                    matched_sources.extend(sources)
+            if not matched_sources:
+                # Fallback: include the main app file and rate limiter
+                matched_sources = ["ortobahn/web/app.py", "ortobahn/web/rate_limit.py"]
+
+            for src in matched_sources:
+                if src in source_files_seen:
+                    continue
+                source_files_seen.add(src)
+                content = read_source_file(src)
+                if content:
+                    context_parts.append(f"### {src}\n```python\n{content}\n```")
+
+        # Always include middleware (common deploy failure source)
+        for critical in ["ortobahn/web/app.py", "ortobahn/web/rate_limit.py"]:
+            if critical not in source_files_seen:
+                content = read_source_file(critical)
+                if content:
+                    context_parts.append(f"### {critical}\n```python\n{content}\n```")
+
+        if not context_parts:
+            return FixAttempt(strategy="deploy fix (no source context)", files_changed=[], llm_used=False)
+
+        error_summary = "\n".join(f"- {e.code}: {e.message}" for e in errors)
+        user_message = (
+            "A deploy to staging failed during smoke tests. "
+            "Diagnose the root cause and fix the code so the smoke tests pass.\n\n"
+            f"## Failed smoke tests\n{error_summary}\n\n"
+            f"## Deploy logs (last 3000 chars)\n```\n{raw_logs[-3000:]}\n```\n\n"
+            "## Relevant source files\n\n" + "\n\n".join(context_parts)
+        )
+
+        response = self.call_llm(user_message)
+        changed = self._apply_llm_changes(response.text)
+
+        return FixAttempt(
+            strategy="deploy fix via LLM (smoke test failure diagnosis)",
+            files_changed=changed,
+            llm_used=True,
+            tokens_used=response.input_tokens + response.output_tokens,
+        )
+
     # ------------------------------------------------------------------
     # LLM response handling
     # ------------------------------------------------------------------
@@ -655,6 +788,50 @@ class CIFixAgent(BaseAgent):
             except subprocess.SubprocessError as e:
                 all_passed = False
                 outputs.append(f"pytest error: {e}")
+
+        if CIFailureCategory.DEPLOY in categories:
+            # Run web integration tests + lint to validate deploy fixes
+            try:
+                result = subprocess.run(
+                    [
+                        "python3",
+                        "-m",
+                        "pytest",
+                        "tests/test_web_integration.py",
+                        "tests/test_web.py",
+                        "-x",
+                        "-q",
+                        "--tb=short",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                    cwd=str(PROJECT_ROOT),
+                )
+                if result.returncode != 0:
+                    all_passed = False
+                    outputs.append(f"web integration tests failed:\n{(result.stdout + result.stderr)[-500:]}")
+                else:
+                    outputs.append("web integration tests passed")
+            except subprocess.SubprocessError as e:
+                all_passed = False
+                outputs.append(f"web integration test error: {e}")
+            # Also lint-check the changed files
+            try:
+                result = subprocess.run(
+                    ["python3", "-m", "ruff", "check", "ortobahn/", "tests/"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                    cwd=str(PROJECT_ROOT),
+                )
+                if result.returncode != 0:
+                    all_passed = False
+                    outputs.append(f"ruff check failed:\n{(result.stdout + result.stderr)[-500:]}")
+            except subprocess.SubprocessError:
+                pass  # Non-critical for deploy fixes
 
         summary = " | ".join(outputs) if outputs else "No checks run"
         return all_passed, summary

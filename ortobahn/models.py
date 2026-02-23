@@ -397,6 +397,7 @@ class CIFailureCategory(str, Enum):
     TYPECHECK = "typecheck"
     TEST = "test"
     INSTALL = "install"
+    DEPLOY = "deploy"
     UNKNOWN = "unknown"
 
 

@@ -42,7 +42,7 @@ class MediumClient:
     ) -> tuple[str, str]:
         """Create an article on Medium. Returns (url, post_id)."""
         user_id = self._get_user_id()
-        payload = {
+        payload: dict[str, str | list[str]] = {
             "title": title,
             "contentFormat": "markdown",
             "content": body_markdown,

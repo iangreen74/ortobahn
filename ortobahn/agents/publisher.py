@@ -44,7 +44,7 @@ class PublisherAgent(BaseAgent):
         self.linkedin = linkedin_client
         self.confidence_threshold = confidence_threshold
         self.post_delay = post_delay_seconds
-        self._recovery_manager = None  # Wired by orchestrator if publish_retry_enabled
+        self._recovery_manager: Any = None  # Wired by orchestrator if publish_retry_enabled
 
     def preflight(self, **kwargs: Any) -> PreflightResult:
         """Check that at least one platform client is available."""

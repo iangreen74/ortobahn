@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -48,7 +49,7 @@ class SubstackClient:
         # Extract session cookie from response
         for cookie in resp.cookies.jar:
             if cookie.name == "substack.sid":
-                self._session_cookie = cookie.value
+                self._session_cookie = cookie.value or ""
                 break
         self._authenticated = True
 
@@ -70,7 +71,7 @@ class SubstackClient:
 
         html_body = md_lib.markdown(body_markdown, extensions=["extra"])
 
-        payload = {
+        payload: dict[str, Any] = {
             "draft_title": title,
             "draft_body": html_body,
             "draft_bylines": [],

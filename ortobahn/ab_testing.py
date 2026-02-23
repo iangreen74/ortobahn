@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from ortobahn.db import Database
 
@@ -149,7 +150,7 @@ def get_ab_results_causal(db: Database, client_id: str | None = None) -> dict:
                 completed_pairs.append({"pair_id": pair_id, "winner": "tie", "bucket": bucket})
 
     total_completed = a_wins + b_wins + ties
-    base_result = {
+    base_result: dict[str, Any] = {
         "total_pairs": len(pairs),
         "completed_pairs": total_completed,
         "a_wins": a_wins,

@@ -41,7 +41,7 @@ jobs:
       - run: pip install pip-audit
       - run: pip install -e "."
       - name: Audit dependencies for vulnerabilities
-        run: pip-audit --strict --desc
+        run: pip-audit --strict --desc --skip-editable
 
   test:
     runs-on: ubuntu-latest

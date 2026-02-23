@@ -602,8 +602,12 @@ class Database:
             self._sqlite_conn = None
 
 
-def create_database(settings) -> Database:
-    """Create a Database instance from settings."""
+def _create_database_core(settings) -> Database:
+    """Create a core Database instance from settings.
+
+    NOTE: Use ``ortobahn.db.create_database`` instead — it returns the full
+    combined Database class with all mixin methods.
+    """
     return Database(
         db_path=settings.db_path if not settings.database_url else None,
         database_url=settings.database_url,

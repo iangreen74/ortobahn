@@ -19,7 +19,6 @@ from ortobahn.db.core import (
     PoolExhaustedError,
     _HealthCheckedPool,
     _normalize_query,
-    create_database,
     to_datetime,
 )
 from ortobahn.db.core import (
@@ -45,8 +44,7 @@ class Database(
     """
 
 
-# Patch create_database to return our combined Database subclass.
-def create_database(settings) -> Database:  # type: ignore[no-redef]  # noqa: F811
+def create_database(settings) -> Database:
     """Create a Database instance from settings."""
     return Database(
         db_path=settings.db_path if not settings.database_url else None,

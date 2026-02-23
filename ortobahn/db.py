@@ -480,12 +480,15 @@ class Database:
         client_id: str = "default",
         platform: str = "generic",
         content_type: str = "social_post",
+        ab_group: str | None = None,
+        series_id: str | None = None,
     ) -> str:
         pid = str(uuid.uuid4())
         self.execute(
             """INSERT INTO posts (id, text, source_idea, reasoning, confidence, status,
-               run_id, strategy_id, client_id, platform, content_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               run_id, strategy_id, client_id, platform, content_type,
+               ab_group, series_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 pid,
                 text,
@@ -498,6 +501,8 @@ class Database:
                 client_id,
                 platform,
                 content_type,
+                ab_group,
+                series_id,
             ),
             commit=True,
         )

@@ -136,6 +136,8 @@ class DraftPost(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     platform: Platform = Platform.GENERIC
     content_type: ContentType = ContentType.SOCIAL_POST
+    ab_group: str | None = None  # "A" or "B" for style evolution experiments
+    series_id: str | None = None  # Links post to a content series
 
 
 class DraftPosts(BaseModel):

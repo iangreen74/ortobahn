@@ -130,6 +130,20 @@ class Settings:
     auto_rollback_window_minutes: int = 30  # Only rollback if deploy was within this window
     auto_rollback_health_failures: int = 3  # Consecutive health failures before rollback
 
+    # Engagement agent
+    engagement_enabled: bool = True
+    engagement_max_replies: int = 3
+    engagement_confidence_threshold: float = 0.75
+
+    # Style evolution (A/B testing)
+    style_evolution_enabled: bool = True
+
+    # Predictive timing
+    predictive_timing_enabled: bool = True
+
+    # Content serialization
+    serialization_enabled: bool = True
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -253,4 +267,10 @@ def load_settings() -> Settings:
         auto_rollback_enabled=os.environ.get("AUTO_ROLLBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
         auto_rollback_window_minutes=int(os.environ.get("AUTO_ROLLBACK_WINDOW_MINUTES", "30")),
         auto_rollback_health_failures=int(os.environ.get("AUTO_ROLLBACK_HEALTH_FAILURES", "3")),
+        engagement_enabled=os.environ.get("ENGAGEMENT_ENABLED", "true").lower() in ("true", "1", "yes"),
+        engagement_max_replies=int(os.environ.get("ENGAGEMENT_MAX_REPLIES", "3")),
+        engagement_confidence_threshold=float(os.environ.get("ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.75")),
+        style_evolution_enabled=os.environ.get("STYLE_EVOLUTION_ENABLED", "true").lower() in ("true", "1", "yes"),
+        predictive_timing_enabled=os.environ.get("PREDICTIVE_TIMING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        serialization_enabled=os.environ.get("SERIALIZATION_ENABLED", "true").lower() in ("true", "1", "yes"),
     )

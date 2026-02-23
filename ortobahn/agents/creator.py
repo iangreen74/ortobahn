@@ -54,6 +54,8 @@ class CreatorAgent(BaseAgent):
         target_platforms: list[Platform] | None = None,
         enable_self_critique: bool = True,
         critique_threshold: float = 0.8,
+        style_context: str = "",
+        series_context: str = "",
     ) -> DraftPosts:
         platforms = target_platforms or [Platform.GENERIC]
 
@@ -89,6 +91,14 @@ class CreatorAgent(BaseAgent):
                 parts.append(
                     f"Target platforms: {', '.join(p.value if hasattr(p, 'value') else str(p) for p in idea.target_platforms)}"
                 )
+
+        # Inject style evolution context (A/B testing)
+        if style_context:
+            parts.append(f"\n{style_context}")
+
+        # Inject series context (narrative arcs)
+        if series_context:
+            parts.append(f"\n{series_context}")
 
         # Inject memory context
         client_id = client.id if client else "default"

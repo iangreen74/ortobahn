@@ -631,6 +631,86 @@ def _migration_023_add_intelligence_upgrades(db: Database) -> None:
     )
 
 
+def _migration_024_add_engagement_serialization_timing(db: Database) -> None:
+    """Add tables for autonomous engagement, content serialization, and predictive timing."""
+    # Engagement replies tracking
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS engagement_replies (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            notification_uri TEXT NOT NULL,
+            notification_text TEXT,
+            reply_text TEXT NOT NULL,
+            reply_uri TEXT,
+            confidence REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engagement_replies_client ON engagement_replies(client_id, created_at)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engagement_replies_notif ON engagement_replies(notification_uri)",
+        commit=True,
+    )
+
+    # Content series (narrative arcs)
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS content_series (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            series_title TEXT NOT NULL,
+            series_description TEXT NOT NULL DEFAULT '',
+            current_part INTEGER NOT NULL DEFAULT 0,
+            max_parts INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_content_series_client ON content_series(client_id, status)",
+        commit=True,
+    )
+
+    # Posts: series linkage
+    _safe_add_column(db, "posts", "series_id TEXT")
+    _safe_add_column(db, "posts", "series_part INTEGER")
+
+    # Topic velocity tracking (predictive timing)
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS topic_velocity (
+            id TEXT PRIMARY KEY,
+            topic_title TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'unknown',
+            mention_count INTEGER NOT NULL DEFAULT 1,
+            first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            velocity_score REAL NOT NULL DEFAULT 1.0,
+            peak_detected INTEGER NOT NULL DEFAULT 0
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_topic_velocity_title ON topic_velocity(topic_title)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_topic_velocity_emerging ON topic_velocity(peak_detected, mention_count)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -655,6 +735,7 @@ MIGRATIONS = {
     21: _migration_021_add_legal_security_directives,
     22: _migration_022_add_deployments,
     23: _migration_023_add_intelligence_upgrades,
+    24: _migration_024_add_engagement_serialization_timing,
 }
 
 

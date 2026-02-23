@@ -11,6 +11,7 @@ from ortobahn.agents.ceo import CEOAgent
 from ortobahn.agents.cfo import CFOAgent
 from ortobahn.agents.cifix import CIFixAgent
 from ortobahn.agents.creator import CreatorAgent
+from ortobahn.agents.engagement import EngagementAgent
 from ortobahn.agents.legal import LegalAgent
 from ortobahn.agents.marketing import MarketingAgent
 from ortobahn.agents.ops import OpsAgent
@@ -31,6 +32,9 @@ from ortobahn.integrations.twitter import TwitterClient
 from ortobahn.learning import LearningEngine
 from ortobahn.memory import MemoryStore
 from ortobahn.models import Client, DirectiveCategory, Platform, TrendingTopic
+from ortobahn.predictive_timing import TopicVelocityTracker
+from ortobahn.serialization import SeriesManager
+from ortobahn.style_evolution import StyleEvolution
 
 logger = logging.getLogger("ortobahn.pipeline")
 
@@ -111,6 +115,25 @@ class Pipeline:
         self.legal.thinking_budget = getattr(settings, "thinking_budget_legal", 10000)
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
+
+        # Innovation modules
+        self.engagement = (
+            EngagementAgent(
+                self.db,
+                _api_key,
+                _model,
+                bluesky_client=self.bluesky,
+                max_replies_per_cycle=settings.engagement_max_replies,
+                reply_confidence_threshold=settings.engagement_confidence_threshold,
+                use_bedrock=_bedrock,
+                bedrock_region=_region,
+            )
+            if settings.engagement_enabled
+            else None
+        )
+        self.topic_tracker = TopicVelocityTracker(self.db) if settings.predictive_timing_enabled else None
+        self.series_manager = SeriesManager(self.db) if settings.serialization_enabled else None
+        self.style_evolution = StyleEvolution(self.db) if settings.style_evolution_enabled else None
 
     def gather_trends(self, client_id: str = "default") -> list[TrendingTopic]:
         """Gather trending topics from all sources, filtered by client's industry."""
@@ -426,6 +449,25 @@ class Pipeline:
             logger.info("[4/14] Gathering trending topics...")
             trending = self.gather_trends(client_id)
 
+            # 1.4a Predictive timing: record topics and surface emerging ones
+            if self.topic_tracker:
+                topic_dicts = [{"title": t.title, "source": t.source} for t in trending]
+                self.topic_tracker.record_topics(topic_dicts, run_id)
+                self.topic_tracker.detect_peaks()
+                emerging = self.topic_tracker.get_emerging_topics()
+                if emerging:
+                    # Boost emerging topics by prepending them to trending list
+                    for et in emerging[:5]:
+                        trending.insert(
+                            0,
+                            TrendingTopic(
+                                title=f"[EMERGING] {et['topic_title']}",
+                                source=f"velocity:{et['velocity_score']:.0f}",
+                                description=f"Seen {et['mention_count']}x, accelerating",
+                            ),
+                        )
+                    logger.info(f"  -> {len(emerging)} emerging topics detected")
+
             # 1.5 Performance insights (prompt tuner)
             from ortobahn.prompt_tuner import get_performance_insights
 
@@ -492,6 +534,17 @@ class Pipeline:
             content_plan.posts = content_plan.posts[: self.settings.max_posts_per_cycle]
             logger.info(f"  -> {len(content_plan.posts)} post ideas")
 
+            # 3.1a Style evolution: ensure experiment is running
+            style_context = ""
+            if self.style_evolution:
+                self.style_evolution.ensure_active_experiment(client_id, run_id)
+                style_context = self.style_evolution.get_experiment_context(client_id)
+
+            # 3.1b Serialization: get series context
+            series_context = ""
+            if self.series_manager:
+                series_context = self.series_manager.get_series_context(client_id)
+
             # 3.2 Creator
             logger.info("[10/14] Creator Agent writing posts...")
             drafts = self.creator.run(
@@ -502,8 +555,17 @@ class Pipeline:
                 target_platforms=platforms,
                 enable_self_critique=self.settings.enable_self_critique,
                 critique_threshold=self.settings.creator_critique_threshold,
+                style_context=style_context,
+                series_context=series_context,
             )
             logger.info(f"  -> {len(drafts.posts)} drafts written")
+
+            # 3.2a Style evolution: tag A/B pairs in drafts
+            if self.style_evolution and style_context:
+                ab_a = [d for d in drafts.posts if d.ab_group == "A"]
+                ab_b = [d for d in drafts.posts if d.ab_group == "B"]
+                if ab_a and ab_b:
+                    logger.info(f"  -> A/B variants detected: {len(ab_a)}A / {len(ab_b)}B")
 
             # 3.3 Publisher
             posts_published = 0
@@ -524,6 +586,8 @@ class Pipeline:
                             client_id=client_id,
                             platform=draft.platform.value,
                             content_type=draft.content_type.value,
+                            ab_group=draft.ab_group,
+                            series_id=draft.series_id,
                         )
                 logger.info(f"  -> {len(drafts.posts)} drafts saved for review")
             else:
@@ -540,6 +604,55 @@ class Pipeline:
                 )
                 posts_published = sum(1 for p in published.posts if p.status == "published")
                 logger.info(f"  -> {posts_published} posts published")
+
+            # 3.3a Style evolution: tag A/B pairs in saved posts
+            if self.style_evolution and style_context:
+                try:
+                    exp = self.style_evolution.get_active_experiment(client_id)
+                    if exp:
+                        run_posts = self.db.fetchall(
+                            "SELECT id, ab_group FROM posts WHERE run_id = ? AND ab_group IS NOT NULL",
+                            (run_id,),
+                        )
+                        a_posts = [p for p in run_posts if p["ab_group"] == "A"]
+                        b_posts = [p for p in run_posts if p["ab_group"] == "B"]
+                        pairs_tagged = min(len(a_posts), len(b_posts))
+                        for i in range(pairs_tagged):
+                            self.style_evolution.tag_post_pair(a_posts[i]["id"], b_posts[i]["id"], exp["id"])
+                        if pairs_tagged:
+                            logger.info(f"  -> Tagged {pairs_tagged} A/B pair(s) for experiment {exp['id']}")
+                except Exception as e:
+                    logger.warning(f"  -> A/B pair tagging error (non-fatal): {e}")
+
+            # 3.3b Serialization: advance series for series-linked posts
+            if self.series_manager:
+                try:
+                    series_posts = self.db.fetchall(
+                        "SELECT id, series_id FROM posts WHERE run_id = ? AND series_id IS NOT NULL",
+                        (run_id,),
+                    )
+                    for sp in series_posts:
+                        self.series_manager.advance_series(sp["series_id"], sp["id"])
+                except Exception as e:
+                    logger.warning(f"  -> Series advancement error (non-fatal): {e}")
+
+            # 3.4 Engagement Agent (autonomous replies)
+            if self.engagement:
+                logger.info("[11.5/14] Engagement Agent monitoring conversations...")
+                try:
+                    # Update bluesky client for tenant
+                    self.engagement.bluesky = self.publisher.bluesky
+                    engagement_result = self.engagement.run(
+                        run_id,
+                        client_id=client_id,
+                        dry_run=self.dry_run,
+                    )
+                    logger.info(
+                        f"  -> Checked {engagement_result.notifications_checked} notifications, "
+                        f"posted {engagement_result.replies_posted} replies"
+                    )
+                except Exception as e:
+                    logger.warning(f"  -> Engagement agent error (non-fatal): {e}")
 
             # ═══════════════════════════════════════════════════════════════
             # PHASE 4: Operations & Learning
@@ -576,6 +689,10 @@ class Pipeline:
                 max_age_days=self.settings.memory_prune_days,
                 min_confidence=0.2,
             )
+
+            # Clean up old topic velocity data
+            if self.topic_tracker:
+                self.topic_tracker.cleanup_old_topics(max_age_days=30)
 
         except Exception as e:
             import traceback

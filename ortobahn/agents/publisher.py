@@ -107,6 +107,8 @@ class PublisherAgent(BaseAgent):
                 content_type=draft.content_type.value
                 if hasattr(draft.content_type, "value")
                 else str(draft.content_type),
+                ab_group=draft.ab_group,
+                series_id=draft.series_id,
             )
 
             if dry_run:

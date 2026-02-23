@@ -449,6 +449,23 @@ jobs:
             -d "{\"sha\": \"$IMAGE_TAG\", \"environment\": \"production\"}" \
           || echo "Warning: deploy registration failed (non-blocking)"
 
+      - name: Cleanup bogus clients
+        if: steps.validate.outputs.validation_passed == 'true'
+        env:
+          PROD_URL: ${{ secrets.PROD_URL }}
+          DEPLOY_KEY: ${{ secrets.ORTOBAHN_SECRET_KEY }}
+        run: |
+          if [ -z "$PROD_URL" ] || [ -z "$DEPLOY_KEY" ]; then exit 0; fi
+
+          echo "Running client cleanup..."
+          RESPONSE=$(curl -sf -X POST "$PROD_URL/api/internal/cleanup-clients" \
+            -H "Authorization: Bearer $DEPLOY_KEY" \
+            -H "Content-Type: application/json" || echo "{}")
+          echo "Response: $RESPONSE"
+
+          DEACTIVATED=$(echo "$RESPONSE" | jq -r '.deactivated | length // 0')
+          echo "Deactivated $DEACTIVATED client(s)"
+
       - name: Auto-rollback on failure
         if: steps.validate.outputs.validation_passed == 'false'
         env:

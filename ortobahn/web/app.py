@@ -101,6 +101,27 @@ def create_app() -> FastAPI:
         deploy_id = db.record_deploy(sha=sha, environment=environment, previous_sha=previous_sha)
         return {"deploy_id": deploy_id, "sha": sha, "previous_sha": previous_sha}
 
+    @app.post("/api/internal/cleanup-clients")
+    async def cleanup_clients(request: Request):
+        """Deactivate all clients except vaultscaler and default. Called by CI/CD."""
+        auth = request.headers.get("authorization", "")
+        expected = f"Bearer {request.app.state.settings.secret_key}"
+        if auth != expected:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+        db = app.state.db
+        keep = {"vaultscaler", "default"}
+        all_clients = db.fetchall("SELECT id, name, active FROM clients ORDER BY name")
+
+        deactivated = []
+        for c in all_clients:
+            if c["id"] in keep or not c.get("active", 1):
+                continue
+            db.execute("UPDATE clients SET active=0 WHERE id=?", (c["id"],), commit=True)
+            deactivated.append({"id": c["id"], "name": c["name"]})
+
+        return {"deactivated": deactivated, "kept": list(keep)}
+
     @app.post("/api/internal/pipeline-dry-run")
     async def pipeline_dry_run(request: Request):
         """Run a single pipeline cycle in dry-run mode for smoke testing."""

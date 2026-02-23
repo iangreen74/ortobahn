@@ -79,7 +79,7 @@ class TestPoolCreation:
         finally:
             db.close()
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_pg_mode_creates_pool(self, mock_pool_cls):
         """When database_url is set, a _HealthCheckedPool is created with correct params."""
         mock_pool = MagicMock()
@@ -98,7 +98,7 @@ class TestPoolCreation:
             dsn="postgresql://user:pass@localhost/testdb",
         )
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_create_database_passes_pool_settings(self, mock_pool_cls):
         """create_database() forwards db_pool_min / db_pool_max from Settings."""
         mock_pool_cls.return_value = MagicMock()
@@ -125,7 +125,7 @@ class TestPoolCreation:
 
 
 class TestConnectionReturn:
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_execute_returns_conn_on_success(self, mock_pool_cls):
         """After execute(), the connection is returned to the pool."""
         mock_pool = MagicMock()
@@ -142,7 +142,7 @@ class TestConnectionReturn:
         mock_pool.putconn.assert_called_once_with(fake_conn)
         assert fake_conn._committed
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_execute_returns_conn_on_error(self, mock_pool_cls):
         """On exception, the connection is still returned after rollback."""
         mock_pool = MagicMock()
@@ -164,7 +164,7 @@ class TestConnectionReturn:
         bad_conn.rollback.assert_called_once()
         mock_pool.putconn.assert_called_once_with(bad_conn)
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_fetchone_returns_conn(self, mock_pool_cls):
         """fetchone() properly returns the connection."""
         mock_pool = MagicMock()
@@ -188,7 +188,7 @@ class TestConnectionReturn:
 
         mock_pool.putconn.assert_called_once_with(fake_conn)
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_fetchall_returns_conn(self, mock_pool_cls):
         """fetchall() properly returns the connection."""
         mock_pool = MagicMock()
@@ -420,7 +420,7 @@ class TestClose:
         db.close()
         assert db._sqlite_conn is None
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_pg_close_calls_closeall(self, mock_pool_cls):
         """close() on PostgreSQL calls closeall() on the pool and sets pool to None."""
         mock_pool = MagicMock()
@@ -435,7 +435,7 @@ class TestClose:
         mock_pool.closeall.assert_called_once()
         assert db._pool is None
 
-    @patch("ortobahn.db._HealthCheckedPool")
+    @patch("ortobahn.db.core._HealthCheckedPool")
     def test_double_close_is_safe(self, mock_pool_cls):
         """Calling close() twice does not raise."""
         mock_pool = MagicMock()

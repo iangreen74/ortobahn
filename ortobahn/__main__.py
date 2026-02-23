@@ -285,6 +285,40 @@ def cmd_schedule(args):
                             console.print(f"  [yellow]CTO: {cto_result.status} - {cto_result.error[:80]}[/yellow]")
                     except Exception as e:
                         console.print(f"  [red]CTO agent failed: {e}[/red]")
+                # Article generation check — independent schedule per client
+                for client in clients_to_check:
+                    cid = client["id"]
+                    try:
+                        client_row = pipeline.db.get_client(cid)
+                        if not client_row or not client_row.get("article_enabled"):
+                            continue
+
+                        freq = client_row.get("article_frequency", "weekly")
+                        freq_hours = {"daily": 24, "weekly": 168, "biweekly": 336, "monthly": 720}.get(freq, 168)
+
+                        last_article = pipeline.db.get_last_article_time(cid)
+                        if last_article:
+                            from ortobahn.db import to_datetime as _to_dt
+
+                            last_art_dt = _to_dt(last_article)
+                            if last_art_dt.tzinfo is None:
+                                last_art_dt = last_art_dt.replace(tzinfo=_tz.utc)
+                            hours_since_article = (_dt.now(_tz.utc) - last_art_dt).total_seconds() / 3600
+                            if hours_since_article < freq_hours:
+                                continue
+
+                        console.print(f"  [dim]Generating article for {client.get('name', cid)} ({freq})[/dim]")
+                        art_result = pipeline.run_article_cycle(client_id=cid)
+                        if art_result["status"] == "success":
+                            console.print(
+                                f"    [green]Article: {art_result.get('title', '?')[:60]} "
+                                f"({art_result.get('word_count', 0)}w)[/green]"
+                            )
+                        elif art_result["status"] != "skipped":
+                            console.print(f"    [yellow]Article: {art_result.get('error', 'unknown')}[/yellow]")
+                    except Exception as e:
+                        console.print(f"    [red]Article generation failed for {cid}: {e}[/red]")
+
             except Exception as e:
                 console.print(f"[red]Cycle failed: {e}[/red]")
 
@@ -846,6 +880,41 @@ def cmd_watchdog(args):
     db.close()
 
 
+def cmd_article(args):
+    """Generate a long-form article for a client."""
+    from ortobahn.config import load_settings
+    from ortobahn.orchestrator import Pipeline
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+
+    errors = settings.validate(require_bluesky=False)
+    if errors:
+        for err in errors:
+            console.print(f"[red]Config error: {err}[/red]")
+        sys.exit(1)
+
+    client_id = args.client or settings.default_client_id
+
+    pipeline = Pipeline(settings, dry_run=args.dry_run if hasattr(args, "dry_run") else False)
+    try:
+        console.print(f"\n[bold cyan]ORTOBAHN[/bold cyan] - Generating article for [green]{client_id}[/green]")
+        console.print("━" * 50)
+        result = pipeline.run_article_cycle(client_id=client_id)
+
+        if result["status"] == "success":
+            console.print(f"[green]Article generated: {result['title']}[/green]")
+            console.print(f"  Word count: {result['word_count']}")
+            console.print(f"  Confidence: {result['confidence']:.2f}")
+            console.print(f"  Article ID: {result['article_id'][:8]}")
+        elif result["status"] == "skipped":
+            console.print(f"[yellow]Skipped: {result.get('error', 'unknown')}[/yellow]")
+        else:
+            console.print(f"[red]Failed: {result.get('error', 'unknown')}[/red]")
+    finally:
+        pipeline.close()
+
+
 def cmd_web(args):
     """Start the web dashboard."""
     from ortobahn.config import load_settings
@@ -1007,6 +1076,12 @@ def main():
     # watchdog
     watchdog_parser = subparsers.add_parser("watchdog", help="Run watchdog health check and auto-remediation")
     watchdog_parser.set_defaults(func=cmd_watchdog)
+
+    # article
+    article_parser = subparsers.add_parser("article", help="Generate a long-form article")
+    article_parser.add_argument("--client", type=str, help="Client ID (default: from config)")
+    article_parser.add_argument("--dry-run", action="store_true", help="Don't publish to platforms")
+    article_parser.set_defaults(func=cmd_article)
 
     # web
     web_parser = subparsers.add_parser("web", help="Start the web dashboard")

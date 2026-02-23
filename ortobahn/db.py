@@ -414,6 +414,13 @@ class Database:
             "posting_interval_hours",
             "timezone",
             "preferred_posting_hours",
+            "article_enabled",
+            "article_frequency",
+            "article_voice",
+            "article_platforms",
+            "article_topics",
+            "article_length",
+            "last_article_at",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
@@ -1280,6 +1287,128 @@ class Database:
             commit=True,
         )
         return result.rowcount if hasattr(result, "rowcount") else 0
+
+    # --- Articles ---
+
+    def save_article(self, data: dict) -> str:
+        """Save a new article draft and return its ID."""
+        aid = data.get("id") or str(uuid.uuid4())
+        self.execute(
+            """INSERT INTO articles
+               (id, client_id, run_id, title, subtitle, body_markdown, tags,
+                meta_description, topic_used, confidence, word_count, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                aid,
+                data.get("client_id", "default"),
+                data.get("run_id", ""),
+                data["title"],
+                data.get("subtitle", ""),
+                data["body_markdown"],
+                json.dumps(data.get("tags", [])),
+                data.get("meta_description", ""),
+                data.get("topic_used", ""),
+                data.get("confidence", 0.0),
+                data.get("word_count", 0),
+                data.get("status", "draft"),
+            ),
+            commit=True,
+        )
+        return aid
+
+    def get_article(self, article_id: str) -> dict | None:
+        row = self.fetchone("SELECT * FROM articles WHERE id=?", (article_id,))
+        if row and row.get("tags"):
+            row["tags"] = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
+        return row
+
+    def get_recent_articles(self, client_id: str, limit: int = 10) -> list[dict]:
+        rows = self.fetchall(
+            "SELECT * FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT ?",
+            (client_id, limit),
+        )
+        for r in rows:
+            if r.get("tags") and isinstance(r["tags"], str):
+                r["tags"] = json.loads(r["tags"])
+        return rows
+
+    def get_draft_articles(self, client_id: str | None = None) -> list[dict]:
+        query = "SELECT * FROM articles WHERE status='draft'"
+        params: list = []
+        if client_id:
+            query += " AND client_id=?"
+            params.append(client_id)
+        query += " ORDER BY created_at DESC"
+        rows = self.fetchall(query, params)
+        for r in rows:
+            if r.get("tags") and isinstance(r["tags"], str):
+                r["tags"] = json.loads(r["tags"])
+        return rows
+
+    def approve_article(self, article_id: str) -> None:
+        self.execute(
+            "UPDATE articles SET status='approved', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (article_id,),
+            commit=True,
+        )
+
+    def reject_article(self, article_id: str) -> None:
+        self.execute(
+            "UPDATE articles SET status='rejected', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (article_id,),
+            commit=True,
+        )
+
+    def update_article_body(self, article_id: str, title: str, subtitle: str, body_markdown: str) -> None:
+        word_count = len(body_markdown.split())
+        self.execute(
+            "UPDATE articles SET title=?, subtitle=?, body_markdown=?, word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (title, subtitle, body_markdown, word_count, article_id),
+            commit=True,
+        )
+
+    def save_article_publication(self, article_id: str, platform: str, status: str = "pending", **kwargs) -> str:
+        pub_id = str(uuid.uuid4())
+        self.execute(
+            """INSERT INTO article_publications
+               (id, article_id, platform, status, published_url, platform_id, error, published_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                pub_id,
+                article_id,
+                platform,
+                status,
+                kwargs.get("published_url"),
+                kwargs.get("platform_id"),
+                kwargs.get("error"),
+                kwargs.get("published_at"),
+            ),
+            commit=True,
+        )
+        return pub_id
+
+    def update_article_publication(self, pub_id: str, status: str, **kwargs) -> None:
+        fields = ["status=?"]
+        values: list = [status]
+        for key in ("published_url", "platform_id", "error", "published_at"):
+            if key in kwargs:
+                fields.append(f"{key}=?")
+                values.append(kwargs[key])
+        values.append(pub_id)
+        self.execute(f"UPDATE article_publications SET {', '.join(fields)} WHERE id=?", values, commit=True)
+
+    def get_last_article_time(self, client_id: str) -> str | None:
+        row = self.fetchone(
+            "SELECT created_at FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT 1",
+            (client_id,),
+        )
+        return row["created_at"] if row else None
+
+    def get_article_publications(self, article_id: str) -> list[dict]:
+        return self.fetchall(
+            "SELECT * FROM article_publications WHERE article_id=? ORDER BY created_at DESC",
+            (article_id,),
+        )
 
     # --- Executive Directives ---
 

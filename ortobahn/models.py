@@ -24,6 +24,8 @@ class Platform(str, Enum):
     LINKEDIN = "linkedin"
     GOOGLE_ADS = "google_ads"
     INSTAGRAM = "instagram"
+    MEDIUM = "medium"
+    SUBSTACK = "substack"
     GENERIC = "generic"
 
 
@@ -31,6 +33,7 @@ class ContentType(str, Enum):
     SOCIAL_POST = "social_post"
     AD_HEADLINE = "ad_headline"
     AD_DESCRIPTION = "ad_description"
+    ARTICLE = "article"
 
 
 class ContentStatus(str, Enum):
@@ -58,6 +61,8 @@ PLATFORM_CONSTRAINTS: dict[str, dict] = {
     Platform.LINKEDIN: {"max_chars": 3000, "hashtags": True, "tone": "professional"},
     Platform.GOOGLE_ADS: {"max_chars": 90, "hashtags": False, "tone": "action-oriented"},
     Platform.INSTAGRAM: {"max_chars": 2200, "hashtags": True, "tone": "visual-friendly"},
+    Platform.MEDIUM: {"max_chars": 100_000, "hashtags": False, "tone": "thoughtful"},
+    Platform.SUBSTACK: {"max_chars": 100_000, "hashtags": False, "tone": "personal-expert"},
     Platform.GENERIC: {"max_chars": 500, "hashtags": False, "tone": "neutral"},
 }
 
@@ -565,3 +570,40 @@ class SecurityReport(BaseModel):
     actions_taken: list[str] = Field(default_factory=list)
     credential_health: dict[str, str] = Field(default_factory=dict)
     summary: str = ""
+
+
+# --- Article Publishing models ---
+
+
+class ArticleLength(str, Enum):
+    SHORT = "short"  # ~800 words
+    MEDIUM = "medium"  # ~1500 words
+    LONG = "long"  # ~2500 words
+
+
+ARTICLE_LENGTH_TARGETS: dict[str, int] = {
+    ArticleLength.SHORT: 800,
+    ArticleLength.MEDIUM: 1500,
+    ArticleLength.LONG: 2500,
+}
+
+
+class DraftArticle(BaseModel):
+    title: str
+    subtitle: str = ""
+    body_markdown: str
+    tags: list[str] = Field(default_factory=list)
+    meta_description: str = ""
+    topic_used: str = ""
+    confidence: float = Field(ge=0.0, le=1.0, default=0.7)
+    word_count: int = 0
+
+
+class PublishedArticle(BaseModel):
+    title: str
+    platform: str
+    url: str = ""
+    platform_id: str = ""
+    published_at: datetime | None = None
+    status: str = "draft"
+    error: str = ""

@@ -7,6 +7,7 @@ import time
 import uuid
 
 from ortobahn.agents.analytics import AnalyticsAgent
+from ortobahn.agents.article_writer import ArticleWriterAgent
 from ortobahn.agents.ceo import CEOAgent
 from ortobahn.agents.cfo import CFOAgent
 from ortobahn.agents.cifix import CIFixAgent
@@ -118,6 +119,10 @@ class Pipeline:
         self.legal.thinking_budget = getattr(settings, "thinking_budget_legal", 10000)
         self.memory_store = MemoryStore(self.db)
         self.learning_engine = LearningEngine(self.db, self.memory_store)
+        self.article_writer = ArticleWriterAgent(
+            self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region
+        )
+        self.article_writer.thinking_budget = settings.thinking_budget_article_writer
 
         # Innovation modules
         self.engagement = (
@@ -845,6 +850,176 @@ class Pipeline:
 
         if processed:
             logger.info(f"  -> Processed {processed}/{len(directives)} CEO directives")
+
+    def run_article_cycle(self, client_id: str = "default") -> dict:
+        """Generate a long-form article for a client. Returns result dict."""
+        run_id = str(uuid.uuid4())
+
+        client_data = self.db.get_client(client_id)
+        if not client_data:
+            return {"run_id": run_id, "status": "error", "error": "client_not_found"}
+
+        if not client_data.get("article_enabled"):
+            return {"run_id": run_id, "status": "skipped", "error": "articles_not_enabled"}
+
+        # Subscription guard
+        if not client_data.get("internal") and client_data.get("subscription_status") not in ("active", "trialing"):
+            return {"run_id": run_id, "status": "skipped", "error": "no_active_subscription"}
+
+        client = Client(**client_data)
+        logger.info(f"=== Article cycle {run_id[:8]} started (client={client_id}) ===")
+
+        # Reuse active CEO strategy
+        strategy_data = self.db.get_active_strategy(client_id=client_id)
+        if not strategy_data:
+            # Generate a minimal strategy for article writing
+            from datetime import datetime, timedelta
+            from datetime import timezone as tz
+
+            from ortobahn.models import Strategy
+
+            strategy = Strategy(
+                themes=["industry insights"],
+                tone=client.brand_voice or "professional",
+                goals=["thought leadership"],
+                content_guidelines="Write insightful long-form content",
+                posting_frequency="weekly",
+                valid_until=datetime.now(tz.utc) + timedelta(days=7),
+                client_id=client_id,
+            )
+        else:
+            from ortobahn.models import Strategy
+
+            strategy = Strategy(**strategy_data)
+
+        # Gather context
+        recent_articles = self.db.get_recent_articles(client_id, limit=10)
+        top_posts = self.db.get_recent_posts_with_metrics(limit=10, client_id=client_id)
+
+        try:
+            article = self.article_writer.run(
+                run_id=run_id,
+                strategy=strategy,
+                client=client,
+                recent_articles=recent_articles,
+                top_social_posts=top_posts,
+            )
+
+            # Save to DB
+            article_id = self.db.save_article(
+                {
+                    "client_id": client_id,
+                    "run_id": run_id,
+                    "title": article.title,
+                    "subtitle": article.subtitle,
+                    "body_markdown": article.body_markdown,
+                    "tags": article.tags,
+                    "meta_description": article.meta_description,
+                    "topic_used": article.topic_used,
+                    "confidence": article.confidence,
+                    "word_count": article.word_count,
+                    "status": "draft",
+                }
+            )
+            logger.info(
+                f"  Article saved: '{article.title}' ({article.word_count}w, confidence={article.confidence:.2f})"
+            )
+
+            # Auto-publish if enabled and confidence is high enough
+            if (
+                client_data.get("auto_publish")
+                and article.confidence >= self.settings.article_confidence_threshold
+                and not self.dry_run
+            ):
+                pub_results = self._publish_article(article_id, client_id)
+                if any(r["status"] == "published" for r in pub_results):
+                    self.db.execute(
+                        "UPDATE articles SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (article_id,),
+                        commit=True,
+                    )
+                    logger.info(f"  Article auto-published to {len(pub_results)} platform(s)")
+
+            # Update last_article_at
+            self.db.update_client(client_id, {"last_article_at": "CURRENT_TIMESTAMP"})
+
+            return {
+                "run_id": run_id,
+                "status": "success",
+                "article_id": article_id,
+                "title": article.title,
+                "word_count": article.word_count,
+                "confidence": article.confidence,
+            }
+        except Exception as e:
+            logger.error(f"Article cycle failed: {e}")
+            return {"run_id": run_id, "status": "error", "error": str(e)}
+
+    def _publish_article(self, article_id: str, client_id: str) -> list[dict]:
+        """Publish an article to all configured platforms. Returns list of results."""
+        article = self.db.get_article(article_id)
+        if not article:
+            return []
+
+        client_data = self.db.get_client(client_id)
+        if not client_data:
+            return []
+
+        # Determine target platforms
+        platforms_str = client_data.get("article_platforms", "")
+        if not platforms_str:
+            return []
+        target_platforms = [p.strip() for p in platforms_str.split(",") if p.strip()]
+
+        # Build article platform clients
+        results = []
+        if self.settings.secret_key:
+            from ortobahn.credentials import build_article_clients
+
+            article_clients = build_article_clients(self.db, client_id, self.settings.secret_key, self.settings)
+        else:
+            article_clients = {}
+
+        from datetime import datetime
+        from datetime import timezone as tz
+
+        for platform in target_platforms:
+            # Map platform name to client key
+            client_key = platform
+            if platform == "linkedin":
+                client_key = "linkedin_article"
+
+            pub_client = article_clients.get(client_key)
+            if not pub_client:
+                logger.warning(f"No article client for platform '{platform}', skipping")
+                pub_id = self.db.save_article_publication(
+                    article_id, platform, status="skipped", error="no_credentials"
+                )
+                results.append({"platform": platform, "status": "skipped", "pub_id": pub_id})
+                continue
+
+            pub_id = self.db.save_article_publication(article_id, platform, status="pending")
+            try:
+                url, platform_id = pub_client.post(
+                    title=article["title"],
+                    body_markdown=article["body_markdown"],
+                    tags=article.get("tags", []),
+                )
+                self.db.update_article_publication(
+                    pub_id,
+                    status="published",
+                    published_url=url,
+                    platform_id=platform_id,
+                    published_at=datetime.now(tz.utc).isoformat(),
+                )
+                logger.info(f"  Published article to {platform}: {url}")
+                results.append({"platform": platform, "status": "published", "url": url, "pub_id": pub_id})
+            except Exception as e:
+                self.db.update_article_publication(pub_id, status="failed", error=str(e))
+                logger.error(f"  Failed to publish article to {platform}: {e}")
+                results.append({"platform": platform, "status": "failed", "error": str(e), "pub_id": pub_id})
+
+        return results
 
     def close(self):
         self.db.close()

@@ -222,6 +222,18 @@ async def tenant_settings_update(request: Request, client: AuthClient):
                 "rss_feeds": form.get("rss_feeds", ""),
             },
         )
+    elif section == "article_settings":
+        db.update_client(
+            client["id"],
+            {
+                "article_enabled": 1 if form.get("article_enabled") == "on" else 0,
+                "article_frequency": form.get("article_frequency", "weekly"),
+                "article_voice": form.get("article_voice", ""),
+                "article_platforms": form.get("article_platforms", ""),
+                "article_topics": form.get("article_topics", ""),
+                "article_length": form.get("article_length", "medium"),
+            },
+        )
     else:
         db.update_client(
             client["id"],
@@ -303,6 +315,136 @@ async def tenant_subscribe(request: Request, client: AuthClient):
     )
 
     return RedirectResponse(str(session.url or "/my/dashboard"), status_code=303)
+
+
+@router.get("/articles", response_class=HTMLResponse)
+async def tenant_articles(request: Request, client: AuthClient):
+    """List articles with status badges."""
+    db = request.app.state.db
+    articles = db.get_recent_articles(client["id"], limit=50)
+
+    if not articles:
+        return HTMLResponse(
+            '<div style="text-align:center;padding:2rem;opacity:0.6">'
+            "No articles yet. Generate your first article from the dashboard."
+            "</div>"
+        )
+
+    parts = ['<div class="glass-card" style="padding:1rem">']
+    for a in articles:
+        badge = _badge(a.get("status", "draft"))
+        title = _escape(a.get("title", "Untitled"))
+        wc = a.get("word_count", 0)
+        conf = a.get("confidence", 0)
+        aid = a["id"][:8]
+        parts.append(
+            f'<div style="display:flex;justify-content:between;align-items:center;padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.1)">'
+            f'<div style="flex:1"><strong>{title}</strong><br>'
+            f"<small>{wc}w &middot; confidence: {conf:.2f} &middot; {aid}</small></div>"
+            f"<div>{badge}"
+        )
+        if a.get("status") == "draft":
+            parts.append(
+                f' <form method="post" action="/my/articles/{a["id"]}/approve" style="display:inline">'
+                f'<button class="btn btn-sm" type="submit">Approve</button></form>'
+                f' <form method="post" action="/my/articles/{a["id"]}/reject" style="display:inline">'
+                f'<button class="btn btn-sm btn-danger" type="submit">Reject</button></form>'
+                f' <form method="post" action="/my/articles/{a["id"]}/publish" style="display:inline">'
+                f'<button class="btn btn-sm btn-primary" type="submit">Publish</button></form>'
+            )
+        parts.append("</div></div>")
+    parts.append("</div>")
+    return HTMLResponse("".join(parts))
+
+
+@router.post("/articles/{article_id}/approve")
+async def tenant_approve_article(request: Request, article_id: str, client: AuthClient):
+    db = request.app.state.db
+    article = db.get_article(article_id)
+    if not article or article.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404, detail="Article not found")
+    db.approve_article(article_id)
+    return RedirectResponse("/my/articles", status_code=303)
+
+
+@router.post("/articles/{article_id}/reject")
+async def tenant_reject_article(request: Request, article_id: str, client: AuthClient):
+    db = request.app.state.db
+    article = db.get_article(article_id)
+    if not article or article.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404, detail="Article not found")
+    db.reject_article(article_id)
+    return RedirectResponse("/my/articles", status_code=303)
+
+
+@router.post("/articles/{article_id}/edit")
+async def tenant_edit_article(request: Request, article_id: str, client: AuthClient):
+    db = request.app.state.db
+    article = db.get_article(article_id)
+    if not article or article.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404, detail="Article not found")
+    form = await request.form()
+    db.update_article_body(
+        article_id,
+        title=form.get("title", article["title"]),
+        subtitle=form.get("subtitle", article.get("subtitle", "")),
+        body_markdown=form.get("body_markdown", article["body_markdown"]),
+    )
+    return RedirectResponse("/my/articles", status_code=303)
+
+
+@router.post("/articles/{article_id}/publish")
+async def tenant_publish_article(
+    request: Request, article_id: str, background_tasks: BackgroundTasks, client: AuthClient
+):
+    """Approve and publish an article to configured platforms."""
+    db = request.app.state.db
+    settings = request.app.state.settings
+    article = db.get_article(article_id)
+    if not article or article.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    db.approve_article(article_id)
+
+    def _do_publish():
+        from ortobahn.orchestrator import Pipeline
+
+        pipeline = Pipeline(settings)
+        try:
+            pipeline._publish_article(article_id, client["id"])
+            pipeline.db.execute(
+                "UPDATE articles SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (article_id,),
+                commit=True,
+            )
+        except Exception as e:
+            logger.error(f"Article publish failed: {e}")
+        finally:
+            pipeline.close()
+
+    background_tasks.add_task(_do_publish)
+    return RedirectResponse("/my/articles", status_code=303)
+
+
+@router.post("/generate-article")
+async def tenant_generate_article(request: Request, background_tasks: BackgroundTasks, client: AuthClient):
+    """Trigger one-shot article generation."""
+    settings = request.app.state.settings
+
+    def _do_generate():
+        from ortobahn.orchestrator import Pipeline
+
+        pipeline = Pipeline(settings)
+        try:
+            result = pipeline.run_article_cycle(client_id=client["id"])
+            logger.info(f"Article generation for {client['id']}: {result['status']}")
+        except Exception as e:
+            logger.error(f"Article generation failed for {client['id']}: {e}")
+        finally:
+            pipeline.close()
+
+    background_tasks.add_task(_do_generate)
+    return RedirectResponse("/my/articles", status_code=303)
 
 
 @router.post("/billing")

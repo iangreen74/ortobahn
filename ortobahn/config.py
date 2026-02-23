@@ -158,6 +158,10 @@ class Settings:
     # Dynamic posting cadence
     dynamic_cadence_enabled: bool = True
 
+    # Article generation
+    thinking_budget_article_writer: int = 16_000
+    article_confidence_threshold: float = 0.8
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -293,4 +297,6 @@ def load_settings() -> Settings:
         publish_retry_enabled=os.environ.get("PUBLISH_RETRY_ENABLED", "true").lower() in ("true", "1", "yes"),
         publish_max_retries=int(os.environ.get("PUBLISH_MAX_RETRIES", "2")),
         dynamic_cadence_enabled=os.environ.get("DYNAMIC_CADENCE_ENABLED", "true").lower() in ("true", "1", "yes"),
+        thinking_budget_article_writer=int(os.environ.get("THINKING_BUDGET_ARTICLE_WRITER", "16000")),
+        article_confidence_threshold=float(os.environ.get("ARTICLE_CONFIDENCE_THRESHOLD", "0.8")),
     )

@@ -75,6 +75,44 @@ def get_all_platform_credentials(db: Database, client_id: str, secret_key: str) 
     return {row["platform"]: decrypt_credentials(row["credentials_encrypted"], secret_key) for row in rows}
 
 
+def build_article_clients(db: Database, client_id: str, secret_key: str, settings) -> dict:
+    """Build article platform clients from per-tenant credentials.
+
+    Returns dict: {"medium": client|None, "substack": client|None, "linkedin_article": client|None}
+    """
+    from ortobahn.integrations.linkedin_articles import LinkedInArticleClient
+    from ortobahn.integrations.medium import MediumClient
+    from ortobahn.integrations.substack import SubstackClient
+
+    all_creds = get_all_platform_credentials(db, client_id, secret_key)
+    clients: dict = {"medium": None, "substack": None, "linkedin_article": None}
+
+    # Medium
+    med_creds = all_creds.get("medium")
+    if med_creds and med_creds.get("integration_token"):
+        clients["medium"] = MediumClient(integration_token=med_creds["integration_token"])
+
+    # Substack
+    sub_creds = all_creds.get("substack")
+    if sub_creds and sub_creds.get("subdomain"):
+        clients["substack"] = SubstackClient(
+            subdomain=sub_creds["subdomain"],
+            email=sub_creds.get("email", ""),
+            password=sub_creds.get("password", ""),
+            session_cookie=sub_creds.get("session_cookie", ""),
+        )
+
+    # LinkedIn Articles (reuses LinkedIn credentials)
+    li_creds = all_creds.get("linkedin")
+    if li_creds and li_creds.get("access_token") and li_creds.get("person_urn"):
+        clients["linkedin_article"] = LinkedInArticleClient(
+            access_token=li_creds["access_token"],
+            person_urn=li_creds["person_urn"],
+        )
+
+    return clients
+
+
 def build_platform_clients(db: Database, client_id: str, secret_key: str, settings) -> dict:
     """Build platform clients from per-tenant credentials, falling back to global env vars.
 

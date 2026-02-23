@@ -716,6 +716,68 @@ def _migration_025_add_failure_category(db: Database) -> None:
     _safe_add_column(db, "posts", "failure_category TEXT")
 
 
+def _migration_026_add_articles(db: Database) -> None:
+    """Add articles and article_publications tables for long-form content publishing."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS articles (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default' REFERENCES clients(id),
+            run_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            subtitle TEXT NOT NULL DEFAULT '',
+            body_markdown TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            meta_description TEXT NOT NULL DEFAULT '',
+            topic_used TEXT NOT NULL DEFAULT '',
+            confidence REAL NOT NULL DEFAULT 0.0,
+            word_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_articles_client_status ON articles(client_id, status)",
+        commit=True,
+    )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS article_publications (
+            id TEXT PRIMARY KEY,
+            article_id TEXT NOT NULL REFERENCES articles(id),
+            platform TEXT NOT NULL,
+            published_url TEXT,
+            platform_id TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            published_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_article_pub_article ON article_publications(article_id)",
+        commit=True,
+    )
+
+    # Client article settings
+    for col in [
+        "article_enabled INTEGER NOT NULL DEFAULT 0",
+        "article_frequency TEXT NOT NULL DEFAULT 'weekly'",
+        "article_voice TEXT NOT NULL DEFAULT ''",
+        "article_platforms TEXT NOT NULL DEFAULT ''",
+        "article_topics TEXT NOT NULL DEFAULT ''",
+        "article_length TEXT NOT NULL DEFAULT 'medium'",
+        "last_article_at TIMESTAMP",
+    ]:
+        _safe_add_column(db, "clients", col)
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -742,6 +804,7 @@ MIGRATIONS = {
     23: _migration_023_add_intelligence_upgrades,
     24: _migration_024_add_engagement_serialization_timing,
     25: _migration_025_add_failure_category,
+    26: _migration_026_add_articles,
 }
 
 

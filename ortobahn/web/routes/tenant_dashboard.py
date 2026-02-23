@@ -53,13 +53,12 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             client = db.get_client(client["id"])
 
     posts = db.get_recent_posts_with_metrics(limit=20, client_id=client["id"])
-    strategy = db.get_active_strategy(client_id=client["id"])
-    runs = db.get_recent_runs(limit=5)
-    # Filter runs to this client (pipeline_runs have client_id column)
-    client_runs = [r for r in runs if r.get("client_id") == client["id"]]
 
     total_published = len([p for p in posts if p.get("status") == "published"])
-    total_drafts = len(db.get_drafts_for_review(client_id=client["id"]))
+    total_engagement = sum(
+        (p.get("like_count") or 0) + (p.get("repost_count") or 0)
+        for p in posts if p.get("status") == "published"
+    )
 
     # Check connected platforms
     connected_platforms = []
@@ -85,21 +84,37 @@ async def tenant_dashboard(request: Request, client: AuthClient):
 
     credential_issue = client.get("status") == "credential_issue"
 
+    # Time-based greeting
+    import time
+    hour = int(time.strftime("%H"))
+    if hour < 12:
+        greeting = "Good morning"
+    elif hour < 17:
+        greeting = "Good afternoon"
+    else:
+        greeting = "Good evening"
+
+    # Published today count
+    today_cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()
+    today_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM posts WHERE status='published' AND client_id=? AND published_at >= ?",
+        (client["id"], today_cutoff),
+    )
+    published_today = today_row["c"] if today_row else 0
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
             "request": request,
             "client": client,
-            "posts": posts,
-            "strategy": strategy,
-            "recent_runs": client_runs,
             "total_published": total_published,
-            "total_drafts": total_drafts,
+            "total_engagement": total_engagement,
             "connected_platforms": connected_platforms,
-            "auto_publish": client.get("auto_publish", 0),
             "trial_days_remaining": trial_days_remaining,
             "subscription_status": client.get("subscription_status", "none"),
             "credential_issue": credential_issue,
+            "greeting": greeting,
+            "published_today": published_today,
         },
     )
 
@@ -251,16 +266,15 @@ async def tenant_generate(
     background_tasks: BackgroundTasks,
     client: AuthClient,
     platforms: str = Form("bluesky"),
-    auto_publish: str = Form(""),
 ):
-    """Trigger a pipeline run for this tenant."""
+    """Trigger a pipeline run for this tenant — always auto-publishes."""
     settings = request.app.state.settings
     platform_list = [Platform(p.strip()) for p in platforms.split(",") if p.strip()]
-    do_publish = auto_publish == "true"
 
-    background_tasks.add_task(_run_tenant_pipeline, settings, client["id"], platform_list, do_publish)
+    # Always publish — the AI is autonomous
+    background_tasks.add_task(_run_tenant_pipeline, settings, client["id"], platform_list, True)
 
-    return RedirectResponse("/my/dashboard", status_code=303)
+    return RedirectResponse("/my/dashboard?msg=creating", status_code=303)
 
 
 def _publish_drafts(settings, client_id: str):
@@ -606,17 +620,19 @@ async def tenant_publish_article(
 async def tenant_generate_article(request: Request, background_tasks: BackgroundTasks, client: AuthClient):
     """Trigger one-shot article generation."""
     settings = request.app.state.settings
+    db = request.app.state.db
 
     # Pre-check: ensure articles are enabled for this client
     if not client.get("article_enabled"):
-        # Try enabling it (seed may not have run yet)
-        db = request.app.state.db
         db.execute("UPDATE clients SET article_enabled=1 WHERE id=?", (client["id"],), commit=True)
-        # Refresh client dict
         client = db.get_client(client["id"]) or client
 
     if not settings.anthropic_api_key:
         return RedirectResponse("/my/articles?msg=error&detail=no_api_key", status_code=303)
+
+    # Ensure subscription/internal status allows article generation
+    if not client.get("internal") and client.get("subscription_status") not in ("active", "trialing"):
+        return RedirectResponse("/my/articles?msg=error&detail=no_subscription", status_code=303)
 
     def _do_generate():
         from ortobahn.orchestrator import Pipeline
@@ -624,9 +640,16 @@ async def tenant_generate_article(request: Request, background_tasks: Background
         pipeline = Pipeline(settings)
         try:
             result = pipeline.run_article_cycle(client_id=client["id"])
-            logger.info(f"Article generation for {client['id']}: {result['status']}")
+            status = result.get("status", "unknown")
+            if status == "success":
+                logger.info(f"Article generated for {client['id']}: {result.get('title', '')}")
+            elif status in ("skipped", "error"):
+                reason = result.get("error", "unknown")
+                logger.warning(f"Article generation {status} for {client['id']}: {reason}")
+            else:
+                logger.info(f"Article generation for {client['id']}: {status}")
         except Exception as e:
-            logger.error(f"Article generation failed for {client['id']}: {e}")
+            logger.error(f"Article generation failed for {client['id']}: {e}", exc_info=True)
         finally:
             pipeline.close()
 
@@ -855,22 +878,154 @@ async def tenant_kpi_partial(request: Request, client: AuthClient):
     db = request.app.state.db
     posts = db.get_recent_posts_with_metrics(limit=100, client_id=client["id"])
     total_published = len([p for p in posts if p.get("status") == "published"])
-    total_drafts = len(db.get_drafts_for_review(client_id=client["id"]))
-    auto_publish = client.get("auto_publish", 0)
-    status = client.get("status") or "active"
 
-    auto_pub_label = "Auto-publish: enabled" if auto_publish else "Auto-publish: off (drafts only)"
+    # Total engagement
+    total_engagement = sum(
+        (p.get("like_count") or 0) + (p.get("repost_count") or 0)
+        for p in posts if p.get("status") == "published"
+    )
+
+    # Connected platforms
+    connected = []
+    for plat in ("bluesky", "twitter", "linkedin"):
+        row = db.fetchone(
+            "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
+            (client["id"], plat),
+        )
+        if row:
+            connected.append(plat)
 
     html = (
-        "<article><header>Published Posts</header>"
-        f"<p><strong>{total_published}</strong></p></article>"
-        "<article><header>Drafts Pending</header>"
-        f"<p><strong>{total_drafts}</strong></p></article>"
-        "<article><header>Status</header>"
-        f"<p><strong>{_escape(status)}</strong></p>"
-        f"<small>{auto_pub_label}</small></article>"
+        '<article class="kpi-card">'
+        f'<div class="kpi-value">{total_published}</div>'
+        '<div class="kpi-label">Published</div></article>'
+        '<article class="kpi-card">'
+        f'<div class="kpi-value">{total_engagement}</div>'
+        '<div class="kpi-label">Engagement</div></article>'
+        '<article class="kpi-card">'
+        f'<div class="kpi-value">{len(connected)}</div>'
+        '<div class="kpi-label">Platforms</div></article>'
     )
     return HTMLResponse(html)
+
+
+@router.get("/api/partials/activity", response_class=HTMLResponse)
+async def tenant_activity_feed(request: Request, client: AuthClient):
+    """Return recent activity as a beautiful feed."""
+    db = request.app.state.db
+    cid = client["id"]
+
+    # Recent published posts (recent by published_at or created_at)
+    published = db.fetchall(
+        "SELECT p.text, p.platform, p.published_at, p.status, p.created_at,"
+        " COALESCE(m.like_count,0) as likes, COALESCE(m.repost_count,0) as reposts"
+        " FROM posts p LEFT JOIN metrics m ON p.id = m.post_id"
+        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " WHERE p.client_id=? AND p.status='published'"
+        " ORDER BY COALESCE(p.published_at, p.created_at) DESC LIMIT 10",
+        (cid,),
+    )
+
+    # Recent articles
+    articles = db.fetchall(
+        "SELECT title, status, word_count, created_at FROM articles"
+        " WHERE client_id=? ORDER BY created_at DESC LIMIT 3",
+        (cid,),
+    )
+
+    # Recent pipeline runs
+    runs = db.fetchall(
+        "SELECT status, posts_published, started_at, completed_at FROM pipeline_runs"
+        " WHERE client_id=? ORDER BY started_at DESC LIMIT 3",
+        (cid,),
+    )
+
+    if not published and not articles and not runs:
+        return HTMLResponse(
+            '<div class="activity-empty">'
+            '<p>Your AI is ready to create. Click <strong>Create Content</strong> to get started.</p>'
+            '</div>'
+        )
+
+    parts = []
+
+    for p in published:
+        text = _escape((p.get("text") or "")[:120])
+        if len(p.get("text") or "") > 120:
+            text += "..."
+        platform = _escape(p.get("platform") or "bluesky")
+        likes = p.get("likes") or 0
+        reposts = p.get("reposts") or 0
+        ts = _escape(str(p.get("published_at") or p.get("created_at") or "")[:16])
+        engagement = ""
+        if likes or reposts:
+            engagement = (
+                f'<span class="activity-stats">'
+                f'{likes} like{"s" if likes != 1 else ""}'
+                f' &middot; {reposts} repost{"s" if reposts != 1 else ""}'
+                f'</span>'
+            )
+        parts.append(
+            f'<div class="activity-item">'
+            f'<div class="activity-dot published"></div>'
+            f'<div class="activity-body">'
+            f'<div class="activity-header">'
+            f'<span class="badge {_escape(platform)}">{platform}</span>'
+            f'<span class="activity-time">{ts}</span>'
+            f'</div>'
+            f'<p class="activity-text">{text}</p>'
+            f'{engagement}'
+            f'</div></div>'
+        )
+
+    for a in articles:
+        title = _escape(a.get("title") or "Untitled")
+        status = a.get("status") or "draft"
+        words = a.get("word_count") or 0
+        ts = _escape(str(a.get("created_at") or "")[:16])
+        icon_class = "published" if status == "published" else "draft" if status == "draft" else "running"
+        parts.append(
+            f'<div class="activity-item">'
+            f'<div class="activity-dot {icon_class}"></div>'
+            f'<div class="activity-body">'
+            f'<div class="activity-header">'
+            f'<span class="badge draft">article</span>'
+            f'<span class="activity-time">{ts}</span>'
+            f'</div>'
+            f'<p class="activity-text"><strong>{title}</strong> &mdash; {words} words ({status})</p>'
+            f'</div></div>'
+        )
+
+    for r in runs:
+        status = r.get("status") or "unknown"
+        count = r.get("posts_published") or 0
+        ts = _escape(str(r.get("started_at") or "")[:16])
+        if status == "completed" and count > 0:
+            parts.append(
+                f'<div class="activity-item">'
+                f'<div class="activity-dot published"></div>'
+                f'<div class="activity-body">'
+                f'<div class="activity-header">'
+                f'<span class="badge completed">pipeline</span>'
+                f'<span class="activity-time">{ts}</span>'
+                f'</div>'
+                f'<p class="activity-text">Created and published {count} post{"s" if count != 1 else ""}</p>'
+                f'</div></div>'
+            )
+        elif status == "failed":
+            parts.append(
+                f'<div class="activity-item">'
+                f'<div class="activity-dot failed"></div>'
+                f'<div class="activity-body">'
+                f'<div class="activity-header">'
+                f'<span class="badge failed">pipeline</span>'
+                f'<span class="activity-time">{ts}</span>'
+                f'</div>'
+                f'<p class="activity-text">Pipeline run encountered an issue</p>'
+                f'</div></div>'
+            )
+
+    return HTMLResponse("".join(parts[:12]))
 
 
 @router.get("/api/partials/recent-posts", response_class=HTMLResponse)

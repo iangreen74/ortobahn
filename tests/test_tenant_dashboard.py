@@ -195,10 +195,10 @@ class TestDataScoping:
         # Create a post for a different client
         db.save_post(text="Other post", run_id="r1", status="published", client_id="default")
 
-        resp = await tenant_client.get("/my/dashboard")
+        # Activity feed is loaded via HTMX; check the endpoint directly
+        resp = await tenant_client.get("/my/api/partials/activity")
         assert "My post" in resp.text
-        # The other client's post should NOT appear in this tenant's dashboard
-        # (depends on scoping in get_recent_posts_with_metrics)
+        # The other client's post should NOT appear in this tenant's activity feed
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +377,7 @@ class TestTenantGenerate:
     async def test_generate_redirects(self, tenant_client):
         resp = await tenant_client.post(
             "/my/generate",
-            data={"platforms": "bluesky", "auto_publish": ""},
+            data={"platforms": "bluesky"},
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -649,7 +649,7 @@ class TestTenantCredentialIsolation:
 
     @pytest.mark.asyncio
     async def test_tenant_only_sees_own_posts(self, app, tenant_client):
-        """Dashboard only shows posts belonging to the authenticated tenant."""
+        """Activity feed only shows posts belonging to the authenticated tenant."""
         db = app.state.db
         client_id = tenant_client._test_client_id
 
@@ -662,7 +662,8 @@ class TestTenantCredentialIsolation:
         db.save_post(text="Other client secret post", run_id="r2", status="published", client_id=other_id)
         db.save_post(text="Other client draft", run_id="r2", status="draft", client_id=other_id)
 
-        resp = await tenant_client.get("/my/dashboard")
+        # Activity feed is loaded via HTMX; check the endpoint directly
+        resp = await tenant_client.get("/my/api/partials/activity")
         assert resp.status_code == 200
         assert "My tenant post 1" in resp.text
         # The other client's post must not appear

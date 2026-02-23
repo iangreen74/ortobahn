@@ -101,7 +101,7 @@ class TestSubstackClient:
         assert mock_post.call_count == 2
 
     @patch("ortobahn.integrations.substack.httpx.post")
-    def test_publish_failure_leaves_as_draft(self, mock_post, substack_client):
+    def test_publish_failure_raises(self, mock_post, substack_client):
         # Draft succeeds
         mock_draft_resp = MagicMock()
         mock_draft_resp.json.return_value = {"id": "draft-789", "slug": "fail-pub"}
@@ -110,12 +110,9 @@ class TestSubstackClient:
         # Publish fails
         mock_post.side_effect = [mock_draft_resp, RuntimeError("Publish failed")]
 
-        url, draft_id = substack_client.post(
-            title="Test",
-            body_markdown="Body",
-            publish=True,
-        )
-
-        # Should still return the draft URL/ID
-        assert draft_id == "draft-789"
-        assert "fail-pub" in url
+        with pytest.raises(RuntimeError, match="Publish failed"):
+            substack_client.post(
+                title="Test",
+                body_markdown="Body",
+                publish=True,
+            )

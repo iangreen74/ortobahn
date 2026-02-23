@@ -802,6 +802,12 @@ def _migration_027_add_webhooks(db: Database) -> None:
     )
 
 
+def _migration_028_add_article_pub_recovery(db: Database) -> None:
+    """Add failure_category and retry_count to article_publications for error recovery."""
+    _safe_add_column(db, "article_publications", "failure_category TEXT")
+    _safe_add_column(db, "article_publications", "retry_count INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -830,6 +836,7 @@ MIGRATIONS = {
     25: _migration_025_add_failure_category,
     26: _migration_026_add_articles,
     27: _migration_027_add_webhooks,
+    28: _migration_028_add_article_pub_recovery,
 }
 
 
@@ -848,4 +855,135 @@ def run_migrations(db: Database) -> int:
             _set_schema_version(db, version)
             logger.info(f"Migration {version} complete.")
 
+    validate_schema(db)
     return latest
+
+
+# ---------------------------------------------------------------------------
+# Schema validation
+# ---------------------------------------------------------------------------
+
+# Expected tables and a subset of their columns (those added by migrations).
+# Core tables (strategies, posts, metrics, agent_logs, pipeline_runs) are
+# created by Database._create_tables(); the rest come from migrations.
+EXPECTED_SCHEMA: dict[str, list[str]] = {
+    # Core tables
+    "strategies": ["id", "client_id"],
+    "posts": [
+        "id",
+        "client_id",
+        "platform",
+        "content_type",
+        "platform_uri",
+        "platform_id",
+        "ab_group",
+        "ab_pair_id",
+        "error_message",
+        "series_id",
+        "series_part",
+        "failure_category",
+    ],
+    "metrics": ["id", "post_id"],
+    "agent_logs": ["id", "cache_creation_input_tokens", "cache_read_input_tokens"],
+    "pipeline_runs": [
+        "id",
+        "client_id",
+        "total_cache_creation_tokens",
+        "total_cache_read_tokens",
+    ],
+    # Migration 001
+    "clients": [
+        "id",
+        "name",
+        "email",
+        "status",
+        "products",
+        "monthly_budget",
+        "internal",
+        "auto_publish",
+        "target_platforms",
+        "cognito_sub",
+        "trial_ends_at",
+        "news_category",
+        "preferred_posting_hours",
+        "article_enabled",
+    ],
+    # Migration 007
+    "api_keys": ["id", "client_id", "key_hash"],
+    "platform_credentials": ["id", "client_id", "platform", "last_rotated_at"],
+    # Migration 008
+    "stripe_events": ["id", "event_type"],
+    # Migration 009
+    "engineering_tasks": ["id", "title"],
+    "code_changes": ["id", "task_id"],
+    "cto_runs": ["id", "task_id"],
+    # Migration 010
+    "agent_memories": ["id", "agent_name"],
+    "confidence_calibration": ["id", "post_id"],
+    "ab_experiments": ["id", "client_id"],
+    "agent_goals": ["id", "agent_name"],
+    "reflection_reports": ["id", "run_id"],
+    # Migration 011
+    "ci_fix_attempts": ["id", "run_id"],
+    # Migration 018
+    "health_checks": ["id", "probe"],
+    "watchdog_remediations": ["id", "finding_type"],
+    # Migration 020
+    "chat_messages": ["id", "client_id"],
+    # Migration 021
+    "legal_documents": ["id", "client_id"],
+    "access_logs": ["id", "path"],
+    "executive_directives": ["id", "run_id"],
+    # Migration 022
+    "deployments": ["id", "sha"],
+    # Migration 024
+    "engagement_replies": ["id", "run_id"],
+    "content_series": ["id", "client_id"],
+    "topic_velocity": ["id", "topic_title"],
+    # Migration 026
+    "articles": ["id", "client_id"],
+    "article_publications": ["id", "article_id", "failure_category", "retry_count"],
+    # Migration 027
+    "webhooks": ["id", "client_id"],
+    # Internal
+    "schema_version": ["version"],
+}
+
+
+def _get_table_columns(db: Database, table: str) -> set[str]:
+    """Return the set of column names for *table*, or an empty set if the table doesn't exist."""
+    try:
+        rows = db.fetchall(f"PRAGMA table_info({table})")
+        return {r["name"] for r in rows}
+    except Exception:
+        return set()
+
+
+def validate_schema(db: Database) -> list[str]:
+    """Check that the database has all expected tables and columns.
+
+    Logs a WARNING for each missing table or column.  Returns a list of
+    human-readable problem descriptions (empty when everything is fine).
+    """
+    problems: list[str] = []
+
+    for table, expected_cols in EXPECTED_SCHEMA.items():
+        columns = _get_table_columns(db, table)
+        if not columns:
+            msg = f"Missing table: {table}"
+            logger.warning(msg)
+            problems.append(msg)
+            continue
+
+        for col in expected_cols:
+            if col not in columns:
+                msg = f"Missing column: {table}.{col}"
+                logger.warning(msg)
+                problems.append(msg)
+
+    return problems
+
+
+def get_schema_version(db: Database) -> int:
+    """Return the current migration version number (public API)."""
+    return _get_schema_version(db)

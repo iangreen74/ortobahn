@@ -7,30 +7,18 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from ortobahn.web.utils import PIPELINE_STEPS, badge, escape, step_index
+
 router = APIRouter()
 
 # Only show data for internal clients.
 INTERNAL_IDS = ("default", "vaultscaler", "ortobahn")
 _IN_CLAUSE = ",".join("?" for _ in INTERNAL_IDS)
 
-PIPELINE_STEPS = [
-    "sre",
-    "cifix",
-    "analytics",
-    "reflection",
-    "trends",
-    "support",
-    "security",
-    "legal",
-    "ceo",
-    "strategist",
-    "creator",
-    "publisher",
-    "cfo",
-    "ops",
-    "marketing",
-    "learning",
-]
+# Backwards-compatible aliases for the old private names.
+_badge = badge
+_escape = escape
+_step_index = step_index
 
 _CACHE_HEADERS = {"Cache-Control": "public, max-age=15"}
 
@@ -91,24 +79,6 @@ def _fmt_tokens(n: int | None) -> str:
     if n >= 1_000:
         return f"{n / 1_000:.1f}k"
     return str(n)
-
-
-def _badge(status: str) -> str:
-    return f'<span class="badge {status}">{status}</span>'
-
-
-def _step_index(agent_name: str) -> int:
-    """Map agent name to pipeline step number (1-based)."""
-    name = agent_name.lower().replace("_agent", "").replace("agent", "").strip()
-    for i, step in enumerate(PIPELINE_STEPS):
-        if step in name or name in step:
-            return i + 1
-    return 0
-
-
-def _escape(text: str) -> str:
-    """Minimal HTML escaping."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 # ---------------------------------------------------------------------------

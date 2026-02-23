@@ -13,7 +13,10 @@ from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
 from ortobahn.db import to_datetime
 from ortobahn.models import Platform
-from ortobahn.web.routes.glass import PIPELINE_STEPS, _badge, _escape, _step_index
+from ortobahn.web.utils import PIPELINE_STEPS
+from ortobahn.web.utils import badge as _badge
+from ortobahn.web.utils import escape as _escape
+from ortobahn.web.utils import step_index as _step_index
 
 logger = logging.getLogger("ortobahn.web.tenant")
 
@@ -436,7 +439,7 @@ async def tenant_subscribe(request: Request, client: AuthClient):
 
 @router.get("/articles", response_class=HTMLResponse)
 async def tenant_articles(request: Request, client: AuthClient):
-    """List articles with status badges."""
+    """List articles with status badges and publication errors."""
     db = request.app.state.db
     articles = db.get_recent_articles(client["id"], limit=50)
 
@@ -468,6 +471,17 @@ async def tenant_articles(request: Request, client: AuthClient):
                 f'<button class="btn btn-sm btn-danger" type="submit">Reject</button></form>'
                 f' <form method="post" action="/my/articles/{a["id"]}/publish" style="display:inline">'
                 f'<button class="btn btn-sm btn-primary" type="submit">Publish</button></form>'
+            )
+        # Show publication errors for this article
+        pubs = db.get_article_publications(a["id"])
+        failed_pubs = [p for p in pubs if p.get("status") == "failed"]
+        for fp in failed_pubs:
+            platform_name = _escape(fp.get("platform", "unknown"))
+            error_msg = _escape((fp.get("error") or "Unknown error")[:150])
+            category = _escape(fp.get("failure_category") or "")
+            category_label = f" [{category}]" if category else ""
+            parts.append(
+                f'<br><small style="color:#ef4444">Failed on {platform_name}{category_label}: {error_msg}</small>'
             )
         parts.append("</div></div>")
     parts.append("</div>")

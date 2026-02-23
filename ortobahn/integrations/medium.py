@@ -62,6 +62,42 @@ class MediumClient:
         return data["url"], data["id"]
 
     def get_post(self, post_id: str) -> dict | None:
-        """Verify a post exists. Medium API v1 doesn't have a GET post endpoint,
-        so we return None (inconclusive)."""
+        """Check if a post exists by fetching the user's publications list.
+
+        Medium API v1 does not have a GET /posts/:id endpoint, so we look up
+        the user's publications and check for the post_id there. Returns the
+        publication dict if found, or None if inconclusive.
+        """
+        try:
+            user_id = self._get_user_id()
+            resp = httpx.get(
+                f"{_BASE_URL}/users/{user_id}/publications",
+                headers=self._headers(),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            publications = resp.json().get("data", [])
+            for pub in publications:
+                if pub.get("id") == post_id:
+                    return pub
+        except Exception as e:
+            logger.warning(f"Failed to look up Medium post {post_id}: {e}")
         return None
+
+    def verify_post(self, url: str) -> bool | None:
+        """Lightweight check that a published article URL is reachable.
+
+        Sends an HTTP HEAD request to the article URL.
+        Returns True if reachable (2xx), False if definitively not found (404/410),
+        or None if verification was inconclusive (network error, other status).
+        """
+        try:
+            resp = httpx.head(url, timeout=10, follow_redirects=True)
+            if resp.status_code < 400:
+                return True
+            if resp.status_code in (404, 410):
+                return False
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to verify Medium article URL {url}: {e}")
+            return None

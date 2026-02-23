@@ -202,3 +202,85 @@ class PublishRecoveryManager:
         """Unknown error: mark failed, continue."""
         self.db.update_post_failed_with_category(post_id, "Unknown publishing error", ErrorCategory.UNKNOWN.value)
         return {"recovered": False, "action": "unknown_marked_failed", "should_skip_remaining": False}
+
+
+class ArticlePublishRecoveryManager:
+    """Recovery strategies for article publishing failures.
+
+    Similar to PublishRecoveryManager but operates on article_publications
+    rows rather than posts. Classifies errors and retries transient failures.
+    """
+
+    def __init__(self, db: Database, max_retries: int = 2):
+        self.db = db
+        self.max_retries = max_retries
+
+    def handle_failure(
+        self,
+        pub_id: str,
+        article: dict,
+        platform: str,
+        platform_client,
+        exception: Exception,
+    ) -> dict:
+        """Classify an article publish error and attempt recovery.
+
+        Returns {"recovered": bool, "action": str, "url": str | None}
+        """
+        category = PublishErrorClassifier.classify_error(exception, platform)
+        logger.info(f"Article pub {pub_id[:8]} failed on {platform}: category={category.value}, error={exception}")
+
+        if category == ErrorCategory.TRANSIENT:
+            return self._retry_transient(pub_id, article, platform, platform_client)
+        elif category == ErrorCategory.AUTH:
+            self.db.update_article_publication_failed(pub_id, str(exception), ErrorCategory.AUTH.value)
+            return {"recovered": False, "action": "auth_failure", "url": None}
+        elif category == ErrorCategory.CONTENT_VIOLATION:
+            self.db.update_article_publication_failed(pub_id, str(exception), ErrorCategory.CONTENT_VIOLATION.value)
+            return {"recovered": False, "action": "content_violation", "url": None}
+        elif category == ErrorCategory.QUOTA:
+            self.db.update_article_publication_failed(pub_id, str(exception), ErrorCategory.QUOTA.value)
+            return {"recovered": False, "action": "quota_exceeded", "url": None}
+        else:
+            self.db.update_article_publication_failed(pub_id, str(exception), ErrorCategory.UNKNOWN.value)
+            return {"recovered": False, "action": "unknown_failure", "url": None}
+
+    def _retry_transient(self, pub_id, article, platform, platform_client) -> dict:
+        """Retry with exponential backoff for transient errors."""
+        from datetime import datetime
+        from datetime import timezone as tz
+
+        backoff_delays = [5, 15]
+        for attempt in range(self.max_retries):
+            delay = backoff_delays[attempt] if attempt < len(backoff_delays) else 15
+            logger.info(f"Article pub retry {attempt + 1}/{self.max_retries} after {delay}s for {pub_id[:8]}")
+            time.sleep(delay)
+            try:
+                url, platform_id = platform_client.post(
+                    title=article["title"],
+                    body_markdown=article["body_markdown"],
+                    tags=article.get("tags", []),
+                )
+                self.db.update_article_publication(
+                    pub_id,
+                    status="published",
+                    published_url=url,
+                    platform_id=platform_id,
+                    published_at=datetime.now(tz.utc).isoformat(),
+                )
+                logger.info(f"Article pub retry succeeded for {pub_id[:8]}: {url}")
+                return {
+                    "recovered": True,
+                    "action": f"retry_success_attempt_{attempt + 1}",
+                    "url": url,
+                }
+            except Exception as e:
+                logger.warning(f"Article pub retry {attempt + 1} failed: {e}")
+
+        self.db.update_article_publication_failed(
+            pub_id,
+            "Transient error: retries exhausted",
+            ErrorCategory.TRANSIENT.value,
+            retry_count=self.max_retries,
+        )
+        return {"recovered": False, "action": "retries_exhausted", "url": None}

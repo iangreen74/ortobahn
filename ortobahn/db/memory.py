@@ -387,6 +387,31 @@ class MemoryMixin:
             (article_id,),
         )
 
+    def update_article_publication_failed(
+        self, pub_id: str, error: str, failure_category: str = "unknown", retry_count: int = 0
+    ) -> None:
+        """Mark an article publication as failed with error classification."""
+        self.execute(
+            "UPDATE article_publications SET status='failed', error=?, failure_category=?, retry_count=? WHERE id=?",
+            (error, failure_category, retry_count, pub_id),
+            commit=True,
+        )
+
+    def get_failed_article_publications(self, client_id: str | None = None) -> list[dict]:
+        """Get article publications that failed and may be retryable."""
+        query = (
+            "SELECT ap.*, a.client_id, a.title, a.body_markdown, a.tags"
+            " FROM article_publications ap"
+            " JOIN articles a ON ap.article_id = a.id"
+            " WHERE ap.status = 'failed'"
+        )
+        params: list = []
+        if client_id:
+            query += " AND a.client_id = ?"
+            params.append(client_id)
+        query += " ORDER BY ap.created_at DESC"
+        return self.fetchall(query, params)
+
     # --- Executive Directives ---
 
     def save_directive(self, run_id: str, client_id: str, directive: dict) -> str:

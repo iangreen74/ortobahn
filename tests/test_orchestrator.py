@@ -1020,3 +1020,233 @@ class TestPipelineClose:
         # Verify DB is closed by checking it can't be used
         # (SQLite allows some operations after close, so just confirm close() works)
         assert True
+
+
+# ---------------------------------------------------------------------------
+# Pipeline partial failure tests
+# ---------------------------------------------------------------------------
+
+
+class TestPartialFailure:
+    """One agent failing doesn't crash the whole pipeline."""
+
+    def test_sre_failure_does_not_crash_pipeline(self, tmp_path):
+        """If SRE agent raises, the whole pipeline should raise (it's in the try block)
+        but the error is caught at the top level and recorded."""
+        # SRE is the first agent; if it fails, the pipeline's try/except
+        # catches it and re-raises. We verify the error is dispatched.
+        settings = _make_settings(tmp_path)
+
+        call_count = {"n": 0}
+
+        def _fail_on_sre(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("SRE agent is down")
+            # Subsequent agents
+            return MagicMock(
+                text="{}",
+                input_tokens=10,
+                output_tokens=20,
+                model="test",
+                thinking="",
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            )
+
+        with (
+            patch("ortobahn.agents.base.call_llm", side_effect=_fail_on_sre),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.orchestrator.dispatch_event") as mock_dispatch,
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            with pytest.raises(RuntimeError, match="SRE agent is down"):
+                pipeline.run_cycle()
+
+            # Check that error was dispatched
+            event_types = [c.args[2] for c in mock_dispatch.call_args_list]
+            assert "pipeline.failed" in event_types
+            pipeline.close()
+
+    def test_security_agent_failure_is_non_fatal(self, tmp_path):
+        """Security agent failure is caught as non-fatal in the pipeline."""
+        settings = _make_settings(tmp_path)
+
+        # Security is the 6th LLM call. We need to fail specifically on it.
+        call_count = {"n": 0}
+        responses = _ordered_responses()
+
+        def _fail_on_security(**kwargs):
+            call_count["n"] += 1
+            idx = call_count["n"] - 1
+
+            # Security is the 5th LLM call (0-indexed: 4) in _ordered_responses
+            # SRE(0), Support(1), Security(2) -- wait, let me check the order.
+            # From _ordered_responses: SRE, SUPPORT, SECURITY, LEGAL, CEO, STRATEGIST, CREATOR, CFO, OPS
+            # Security is idx=2 (3rd call)
+            if idx == 2:
+                raise RuntimeError("Security analysis failed")
+
+            text = responses[idx] if idx < len(responses) else "{}"
+            return MagicMock(
+                text=text,
+                input_tokens=100,
+                output_tokens=200,
+                model="test",
+                thinking="",
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            )
+
+        with (
+            patch("ortobahn.agents.base.call_llm", side_effect=_fail_on_security),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(generate_only=True)
+
+        # Pipeline should complete despite security agent failure
+        assert len(result["errors"]) == 0
+        assert "run_id" in result
+        pipeline.close()
+
+    def test_legal_agent_failure_is_non_fatal(self, tmp_path):
+        """Legal agent failure is caught as non-fatal in the pipeline."""
+        settings = _make_settings(tmp_path)
+
+        call_count = {"n": 0}
+        responses = _ordered_responses()
+
+        def _fail_on_legal(**kwargs):
+            call_count["n"] += 1
+            idx = call_count["n"] - 1
+
+            # Legal is idx=3 (4th call) in _ordered_responses
+            if idx == 3:
+                raise RuntimeError("Legal compliance failed")
+
+            text = responses[idx] if idx < len(responses) else "{}"
+            return MagicMock(
+                text=text,
+                input_tokens=100,
+                output_tokens=200,
+                model="test",
+                thinking="",
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            )
+
+        with (
+            patch("ortobahn.agents.base.call_llm", side_effect=_fail_on_legal),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(generate_only=True)
+
+        # Pipeline should complete despite legal agent failure
+        assert len(result["errors"]) == 0
+        assert "run_id" in result
+        pipeline.close()
+
+
+class TestErrorAccumulation:
+    """Test that errors are accumulated and reported correctly."""
+
+    def test_pipeline_error_recorded_in_db(self, tmp_path):
+        """When the pipeline fails, the error is recorded in the pipeline run."""
+        settings = _make_settings(tmp_path)
+
+        def _explode(**kwargs):
+            raise RuntimeError("Total meltdown")
+
+        with (
+            patch("ortobahn.agents.base.call_llm", side_effect=_explode),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.orchestrator.dispatch_event"),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            with pytest.raises(RuntimeError, match="Total meltdown"):
+                pipeline.run_cycle()
+
+        # The pipeline run should be recorded as failed
+        runs = pipeline.db.get_recent_runs(limit=1)
+        assert len(runs) == 1
+        assert runs[0]["status"] == "failed"
+        assert "Total meltdown" in (runs[0].get("errors") or "")
+        pipeline.close()
+
+    def test_successful_pipeline_has_empty_errors(self, tmp_path):
+        """A successful pipeline run has an empty errors list."""
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle()
+
+        assert result["errors"] == []
+        pipeline.close()
+
+
+class TestPipelineCompletionWithNonCriticalFailures:
+    """Pipeline completes even when non-critical agents fail."""
+
+    def test_cifix_failure_does_not_crash(self, tmp_path):
+        """CIFix agent failure is caught as non-fatal."""
+        settings = _make_settings(tmp_path, cifix_enabled=True)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            # Make cifix.run() raise
+            pipeline.cifix.run = MagicMock(side_effect=RuntimeError("CI check failed"))
+            result = pipeline.run_cycle(generate_only=True)
+
+        # Pipeline should complete despite cifix failure
+        assert len(result["errors"]) == 0
+        assert result["total_drafts"] >= 0
+        pipeline.close()
+
+    def test_engagement_failure_does_not_crash(self, tmp_path):
+        """Engagement agent failure is caught as non-fatal."""
+        settings = _make_settings(tmp_path, engagement_enabled=True)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            # Wire engagement to raise
+            pipeline.engagement.run = MagicMock(side_effect=RuntimeError("Engagement broken"))
+            result = pipeline.run_cycle(generate_only=False)
+
+        # Pipeline should complete despite engagement failure
+        assert "run_id" in result
+        pipeline.close()

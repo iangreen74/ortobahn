@@ -486,3 +486,266 @@ class TestConfigPoolSettings:
         settings = load_settings()
         assert settings.db_pool_min == 3
         assert settings.db_pool_max == 15
+
+
+# ---------------------------------------------------------------------------
+# 8. Pool exhaustion edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestPoolExhaustionEdgeCases:
+    def test_pool_exhausted_error_message_includes_timeout_and_max(self):
+        """PoolExhaustedError message includes the timeout and max pool size."""
+        import psycopg2.pool
+
+        mock_inner = MagicMock()
+        mock_inner.getconn.side_effect = psycopg2.pool.PoolError("exhausted")
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 7
+        pool._checkout_timeout = 0.05
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        with pytest.raises(PoolExhaustedError) as exc_info:
+            pool.getconn()
+        msg = str(exc_info.value)
+        assert "0.05" in msg
+        assert "7" in msg
+
+    def test_pool_exhausted_multiple_waiters_all_timeout(self):
+        """Multiple threads all time out when no connection is returned."""
+        import psycopg2.pool
+
+        mock_inner = MagicMock()
+        mock_inner.getconn.side_effect = psycopg2.pool.PoolError("exhausted")
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 1
+        pool._checkout_timeout = 0.05
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        errors = []
+
+        def try_getconn():
+            try:
+                pool.getconn()
+            except PoolExhaustedError:
+                errors.append(True)
+
+        threads = [threading.Thread(target=try_getconn) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert len(errors) == 3
+
+
+# ---------------------------------------------------------------------------
+# 9. Stale connection detection and discard edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestStaleConnectionEdgeCases:
+    def test_multiple_consecutive_stale_connections_discarded(self):
+        """If multiple stale connections are returned, all are discarded until a healthy one is found."""
+        dead1 = FakeConnection(alive=False)
+        dead2 = FakeConnection(alive=False)
+        good = FakeConnection(alive=True)
+
+        call_count = 0
+
+        def getconn_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return dead1
+            if call_count == 2:
+                return dead2
+            return good
+
+        mock_inner = MagicMock()
+        mock_inner.getconn.side_effect = getconn_side_effect
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        conn = pool.getconn()
+        assert conn is good
+        assert mock_inner.getconn.call_count == 3
+        # Both dead connections should have been discarded
+        assert mock_inner.putconn.call_count == 2
+        mock_inner.putconn.assert_any_call(dead1, close=True)
+        mock_inner.putconn.assert_any_call(dead2, close=True)
+
+    def test_discard_falls_back_to_close_when_putconn_fails(self):
+        """If putconn raises during discard, the raw connection is closed directly."""
+        dead = FakeConnection(alive=False)
+        good = FakeConnection(alive=True)
+
+        call_count = 0
+
+        def getconn_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return dead
+            return good
+
+        mock_inner = MagicMock()
+        mock_inner.getconn.side_effect = getconn_side_effect
+        mock_inner.putconn.side_effect = Exception("putconn failed")
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        conn = pool.getconn()
+        assert conn is good
+        # Dead connection should have been closed directly since putconn failed
+        assert not dead._alive  # dead.close() was called
+
+    def test_ping_resets_connection_in_error_state(self):
+        """_ping rolls back a connection in non-IDLE transaction state."""
+        conn = FakeConnection(alive=True)
+        conn.info.transaction_status = 2  # non-IDLE state
+
+        result = _HealthCheckedPool._ping(conn)
+        assert result is True
+        assert conn._rolled_back
+
+
+# ---------------------------------------------------------------------------
+# 10. Concurrent checkout/return under threading
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentCheckoutReturn:
+    def test_concurrent_checkout_return(self):
+        """Multiple threads can check out and return connections concurrently."""
+        connections = [FakeConnection(alive=True) for _ in range(5)]
+        conn_idx = {"n": 0}
+        conn_lock = threading.Lock()
+
+        def getconn_side_effect():
+            with conn_lock:
+                idx = conn_idx["n"] % len(connections)
+                conn_idx["n"] += 1
+                return connections[idx]
+
+        mock_inner = MagicMock()
+        mock_inner.getconn.side_effect = getconn_side_effect
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 5.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        results = []
+        errors = []
+
+        def checkout_and_return():
+            try:
+                conn = pool.getconn()
+                time.sleep(0.01)  # simulate work
+                pool.putconn(conn)
+                results.append(True)
+            except Exception as e:
+                errors.append(str(e))
+
+        threads = [threading.Thread(target=checkout_and_return) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(errors) == 0
+        assert len(results) == 10
+        assert pool.checked_out == 0
+
+    def test_checked_out_never_goes_negative(self):
+        """Even with rapid putconn calls, checked_out never goes below 0."""
+        fake_conn = FakeConnection(alive=True)
+        mock_inner = MagicMock()
+        mock_inner.getconn.return_value = fake_conn
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        # Checkout one, then return twice (simulate double-return)
+        conn = pool.getconn()
+        pool.putconn(conn)
+        pool.putconn(conn)  # extra return
+
+        assert pool.checked_out == 0  # clamped at 0, not -1
+
+
+# ---------------------------------------------------------------------------
+# 11. closeall() behavior
+# ---------------------------------------------------------------------------
+
+
+class TestCloseAll:
+    def test_closeall_delegates_to_inner_pool(self):
+        """closeall() calls closeall() on the inner psycopg2 pool."""
+        mock_inner = MagicMock()
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        pool.closeall()
+        mock_inner.closeall.assert_called_once()
+
+    def test_closed_property_delegates_to_inner(self):
+        """closed property reflects the inner pool's closed state."""
+        mock_inner = MagicMock()
+        mock_inner.closed = True
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        assert pool.closed is True
+
+    def test_closeall_with_connections_still_checked_out(self):
+        """closeall works even when connections are still checked out."""
+        fake_conn = FakeConnection(alive=True)
+        mock_inner = MagicMock()
+        mock_inner.getconn.return_value = fake_conn
+
+        pool = _HealthCheckedPool.__new__(_HealthCheckedPool)
+        pool._inner = mock_inner
+        pool._maxconn = 5
+        pool._checkout_timeout = 1.0
+        pool._cond = threading.Condition(threading.Lock())
+        pool.checked_out = 0
+
+        pool.getconn()
+        assert pool.checked_out == 1
+
+        pool.closeall()
+        mock_inner.closeall.assert_called_once()

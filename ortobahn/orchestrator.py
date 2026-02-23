@@ -36,7 +36,7 @@ from ortobahn.memory import MemoryStore
 from ortobahn.models import Client, DirectiveCategory, Platform, TrendingTopic
 from ortobahn.post_feedback import PostFeedbackLoop
 from ortobahn.predictive_timing import TopicVelocityTracker
-from ortobahn.publish_recovery import PublishRecoveryManager
+from ortobahn.publish_recovery import ArticlePublishRecoveryManager, PublishRecoveryManager
 from ortobahn.serialization import SeriesManager
 from ortobahn.style_evolution import StyleEvolution
 from ortobahn.webhooks import (
@@ -1021,6 +1021,8 @@ class Pipeline:
         from datetime import datetime
         from datetime import timezone as tz
 
+        recovery = ArticlePublishRecoveryManager(self.db, max_retries=self.settings.publish_max_retries)
+
         for platform in target_platforms:
             # Map platform name to client key
             client_key = platform
@@ -1053,9 +1055,33 @@ class Pipeline:
                 logger.info(f"  Published article to {platform}: {url}")
                 results.append({"platform": platform, "status": "published", "url": url, "pub_id": pub_id})
             except Exception as e:
-                self.db.update_article_publication(pub_id, status="failed", error=str(e))
                 logger.error(f"  Failed to publish article to {platform}: {e}")
-                results.append({"platform": platform, "status": "failed", "error": str(e), "pub_id": pub_id})
+                recovery_result = recovery.handle_failure(
+                    pub_id=pub_id,
+                    article=article,
+                    platform=platform,
+                    platform_client=pub_client,
+                    exception=e,
+                )
+                if recovery_result["recovered"]:
+                    logger.info(f"  Article recovery succeeded for {platform}: {recovery_result['action']}")
+                    results.append(
+                        {
+                            "platform": platform,
+                            "status": "published",
+                            "url": recovery_result["url"],
+                            "pub_id": pub_id,
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "platform": platform,
+                            "status": "failed",
+                            "error": str(e),
+                            "pub_id": pub_id,
+                        }
+                    )
 
         return results
 

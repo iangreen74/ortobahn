@@ -92,16 +92,13 @@ class SubstackClient:
         slug = data.get("slug", draft_id)
 
         if publish and draft_id:
-            try:
-                pub_resp = httpx.post(
-                    f"{self.base_url}/api/v1/drafts/{draft_id}/publish",
-                    json={"send": True},
-                    cookies=self._cookies(),
-                    timeout=30,
-                )
-                pub_resp.raise_for_status()
-            except Exception:
-                logger.warning("Failed to publish Substack draft; leaving as draft")
+            pub_resp = httpx.post(
+                f"{self.base_url}/api/v1/drafts/{draft_id}/publish",
+                json={"send": True},
+                cookies=self._cookies(),
+                timeout=30,
+            )
+            pub_resp.raise_for_status()
 
         url = f"{self.base_url}/p/{slug}" if slug else ""
         return url, draft_id

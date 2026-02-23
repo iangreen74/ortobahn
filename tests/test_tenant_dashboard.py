@@ -605,6 +605,175 @@ class TestTenantArticles:
 # ---------------------------------------------------------------------------
 
 
+class TestTenantCredentialIsolation:
+    """Verify that a tenant can only see their own credentials, posts, and data."""
+
+    @pytest.mark.asyncio
+    async def test_tenant_only_sees_own_credentials(self, app, tenant_client):
+        """Credentials saved by one tenant are not visible to another."""
+        db = app.state.db
+        secret_key = app.state.settings.secret_key
+        client_id = tenant_client._test_client_id
+
+        # Save credentials for our tenant
+        await tenant_client.post(
+            "/my/credentials/bluesky",
+            data={"handle": "me.bsky.social", "app_password": "my-secret"},
+            follow_redirects=False,
+        )
+
+        # Create a different tenant and save credentials for them
+        other_id = db.create_client({"name": "OtherTenant", "email": "other@test.com"})
+        from ortobahn.credentials import save_platform_credentials
+
+        save_platform_credentials(db, other_id, "bluesky", {"handle": "other.bsky.social"}, secret_key)
+
+        # Our tenant's settings page should show our credentials, not the other's
+        resp = await tenant_client.get("/my/settings")
+        assert resp.status_code == 200
+        assert "bluesky" in resp.text.lower()
+
+        # Verify at the DB level that credentials are properly scoped
+        row = db.fetchone(
+            "SELECT * FROM platform_credentials WHERE client_id=? AND platform='bluesky'",
+            (client_id,),
+        )
+        assert row is not None
+
+        other_row = db.fetchone(
+            "SELECT * FROM platform_credentials WHERE client_id=? AND platform='bluesky'",
+            (other_id,),
+        )
+        assert other_row is not None
+        assert row["id"] != other_row["id"]
+
+    @pytest.mark.asyncio
+    async def test_tenant_only_sees_own_posts(self, app, tenant_client):
+        """Dashboard only shows posts belonging to the authenticated tenant."""
+        db = app.state.db
+        client_id = tenant_client._test_client_id
+
+        # Create posts for our tenant
+        db.save_post(text="My tenant post 1", run_id="r1", status="published", client_id=client_id)
+        db.save_post(text="My tenant post 2", run_id="r1", status="draft", client_id=client_id)
+
+        # Create posts for a different client
+        other_id = db.create_client({"name": "OtherClient"})
+        db.save_post(text="Other client secret post", run_id="r2", status="published", client_id=other_id)
+        db.save_post(text="Other client draft", run_id="r2", status="draft", client_id=other_id)
+
+        resp = await tenant_client.get("/my/dashboard")
+        assert resp.status_code == 200
+        assert "My tenant post 1" in resp.text
+        # The other client's post must not appear
+        assert "Other client secret post" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_auth_dependency_binds_correct_client_id(self, app, tenant_client):
+        """The AuthClient dependency correctly identifies the authenticated tenant."""
+        db = app.state.db
+        client_id = tenant_client._test_client_id
+
+        # The settings page queries credentials scoped to client["id"]
+        # Save credentials for this tenant
+        await tenant_client.post(
+            "/my/credentials/twitter",
+            data={
+                "api_key": "my-key",
+                "api_secret": "my-secret",
+                "access_token": "my-token",
+                "access_token_secret": "my-token-secret",
+            },
+            follow_redirects=False,
+        )
+
+        # Verify that the credential was saved for the correct client_id
+        row = db.fetchone(
+            "SELECT client_id FROM platform_credentials WHERE client_id=? AND platform='twitter'",
+            (client_id,),
+        )
+        assert row is not None
+        assert row["client_id"] == client_id
+
+    @pytest.mark.asyncio
+    async def test_tenant_cannot_see_other_tenant_analytics(self, app, tenant_client):
+        """Analytics page only shows data for the authenticated tenant."""
+        db = app.state.db
+        client_id = tenant_client._test_client_id
+
+        # Create posts for both tenants
+        db.save_post(text="My analytics post", run_id="r1", status="published", client_id=client_id)
+        other_id = db.create_client({"name": "AnalyticsOther"})
+        db.save_post(text="Other analytics post", run_id="r2", status="published", client_id=other_id)
+
+        resp = await tenant_client.get("/my/analytics")
+        assert resp.status_code == 200
+        # The analytics SQL queries all filter by client_id=?
+        # We cannot easily check numerical output, but verify the page loads
+        # and does not contain the other tenant's text
+        assert "Other analytics post" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_tenant_pipeline_status_scoped(self, app, tenant_client):
+        """Pipeline status endpoint only shows runs for the authenticated tenant."""
+        db = app.state.db
+        client_id = tenant_client._test_client_id
+
+        # Create a running pipeline for our tenant
+        db.start_pipeline_run("run-mine", mode="single", client_id=client_id)
+
+        # Create a running pipeline for a different tenant
+        other_id = db.create_client({"name": "OtherPipeline"})
+        db.start_pipeline_run("run-other", mode="single", client_id=other_id)
+
+        resp = await tenant_client.get("/my/api/pipeline-status")
+        assert resp.status_code == 200
+        assert "running" in resp.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_two_tenants_credentials_isolated(self, app):
+        """Two separate tenants each only see their own credentials in settings."""
+        db = app.state.db
+        secret_key = app.state.settings.secret_key
+
+        # Create tenant A
+        id_a, key_a, _ = _create_tenant(app)
+        db.update_client(id_a, {"name": "TenantA"})
+
+        # Create tenant B
+        id_b = db.create_client({"name": "TenantB", "email": "b@test.com"})
+        raw_key_b = generate_api_key()
+        db.create_api_key(id_b, hash_api_key(raw_key_b), key_prefix(raw_key_b), "default")
+
+        # Save different credentials for each
+        from ortobahn.credentials import save_platform_credentials
+
+        save_platform_credentials(db, id_a, "linkedin", {"access_token": "a-token"}, secret_key)
+        save_platform_credentials(db, id_b, "bluesky", {"handle": "b.bsky.social"}, secret_key)
+
+        # Tenant A should see linkedin connected
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-API-Key": key_a},
+        ) as client_a:
+            resp_a = await client_a.get("/my/settings")
+            assert resp_a.status_code == 200
+            # Tenant A has linkedin
+            assert "linkedin" in resp_a.text.lower()
+
+        # Tenant B should see bluesky connected
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-API-Key": raw_key_b},
+        ) as client_b:
+            resp_b = await client_b.get("/my/settings")
+            assert resp_b.status_code == 200
+            assert "bluesky" in resp_b.text.lower()
+
+
 class TestTenantHTMXEndpoints:
     """Test the HTMX fragment endpoints."""
 

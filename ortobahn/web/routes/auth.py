@@ -63,10 +63,12 @@ async def login(request: Request, body: LoginRequest):
 
     token = create_session_token(client["id"], secret_key)
     response = JSONResponse({"token": token, "client_id": client["id"], "client_name": client["name"]})
+    is_secure = request.url.scheme == "https"
     response.set_cookie(
         key="session",
         value=token,
         httponly=True,
+        secure=is_secure,
         samesite="lax",
         max_age=86400,
     )

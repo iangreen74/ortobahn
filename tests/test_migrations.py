@@ -3,16 +3,33 @@
 from __future__ import annotations
 
 from ortobahn.db import Database
-from ortobahn.migrations import _get_schema_version, _set_schema_version, run_migrations
+from ortobahn.migrations import (
+    EXPECTED_SCHEMA,
+    _get_schema_version,
+    _set_schema_version,
+    get_schema_version,
+    run_migrations,
+    validate_schema,
+)
 
 
 class TestSchemaVersion:
     def test_version_after_init(self, test_db):
-        assert _get_schema_version(test_db) == 27
+        assert _get_schema_version(test_db) == 28
 
     def test_set_and_get_version(self, test_db):
         _set_schema_version(test_db, 5)
         assert _get_schema_version(test_db) == 5
+
+    def test_get_schema_version_public(self, test_db):
+        """get_schema_version() is the public wrapper for _get_schema_version()."""
+        assert get_schema_version(test_db) == _get_schema_version(test_db)
+
+    def test_get_schema_version_returns_correct_value(self, tmp_path):
+        """get_schema_version() returns the latest migration number on a fresh DB."""
+        db = Database(tmp_path / "ver.db")
+        assert get_schema_version(db) == 28
+        db.close()
 
 
 class TestMigrations:
@@ -135,13 +152,67 @@ class TestMigrations:
             "last_triggered_at, failure_count FROM webhooks LIMIT 1"
         )
 
+        # Verify article_publications recovery columns (migration 028)
+        test_db.fetchall("SELECT failure_category, retry_count FROM article_publications LIMIT 1")
+
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 27
+        assert v1 == v2 == 28
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         db = Database(tmp_path / "test.db")
         row = db.fetchone("SELECT * FROM clients WHERE id='default'")
         assert row is not None
         db.close()
+
+    def test_idempotent_double_run(self, tmp_path):
+        """Running migrations twice on the same DB should not error."""
+        db = Database(tmp_path / "idem.db")
+        v1 = run_migrations(db)
+        v2 = run_migrations(db)
+        assert v1 == v2
+        db.close()
+
+    def test_fresh_db_produces_expected_schema(self, tmp_path):
+        """A fresh DB after all migrations should pass validate_schema cleanly."""
+        db = Database(tmp_path / "fresh.db")
+        problems = validate_schema(db)
+        assert problems == [], f"Schema validation problems: {problems}"
+        db.close()
+
+
+class TestValidateSchema:
+    def test_validate_schema_no_problems(self, test_db):
+        """A fully migrated DB should have zero validation problems."""
+        problems = validate_schema(test_db)
+        assert problems == []
+
+    def test_validate_schema_detects_missing_table(self, test_db):
+        """Dropping a table should be reported by validate_schema."""
+        test_db.execute("DROP TABLE IF EXISTS webhooks", commit=True)
+        problems = validate_schema(test_db)
+        assert any("webhooks" in p for p in problems)
+
+    def test_validate_schema_detects_missing_column(self, test_db):
+        """validate_schema detects a missing column when a table exists but
+        is recreated without an expected column.
+
+        SQLite doesn't support DROP COLUMN on older versions, so we simulate
+        a missing column by checking against the schema expectation directly.
+        We drop and recreate the table with a subset of columns.
+        """
+        # Recreate stripe_events without the expected 'event_type' column
+        test_db.execute("DROP TABLE IF EXISTS stripe_events", commit=True)
+        test_db.execute(
+            "CREATE TABLE stripe_events (id TEXT PRIMARY KEY, processed_at TIMESTAMP)",
+            commit=True,
+        )
+        problems = validate_schema(test_db)
+        assert any("stripe_events.event_type" in p for p in problems)
+
+    def test_validate_schema_expected_tables_complete(self, test_db):
+        """Every table in EXPECTED_SCHEMA should exist in a migrated DB."""
+        for table in EXPECTED_SCHEMA:
+            rows = test_db.fetchall(f"PRAGMA table_info({table})")
+            assert len(rows) > 0, f"Table {table!r} from EXPECTED_SCHEMA does not exist"

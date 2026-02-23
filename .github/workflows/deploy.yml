@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event.workflow_run.conclusion == 'success'
     permissions:
       id-token: write
@@ -49,7 +49,7 @@ jobs:
           docker push $ECR_REGISTRY/ortobahn:latest
 
   deploy-staging:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build-and-push
     environment: staging
     permissions:
@@ -106,7 +106,7 @@ jobs:
           || echo "Warning: staging did not stabilize within timeout"
 
   smoke-test-staging:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build-and-push, deploy-staging]
     permissions:
       id-token: write
@@ -291,7 +291,7 @@ jobs:
           || echo "Warning: deploy registration failed (non-blocking)"
 
   deploy-prod:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build-and-push, smoke-test-staging]
     environment: production
     permissions:
@@ -367,7 +367,7 @@ jobs:
             --services ortobahn-web-v2 ortobahn-scheduler-v2
 
   post-deploy-validate:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build-and-push, deploy-prod]
     permissions:
       id-token: write

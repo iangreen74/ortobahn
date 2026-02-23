@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -20,7 +20,7 @@ jobs:
       - run: ruff format --check ortobahn/ tests/
 
   typecheck:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -31,7 +31,7 @@ jobs:
       - run: mypy ortobahn/
 
   security:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -44,7 +44,7 @@ jobs:
         run: pip-audit --desc
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [lint, typecheck]
     strategy:
       matrix:
@@ -66,7 +66,7 @@ jobs:
           fail_ci_if_error: false
 
   validate-landing:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [lint]
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
         run: pytest tests/test_landing_links.py -v -m network
 
   deploy-landing:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [test, validate-landing]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

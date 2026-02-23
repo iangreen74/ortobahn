@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 import uuid
@@ -339,6 +340,21 @@ def create_app() -> FastAPI:
                 samesite="lax",
             )
         return response
+
+    _logger = logging.getLogger("ortobahn.web")
+
+    @app.on_event("startup")
+    async def _startup_checks():
+        """Log warnings for misconfigured settings at startup."""
+        issues = []
+        if not settings.secret_key:
+            issues.append("ORTOBAHN_SECRET_KEY not set")
+        if not settings.anthropic_api_key:
+            issues.append("ANTHROPIC_API_KEY not set")
+        if issues:
+            _logger.warning(f"Startup warnings: {'; '.join(issues)}")
+        else:
+            _logger.info("Startup checks passed")
 
     @app.get("/")
     async def root_redirect():

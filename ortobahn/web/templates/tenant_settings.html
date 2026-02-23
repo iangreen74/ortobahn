@@ -9,8 +9,14 @@
 <li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
 {% endblock %}
 {% block content %}
-<h1>Settings</h1>
-<p><a href="/my/dashboard">&larr; Back to dashboard</a></p>
+{% if request.query_params.get('msg') == 'saved' %}
+<div class="flash-msg success">Settings saved successfully.</div>
+{% endif %}
+
+<div class="page-header">
+    <h1>Settings</h1>
+    <p class="subtitle"><a href="/my/dashboard">&larr; Back to dashboard</a></p>
+</div>
 
 {% if not client.internal %}
 <h2>Subscription</h2>
@@ -135,9 +141,7 @@
 <p><small>Credentials are encrypted at rest. Only provide fields relevant to each platform.</small></p>
 
 {% if credential_error %}
-<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1rem;">
-    {{ credential_error }}
-</article>
+<div class="flash-msg error">{{ credential_error }}</div>
 {% endif %}
 
 <article>

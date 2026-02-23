@@ -9,23 +9,31 @@
 <li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
 {% endblock %}
 {% block content %}
-<h1>Articles</h1>
-<p><small>Long-form content for <strong>{{ client.name }}</strong></small></p>
+{% if request.query_params.get('msg') == 'generating' %}
+<div class="flash-msg info">Article generation started. This usually takes 30-60 seconds &mdash; refresh the page to see your new article.</div>
+{% endif %}
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-    <p style="margin:0;opacity:0.6">{{ articles|length }} article{{ 's' if articles|length != 1 else '' }}</p>
+<div class="page-header">
+    <h1>Articles</h1>
+    <p class="subtitle">Long-form content for <strong>{{ client.name }}</strong></p>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+    <small style="color: var(--text-secondary);">{{ articles|length }} article{{ 's' if articles|length != 1 else '' }}</small>
     <form method="post" action="/my/generate-article" style="margin:0">
-        <button type="submit" class="btn btn-primary">Generate Article</button>
+        <button type="submit">Generate Article</button>
     </form>
 </div>
 
 {% if not articles %}
-<div style="text-align:center;padding:3rem;opacity:0.6">
-    <p>No articles yet.</p>
-    <p>Click <strong>Generate Article</strong> to create your first long-form piece.</p>
-</div>
+<article>
+    <div class="empty-state">
+        <div class="empty-state-icon">&#9997;</div>
+        <p>No articles yet. Click <strong>Generate Article</strong> to create your first long-form piece.</p>
+    </div>
+</article>
 {% else %}
-<div class="overflow-auto">
+<div style="overflow-x: auto;">
     <table>
         <thead>
             <tr>
@@ -41,45 +49,45 @@
             <tr>
                 <td>
                     <strong>{{ a.title or 'Untitled' }}</strong>
-                    <br><small style="opacity:0.5">{{ a.id[:8] }}</small>
+                    <br><small>{{ a.id[:8] }}</small>
                     {% if a.id in pubs_by_article %}
                         {% for fp in pubs_by_article[a.id] %}
                             {% if fp.status == 'failed' %}
-                            <br><small style="color:#ef4444">Failed on {{ fp.platform or 'unknown' }}{% if fp.failure_category %} [{{ fp.failure_category }}]{% endif %}: {{ (fp.error or 'Unknown error')[:100] }}</small>
+                            <br><small style="color: var(--danger);">Failed on {{ fp.platform or 'unknown' }}{% if fp.failure_category %} [{{ fp.failure_category }}]{% endif %}: {{ (fp.error or 'Unknown error')[:100] }}</small>
                             {% elif fp.status == 'published' %}
-                            <br><small style="color:#22c55e">Published on {{ fp.platform or 'unknown' }}</small>
+                            <br><small style="color: var(--success);">Published on {{ fp.platform or 'unknown' }}</small>
                             {% endif %}
                         {% endfor %}
                     {% endif %}
                 </td>
                 <td>
                     {% if a.status == 'published' %}
-                    <span style="background:#22c55e;color:#000;padding:2px 8px;border-radius:4px;font-size:0.8em">published</span>
+                    <span class="badge completed">published</span>
                     {% elif a.status == 'approved' %}
-                    <span style="background:#3b82f6;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">approved</span>
+                    <span class="badge approved">approved</span>
                     {% elif a.status == 'rejected' %}
-                    <span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">rejected</span>
+                    <span class="badge rejected">rejected</span>
                     {% elif a.status == 'failed' %}
-                    <span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">failed</span>
+                    <span class="badge failed">failed</span>
                     {% else %}
-                    <span style="background:#f59e0b;color:#000;padding:2px 8px;border-radius:4px;font-size:0.8em">draft</span>
+                    <span class="badge draft">draft</span>
                     {% endif %}
                 </td>
                 <td>{{ a.word_count or 0 }}</td>
                 <td>{{ '%.2f'|format(a.confidence or 0) }}</td>
-                <td>
+                <td class="action-buttons">
                     {% if a.status == 'draft' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/approve" style="display:inline">
+                    <form method="post" action="/my/articles/{{ a.id }}/approve" style="margin:0">
                         <button type="submit" style="padding:4px 10px;font-size:0.8em">Approve</button>
                     </form>
-                    <form method="post" action="/my/articles/{{ a.id }}/reject" style="display:inline">
+                    <form method="post" action="/my/articles/{{ a.id }}/reject" style="margin:0">
                         <button type="submit" class="secondary" style="padding:4px 10px;font-size:0.8em">Reject</button>
                     </form>
-                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="display:inline">
+                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0">
                         <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
                     </form>
                     {% elif a.status == 'approved' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="display:inline">
+                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0">
                         <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
                     </form>
                     {% endif %}

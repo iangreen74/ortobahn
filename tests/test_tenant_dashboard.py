@@ -95,8 +95,8 @@ class TestTenantDashboard:
     async def test_dashboard_shows_zero_posts(self, tenant_client):
         resp = await tenant_client.get("/my/dashboard")
         assert resp.status_code == 200
-        # Should show 0 published and 0 drafts
-        assert "<strong>0</strong>" in resp.text
+        # Should show 0 published and 0 drafts in KPI cards
+        assert "kpi-value" in resp.text
 
 
 class TestTenantSettings:

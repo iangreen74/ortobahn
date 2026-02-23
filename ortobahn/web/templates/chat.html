@@ -9,8 +9,10 @@
 <li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
 {% endblock %}
 {% block content %}
-<h1>Support Chat</h1>
-<p><small>Chat with your Ortobahn AI assistant about your account, strategy, and content performance.</small></p>
+<div class="page-header">
+    <h1>Support Chat</h1>
+    <p class="subtitle">Chat with your Ortobahn AI assistant about your account, strategy, and content performance.</p>
+</div>
 
 <article>
     <div id="chat-fullpage-messages" class="chat-messages" style="max-height: 500px; min-height: 300px;"

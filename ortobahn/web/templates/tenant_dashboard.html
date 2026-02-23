@@ -10,32 +10,35 @@
 {% endblock %}
 {% block content %}
 {% if credential_issue %}
-<div style="background: var(--pico-del-color); color: white; padding: 1rem; border-radius: var(--pico-border-radius); margin-bottom: 1rem; text-align: center;">
+<div class="alert-banner danger">
     Your Bluesky credentials need attention. The pipeline is paused until credentials are updated.
-    <a href="/my/settings#credentials" style="color: white; text-decoration: underline; margin-left: 0.5rem;">Re-authenticate</a>
+    <a href="/my/settings#credentials">Re-authenticate</a>
 </div>
 {% endif %}
-<h1>{{ client.name }}</h1>
+
+<div class="page-header">
+    <h1>{{ client.name }}</h1>
+</div>
 
 {% if not client.internal %}
 {% if subscription_status == 'trialing' and trial_days_remaining is not none %}
-<article style="background: {% if trial_days_remaining <= 3 %}#fecaca{% else %}#fef3c7{% endif %}; border-left: 4px solid {% if trial_days_remaining <= 3 %}#dc2626{% else %}#f59e0b{% endif %}; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+<div class="alert-banner {% if trial_days_remaining <= 3 %}danger{% else %}warning{% endif %}">
     <strong>Free trial:</strong> {{ trial_days_remaining }} day{{ 's' if trial_days_remaining != 1 else '' }} remaining.
-    <a href="/my/subscribe" style="margin-left: 0.5rem; font-weight: 600;">Subscribe now &rarr;</a>
-</article>
+    <a href="/my/subscribe">Subscribe now &rarr;</a>
+</div>
 {% elif subscription_status in ('expired', 'none', 'cancelled') %}
-<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+<div class="alert-banner danger">
     <strong>{% if subscription_status == 'expired' %}Your free trial has ended.{% elif subscription_status == 'cancelled' %}Your subscription has been cancelled.{% else %}No active subscription.{% endif %}</strong>
     Subscribe to continue generating content.
-    <a href="/my/subscribe" style="margin-left: 0.5rem; font-weight: 600;">Subscribe now &rarr;</a>
-</article>
+    <a href="/my/subscribe">Subscribe now &rarr;</a>
+</div>
 {% elif subscription_status == 'past_due' %}
-<article style="background: #fecaca; border-left: 4px solid #dc2626; color: #1a1a1a; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+<div class="alert-banner danger">
     <strong>Payment failed.</strong> Please update your payment method to continue.
     <form method="post" action="/my/billing" style="display: inline;">
         <button type="submit" class="outline" style="padding: 0.25rem 0.75rem; margin-left: 0.5rem;">Manage billing &rarr;</button>
     </form>
-</article>
+</div>
 {% endif %}
 {% endif %}
 
@@ -44,22 +47,18 @@
      hx-get="/my/api/partials/kpi"
      hx-trigger="every 30s"
      hx-swap="innerHTML">
-    <article>
-        <header>Published Posts</header>
-        <p><strong>{{ total_published }}</strong></p>
+    <article class="kpi-card">
+        <div class="kpi-value">{{ total_published }}</div>
+        <div class="kpi-label">Published Posts</div>
     </article>
-    <article>
-        <header>Drafts Pending</header>
-        <p><strong>{{ total_drafts }}</strong></p>
+    <article class="kpi-card">
+        <div class="kpi-value">{{ total_drafts }}</div>
+        <div class="kpi-label">Drafts Pending</div>
     </article>
-    <article>
-        <header>Status</header>
-        <p><strong>{{ client.status or "active" }}</strong></p>
-        {% if auto_publish %}
-        <small>Auto-publish: enabled</small>
-        {% else %}
-        <small>Auto-publish: off (drafts only)</small>
-        {% endif %}
+    <article class="kpi-card">
+        <div class="kpi-value">{{ client.status or "active" }}</div>
+        <div class="kpi-label">Status</div>
+        <div class="kpi-sublabel">{% if auto_publish %}Auto-publish: enabled{% else %}Auto-publish: off{% endif %}</div>
     </article>
 </div>
 
@@ -70,21 +69,24 @@
          hx-get="/my/api/partials/insights"
          hx-trigger="load, every 60s"
          hx-swap="innerHTML">
-    <p style="opacity:0.6">Analyzing your data...</p>
+    <div class="skeleton skeleton-text"></div>
+    <div class="skeleton skeleton-text medium"></div>
+    <div class="skeleton skeleton-text short"></div>
 </article>
 
 <h2>Content Output</h2>
 <article hx-get="/my/api/health" hx-trigger="load, every 30s" hx-swap="innerHTML">
-    <p style="opacity:0.6">Loading...</p>
+    <div class="skeleton skeleton-card"></div>
 </article>
 
 <h2>Self-Monitoring</h2>
 <article hx-get="/my/api/watchdog" hx-trigger="load, every 30s" hx-swap="innerHTML">
-    <p style="opacity:0.6">Loading...</p>
+    <div class="skeleton skeleton-text"></div>
+    <div class="skeleton skeleton-text medium"></div>
 </article>
 
 <h2>Generate Content</h2>
-<article>
+<article class="cta-card">
     <form method="post" action="/my/generate">
         <div class="grid">
             <div>
@@ -112,7 +114,8 @@
      hx-get="/my/api/partials/drafts"
      hx-trigger="load"
      hx-swap="innerHTML">
-    <p style="opacity:0.6">Loading drafts...</p>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
 </div>
 <form method="post" action="/my/publish-drafts" style="margin-top: 0.5rem;">
     <button type="submit" class="outline">Publish all {{ total_drafts }} approved &amp; pending drafts</button>
@@ -130,7 +133,9 @@
 <p><small>Connected platforms: {{ connected_platforms | join(', ') }}</small></p>
 {% else %}
 <article>
-    <p>No platforms connected yet. <a href="/my/settings">Connect a platform</a> to start publishing.</p>
+    <div class="empty-state">
+        <p>No platforms connected yet. <a href="/my/settings">Connect a platform</a> to start publishing.</p>
+    </div>
 </article>
 {% endif %}
 
@@ -164,10 +169,10 @@
     <tbody>
         {% for p in posts %}
         <tr>
-            <td>
+            <td class="content-text">
                 {{ p.text[:80] }}{% if p.text|length > 80 %}...{% endif %}
                 {% if p.status == 'failed' and p.error_message %}
-                <br><small style="color: #ef4444;">{{ p.error_message[:120] }}</small>
+                <br><small style="color: var(--danger);">{{ p.error_message[:120] }}</small>
                 {% endif %}
             </td>
             <td>
@@ -192,7 +197,9 @@
 </div>
 {% else %}
 <article>
-    <p>No posts yet. Click "Generate Content" above to create your first content.</p>
+    <div class="empty-state">
+        <p>No posts yet. Click <strong>Generate Content</strong> above to create your first content.</p>
+    </div>
 </article>
 {% endif %}
 
@@ -244,7 +251,8 @@
              hx-get="/my/chat/history"
              hx-trigger="load"
              hx-swap="innerHTML">
-            <p style="opacity:0.6">Loading...</p>
+            <div class="skeleton skeleton-text"></div>
+            <div class="skeleton skeleton-text medium"></div>
         </div>
         <form class="chat-input-form"
               hx-post="/my/chat/send"

@@ -597,7 +597,7 @@ async def tenant_generate_article(request: Request, background_tasks: Background
             pipeline.close()
 
     background_tasks.add_task(_do_generate)
-    return RedirectResponse("/my/articles", status_code=303)
+    return RedirectResponse("/my/articles?msg=generating", status_code=303)
 
 
 @router.post("/billing")

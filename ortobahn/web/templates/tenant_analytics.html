@@ -9,8 +9,10 @@
 <li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
 {% endblock %}
 {% block content %}
-<h1>Analytics</h1>
-<p><small>Content performance for <strong>{{ client.name }}</strong></small></p>
+<div class="page-header">
+    <h1>Analytics</h1>
+    <p class="subtitle">Content performance for <strong>{{ client.name }}</strong></p>
+</div>
 
 <!-- KPI Cards (auto-refresh) -->
 <div class="grid"
@@ -41,7 +43,7 @@
 </div>
 
 <!-- Engagement Trend (last 7 days) -->
-<h2>Engagement Trend <small style="opacity: 0.5;">(last 7 days)</small></h2>
+<h2>Engagement Trend <small>(last 7 days)</small></h2>
 <article>
     {% if trend_data %}
     <div class="bar-chart">
@@ -56,11 +58,13 @@
     </div>
     <div style="display: flex; justify-content: space-between; padding: 0 0.25rem;">
         {% for day in trend_data %}
-        <small style="flex: 1; text-align: center; opacity: 0.5; font-size: 0.7rem;">{{ day.engagement }}</small>
+        <small style="flex: 1; text-align: center; font-size: 0.7rem;">{{ day.engagement }}</small>
         {% endfor %}
     </div>
     {% else %}
-    <p style="opacity: 0.6; text-align: center;">No published posts in the last 7 days.</p>
+    <div class="empty-state">
+        <p>No published posts in the last 7 days.</p>
+    </div>
     {% endif %}
 </article>
 
@@ -93,12 +97,14 @@
         </tbody>
     </table>
     {% else %}
-    <p style="opacity: 0.6; text-align: center;">No platform data yet. Publish content to see breakdown.</p>
+    <div class="empty-state">
+        <p>No platform data yet. Publish content to see breakdown.</p>
+    </div>
     {% endif %}
 </article>
 
 <!-- Top Posts -->
-<h2>Top Posts <small style="opacity: 0.5;">by engagement</small></h2>
+<h2>Top Posts <small>by engagement</small></h2>
 <article>
     {% if top_posts %}
     {% for post in top_posts %}
@@ -114,12 +120,14 @@
     </div>
     {% endfor %}
     {% else %}
-    <p style="opacity: 0.6; text-align: center;">No published posts yet.</p>
+    <div class="empty-state">
+        <p>No published posts yet.</p>
+    </div>
     {% endif %}
 </article>
 
 <!-- Recent Performance -->
-<h2>Recent Performance <small style="opacity: 0.5;">last 10 posts</small></h2>
+<h2>Recent Performance <small>last 10 posts</small></h2>
 <article>
     {% if recent_posts %}
     <table>
@@ -147,7 +155,9 @@
         </tbody>
     </table>
     {% else %}
-    <p style="opacity: 0.6; text-align: center;">No recent published posts.</p>
+    <div class="empty-state">
+        <p>No recent published posts.</p>
+    </div>
     {% endif %}
 </article>
 {% endblock %}

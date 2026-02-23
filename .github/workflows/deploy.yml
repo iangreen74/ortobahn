@@ -193,13 +193,13 @@ jobs:
         run: |
           if [ -z "$STAGING_URL" ]; then exit 0; fi
 
-          echo "Testing tenant dashboard exists (expect redirect to login)..."
+          echo "Testing tenant dashboard exists (expect auth challenge)..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$STAGING_URL/my/dashboard")
-          # 302 = redirect to login (expected), 200 = loaded (also ok)
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+          # 200 = loaded, 302/307 = redirect to login, 401 = auth required (all valid — route exists)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Tenant dashboard returned HTTP $HTTP_CODE"
           else
-            echo "FAIL: Tenant dashboard returned HTTP $HTTP_CODE"
+            echo "FAIL: Tenant dashboard returned HTTP $HTTP_CODE (expected 200/302/401)"
             exit 1
           fi
 
@@ -415,7 +415,7 @@ jobs:
           # Tenant dashboard check
           echo "Checking prod tenant dashboard..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 "$PROD_URL/my/dashboard")
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Tenant dashboard returned HTTP $HTTP_CODE"
           else
             echo "FAIL: Tenant dashboard returned HTTP $HTTP_CODE"

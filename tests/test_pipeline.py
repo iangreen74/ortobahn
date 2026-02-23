@@ -137,6 +137,11 @@ def _make_settings(tmp_path):
         bluesky_app_password="test-pass",
         db_path=tmp_path / "test.db",
         max_posts_per_cycle=4,
+        preflight_enabled=False,
+        engagement_enabled=False,
+        post_feedback_enabled=False,
+        cifix_enabled=False,
+        backup_enabled=False,
     )
 
 

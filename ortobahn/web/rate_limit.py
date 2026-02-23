@@ -31,7 +31,9 @@ class RateTier:
 
 # Default tiers — evaluated top-to-bottom; first match wins.
 DEFAULT_TIERS: tuple[RateTier, ...] = (
-    RateTier(name="public", requests_per_minute=120, prefixes=("/health", "/api/public/", "/glass")),
+    RateTier(name="static", requests_per_minute=600, prefixes=("/static/", "/favicon")),
+    RateTier(name="web", requests_per_minute=300, prefixes=("/my/", "/sre/", "/clients/", "/content/", "/pipeline/")),
+    RateTier(name="public", requests_per_minute=300, prefixes=("/health", "/api/public/", "/glass", "/api/toasts")),
     RateTier(name="auth", requests_per_minute=10, prefixes=("/api/auth/login", "/api/auth/register")),
     RateTier(name="onboard", requests_per_minute=5, prefixes=("/api/onboard",)),
 )
@@ -119,7 +121,12 @@ class RateLimitStore:
 
 
 def _client_ip(scope: Scope) -> str:
-    """Extract the client IP from the ASGI scope."""
+    """Extract the real client IP, respecting X-Forwarded-For behind a proxy/ALB."""
+    headers = dict(scope.get("headers") or [])
+    # X-Forwarded-For set by ALB/proxy: "client, proxy1, proxy2"
+    xff = headers.get(b"x-forwarded-for", b"").decode("latin-1")
+    if xff:
+        return xff.split(",")[0].strip()
     client = scope.get("client")
     if client:
         return client[0]

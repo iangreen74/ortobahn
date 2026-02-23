@@ -12,6 +12,7 @@ from ortobahn.web.rate_limit import (
     RateLimitMiddleware,
     RateLimitStore,
     RateTier,
+    _client_ip,
     _match_tier,
 )
 
@@ -152,8 +153,18 @@ class TestTierMatching:
         assert tier is not None
         assert tier.name == "onboard"
 
+    def test_web_dashboard_matches_web_tier(self):
+        tier = _match_tier("/my/dashboard", DEFAULT_TIERS)
+        assert tier is not None
+        assert tier.name == "web"
+
+    def test_static_matches_static_tier(self):
+        tier = _match_tier("/static/css/style.css", DEFAULT_TIERS)
+        assert tier is not None
+        assert tier.name == "static"
+
     def test_unknown_path_returns_none(self):
-        tier = _match_tier("/dashboard", DEFAULT_TIERS)
+        tier = _match_tier("/some-random-path", DEFAULT_TIERS)
         assert tier is None
 
     def test_auth_confirm_falls_to_general(self):
@@ -314,6 +325,29 @@ class TestRateLimitMiddleware:
         # Public tier is also separate
         resp = client.get("/health")
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Client IP extraction
+# ---------------------------------------------------------------------------
+
+
+class TestClientIP:
+    def test_xff_single_ip(self):
+        scope = {"headers": [(b"x-forwarded-for", b"203.0.113.50")], "client": ("10.0.0.1", 8000)}
+        assert _client_ip(scope) == "203.0.113.50"
+
+    def test_xff_multiple_ips_uses_first(self):
+        scope = {"headers": [(b"x-forwarded-for", b"203.0.113.50, 10.0.0.1, 10.0.0.2")], "client": ("10.0.0.1", 8000)}
+        assert _client_ip(scope) == "203.0.113.50"
+
+    def test_no_xff_falls_back_to_client(self):
+        scope = {"headers": [], "client": ("10.0.0.1", 8000)}
+        assert _client_ip(scope) == "10.0.0.1"
+
+    def test_no_client_returns_unknown(self):
+        scope = {"headers": []}
+        assert _client_ip(scope) == "unknown"
 
 
 # ---------------------------------------------------------------------------

@@ -306,6 +306,40 @@ class Pipeline:
 
         return published_count
 
+    def publish_approved_articles(self, client_id: str = "default") -> int:
+        """Publish any articles in 'approved' status. Returns count published."""
+        approved = self.db.get_approved_articles(client_id=client_id)
+        if not approved:
+            return 0
+
+        published_count = 0
+        for article in approved:
+            article_id = article["id"]
+            art_client_id = article.get("client_id", client_id)
+
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would publish approved article {article_id[:8]}")
+                continue
+
+            try:
+                pub_results = self._publish_article(article_id, art_client_id)
+                if any(r["status"] == "published" for r in pub_results):
+                    self.db.execute(
+                        "UPDATE articles SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (article_id,),
+                        commit=True,
+                    )
+                    published_count += 1
+                    logger.info(f"Published approved article {article_id[:8]} to {len(pub_results)} platform(s)")
+                elif not pub_results:
+                    logger.info(f"No article platforms configured for article {article_id[:8]}, skipping")
+                else:
+                    logger.warning(f"All platforms failed for approved article {article_id[:8]}")
+            except Exception as e:
+                logger.error(f"Failed to publish approved article {article_id[:8]}: {e}")
+
+        return published_count
+
     def _run_agent_with_preflight(self, agent, run_id: str, **kwargs):
         """Check an agent's preflight before calling run(). Returns None on block."""
         pf = agent.preflight(**kwargs)
@@ -338,6 +372,7 @@ class Pipeline:
         errors = []
         total_input_tokens = 0
         total_output_tokens = 0
+        articles_generated = 0
 
         # Load client from DB
         client_data = self.db.get_client(client_id)
@@ -352,6 +387,8 @@ class Pipeline:
                 "run_id": run_id,
                 "posts_published": 0,
                 "total_drafts": 0,
+                "articles_generated": 0,
+                "articles_published": 0,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "errors": [f"client_{client_data.get('status')}"],
@@ -375,6 +412,8 @@ class Pipeline:
                 "run_id": run_id,
                 "posts_published": 0,
                 "total_drafts": 0,
+                "articles_generated": 0,
+                "articles_published": 0,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "errors": ["no_active_subscription"],
@@ -407,6 +446,11 @@ class Pipeline:
         approved_published = self.publish_approved_drafts(client_id=client_id)
         if approved_published:
             logger.info(f"Published {approved_published} previously approved drafts")
+
+        # Publish any previously approved articles
+        articles_published = self.publish_approved_articles(client_id=client_id)
+        if articles_published:
+            logger.info(f"Published {articles_published} previously approved articles")
 
         # --- Preflight Intelligence ---
         if self.settings.preflight_enabled:
@@ -446,6 +490,8 @@ class Pipeline:
                     "run_id": run_id,
                     "posts_published": 0,
                     "total_drafts": 0,
+                    "articles_generated": 0,
+                    "articles_published": articles_published,
                     "input_tokens": 0,
                     "output_tokens": 0,
                     "errors": [i.message for i in preflight_result.blocking_issues],
@@ -736,6 +782,47 @@ class Pipeline:
                     logger.warning(f"  -> Post feedback error (non-fatal): {e}")
 
             # ═══════════════════════════════════════════════════════════════
+            # PHASE 3.6: Article Generation & Publishing
+            # ═══════════════════════════════════════════════════════════════
+            if client_data and client_data.get("article_enabled"):
+                try:
+                    # Check article frequency — only generate if enough time has passed
+                    should_generate = True
+                    freq = client_data.get("article_frequency", "weekly")
+                    freq_hours = {"daily": 24, "weekly": 168, "biweekly": 336, "monthly": 720}.get(freq, 168)
+                    last_article = self.db.get_last_article_time(client_id)
+                    if last_article:
+                        from datetime import datetime as _dt
+                        from datetime import timezone as _tz
+
+                        from ortobahn.db import to_datetime as _to_dt
+
+                        last_art_dt = _to_dt(last_article)
+                        if last_art_dt.tzinfo is None:
+                            last_art_dt = last_art_dt.replace(tzinfo=_tz.utc)
+                        hours_since = (_dt.now(_tz.utc) - last_art_dt).total_seconds() / 3600
+                        if hours_since < freq_hours:
+                            should_generate = False
+                            logger.info(
+                                f"  -> Article generation skipped: {hours_since:.0f}h since last "
+                                f"(frequency={freq}, threshold={freq_hours}h)"
+                            )
+
+                    if should_generate:
+                        logger.info("[11.9/14] Article Writer generating long-form content...")
+                        article_result = self.run_article_cycle(client_id=client_id)
+                        if article_result["status"] == "success":
+                            articles_generated = 1
+                            logger.info(
+                                f"  -> Article: '{article_result.get('title', '?')[:60]}' "
+                                f"({article_result.get('word_count', 0)}w)"
+                            )
+                        elif article_result["status"] != "skipped":
+                            logger.warning(f"  -> Article generation: {article_result.get('error', 'unknown')}")
+                except Exception as e:
+                    logger.warning(f"  -> Article generation error (non-fatal): {e}")
+
+            # ═══════════════════════════════════════════════════════════════
             # PHASE 4: Operations & Learning
             # ═══════════════════════════════════════════════════════════════
 
@@ -823,6 +910,8 @@ class Pipeline:
             "run_id": run_id,
             "posts_published": posts_published,
             "total_drafts": len(drafts.posts),
+            "articles_generated": articles_generated,
+            "articles_published": articles_published,
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
             "errors": errors,

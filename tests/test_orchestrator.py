@@ -845,6 +845,22 @@ class TestPipelineInit:
         pipeline.close()
 
 
+ARTICLE_WRITER_JSON = json.dumps(
+    {
+        "title": "The Future of AI Agents in Production",
+        "subtitle": "A deep dive into production readiness",
+        "body_markdown": "# Introduction\n\nAI agents are transforming the way we build software. "
+        "This article explores the challenges and opportunities of deploying AI agents in production environments. "
+        * 20,
+        "tags": ["AI", "agents", "production"],
+        "meta_description": "Exploring AI agents in production",
+        "topic_used": "AI agents in production",
+        "confidence": 0.85,
+        "word_count": 1500,
+    }
+)
+
+
 class TestArticleCycle:
     def test_article_cycle_client_not_found(self, tmp_path):
         settings = _make_settings(tmp_path)
@@ -873,6 +889,67 @@ class TestArticleCycle:
         result = pipeline.run_article_cycle(client_id="default")
         assert result["status"] == "skipped"
         assert "no_active_subscription" in result["error"]
+        pipeline.close()
+
+    def test_article_cycle_generates_and_saves(self, tmp_path):
+        """When article_enabled=1, run_article_cycle generates and saves an article."""
+        settings = _make_settings(tmp_path)
+
+        with patch(
+            "ortobahn.agents.base.call_llm",
+            side_effect=_fake_call_llm_factory([ARTICLE_WRITER_JSON]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET article_enabled=1 WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_article_cycle(client_id="default")
+
+        assert result["status"] == "success"
+        assert result["title"] == "The Future of AI Agents in Production"
+        assert result["article_id"]
+        # Verify it was saved in DB
+        article = pipeline.db.get_article(result["article_id"])
+        assert article is not None
+        assert article["status"] == "draft"
+        pipeline.close()
+
+    def test_article_cycle_auto_publishes_high_confidence(self, tmp_path):
+        """When auto_publish=1 and confidence >= threshold, article is published."""
+        settings = _make_settings(
+            tmp_path,
+            article_confidence_threshold=0.8,
+            secret_key="test-secret-key-for-jwt-and-fernet-00",
+        )
+
+        mock_medium = MagicMock()
+        mock_medium.post.return_value = ("https://medium.com/@test/article-123", "article-123")
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory([ARTICLE_WRITER_JSON]),
+            ),
+            patch("ortobahn.credentials.build_article_clients") as mock_build,
+        ):
+            mock_build.return_value = {
+                "medium": mock_medium,
+                "substack": None,
+                "linkedin_article": None,
+            }
+            pipeline = Pipeline(settings, dry_run=False)
+            pipeline.db.execute(
+                "UPDATE clients SET article_enabled=1, auto_publish=1, article_platforms='medium' WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_article_cycle(client_id="default")
+
+        assert result["status"] == "success"
+        # Article should have been published
+        article = pipeline.db.get_article(result["article_id"])
+        assert article["status"] == "published"
+        mock_medium.post.assert_called_once()
         pipeline.close()
 
 
@@ -1249,4 +1326,322 @@ class TestPipelineCompletionWithNonCriticalFailures:
 
         # Pipeline should complete despite engagement failure
         assert "run_id" in result
+        pipeline.close()
+
+
+class TestPublishApprovedArticles:
+    """Tests for the publish_approved_articles() method."""
+
+    def test_no_approved_articles_returns_zero(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=False)
+        count = pipeline.publish_approved_articles()
+        assert count == 0
+        pipeline.close()
+
+    def test_dry_run_skips_article_publishing(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        # Save an article and approve it
+        aid = pipeline.db.save_article(
+            {
+                "client_id": "default",
+                "title": "Test Article",
+                "body_markdown": "# Test\n\nContent here.",
+                "tags": ["test"],
+                "status": "draft",
+            }
+        )
+        pipeline.db.approve_article(aid)
+
+        count = pipeline.publish_approved_articles()
+        assert count == 0
+        # Article should still be approved (not published)
+        article = pipeline.db.get_article(aid)
+        assert article["status"] == "approved"
+        pipeline.close()
+
+    def test_publish_approved_article_success(self, tmp_path):
+        settings = _make_settings(
+            tmp_path,
+            secret_key="test-secret-key-for-jwt-and-fernet-00",
+        )
+
+        mock_medium = MagicMock()
+        mock_medium.post.return_value = ("https://medium.com/@test/article", "med-123")
+
+        with patch("ortobahn.credentials.build_article_clients") as mock_build:
+            mock_build.return_value = {
+                "medium": mock_medium,
+                "substack": None,
+                "linkedin_article": None,
+            }
+            pipeline = Pipeline(settings, dry_run=False)
+            pipeline.db.execute(
+                "UPDATE clients SET article_platforms='medium' WHERE id='default'",
+                commit=True,
+            )
+
+            aid = pipeline.db.save_article(
+                {
+                    "client_id": "default",
+                    "title": "Publish Me",
+                    "body_markdown": "# Hello\n\nArticle body.",
+                    "tags": ["test"],
+                    "status": "draft",
+                }
+            )
+            pipeline.db.approve_article(aid)
+
+            count = pipeline.publish_approved_articles()
+
+        assert count == 1
+        article = pipeline.db.get_article(aid)
+        assert article["status"] == "published"
+        mock_medium.post.assert_called_once()
+        pipeline.close()
+
+    def test_publish_approved_article_no_platforms_configured(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        aid = pipeline.db.save_article(
+            {
+                "client_id": "default",
+                "title": "No Platforms",
+                "body_markdown": "# Content",
+                "status": "draft",
+            }
+        )
+        pipeline.db.approve_article(aid)
+
+        count = pipeline.publish_approved_articles()
+        assert count == 0
+        # Article stays approved since no platforms to publish to
+        article = pipeline.db.get_article(aid)
+        assert article["status"] == "approved"
+        pipeline.close()
+
+    def test_publish_approved_article_failure_does_not_crash(self, tmp_path):
+        settings = _make_settings(
+            tmp_path,
+            secret_key="test-secret-key-for-jwt-and-fernet-00",
+        )
+
+        mock_medium = MagicMock()
+        mock_medium.post.side_effect = ConnectionError("Network down")
+
+        with patch("ortobahn.credentials.build_article_clients") as mock_build:
+            mock_build.return_value = {
+                "medium": mock_medium,
+                "substack": None,
+                "linkedin_article": None,
+            }
+            pipeline = Pipeline(settings, dry_run=False)
+            pipeline.db.execute(
+                "UPDATE clients SET article_platforms='medium' WHERE id='default'",
+                commit=True,
+            )
+
+            aid = pipeline.db.save_article(
+                {
+                    "client_id": "default",
+                    "title": "Will Fail",
+                    "body_markdown": "# Content",
+                    "tags": [],
+                    "status": "draft",
+                }
+            )
+            pipeline.db.approve_article(aid)
+
+            # Should not raise
+            count = pipeline.publish_approved_articles()
+
+        assert count == 0
+        pipeline.close()
+
+
+class TestArticleInRunCycle:
+    """Tests for article generation integration within run_cycle()."""
+
+    def test_run_cycle_includes_article_fields(self, tmp_path):
+        """run_cycle return dict includes articles_generated and articles_published."""
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(generate_only=True)
+
+        assert "articles_generated" in result
+        assert "articles_published" in result
+        assert result["articles_generated"] == 0  # article_enabled=0 by default
+        assert result["articles_published"] == 0
+        pipeline.close()
+
+    def test_run_cycle_generates_article_when_enabled(self, tmp_path):
+        """When article_enabled=1, run_cycle triggers article generation."""
+        settings = _make_settings(tmp_path)
+
+        # LLM call order: SRE, Support, Security, Legal, CEO, Strategist,
+        # Creator, Creator self-critique (wasted), ArticleWriter, CFO, OPS.
+        # The self-critique consumes an extra response, so we insert the
+        # article writer JSON at position 8 (after the self-critique waste at 7).
+        responses = [
+            SRE_JSON,  # 0: SRE
+            SUPPORT_JSON,  # 1: Support
+            SECURITY_JSON,  # 2: Security
+            LEGAL_JSON,  # 3: Legal
+            CEO_JSON,  # 4: CEO
+            STRATEGIST_JSON,  # 5: Strategist
+            CREATOR_JSON,  # 6: Creator
+            CFO_JSON,  # 7: Creator self-critique (consumed + fails)
+            ARTICLE_WRITER_JSON,  # 8: ArticleWriter (Phase 3.6)
+            CFO_JSON,  # 9: CFO (Phase 4.1)
+            OPS_JSON,  # 10: OPS (Phase 4.2)
+        ]
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(responses),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET article_enabled=1 WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_cycle(generate_only=True)
+
+        assert result["articles_generated"] == 1
+        # Check article exists in DB
+        articles = pipeline.db.get_recent_articles("default", limit=1)
+        assert len(articles) == 1
+        assert articles[0]["title"] == "The Future of AI Agents in Production"
+        pipeline.close()
+
+    def test_run_cycle_skips_article_when_frequency_not_met(self, tmp_path):
+        """Article generation is skipped if not enough time has passed since last article."""
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET article_enabled=1, article_frequency='weekly' WHERE id='default'",
+                commit=True,
+            )
+            # Save a recent article so frequency check prevents generation
+            pipeline.db.save_article(
+                {
+                    "client_id": "default",
+                    "title": "Recent Article",
+                    "body_markdown": "# Recent",
+                    "status": "published",
+                }
+            )
+
+            result = pipeline.run_cycle(generate_only=True)
+
+        # Should skip article generation (weekly = 168h, and last article was just now)
+        assert result["articles_generated"] == 0
+        pipeline.close()
+
+    def test_run_cycle_publishes_approved_articles(self, tmp_path):
+        """Approved articles are published at the start of run_cycle."""
+        settings = _make_settings(
+            tmp_path,
+            secret_key="test-secret-key-for-jwt-and-fernet-00",
+        )
+
+        mock_medium = MagicMock()
+        mock_medium.post.return_value = ("https://medium.com/@test/art", "med-456")
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.credentials.build_platform_clients") as mock_plat,
+            patch("ortobahn.credentials.build_article_clients") as mock_art,
+        ):
+            mock_plat.return_value = {"bluesky": None, "twitter": None, "linkedin": None}
+            mock_art.return_value = {
+                "medium": mock_medium,
+                "substack": None,
+                "linkedin_article": None,
+            }
+            pipeline = Pipeline(settings, dry_run=False)
+            pipeline.db.execute(
+                "UPDATE clients SET article_platforms='medium' WHERE id='default'",
+                commit=True,
+            )
+
+            # Save and approve an article
+            aid = pipeline.db.save_article(
+                {
+                    "client_id": "default",
+                    "title": "Approved Article",
+                    "body_markdown": "# Approved\n\nReady to publish.",
+                    "tags": ["test"],
+                    "status": "draft",
+                }
+            )
+            pipeline.db.approve_article(aid)
+
+            result = pipeline.run_cycle(generate_only=True)
+
+        assert result["articles_published"] >= 1
+        article = pipeline.db.get_article(aid)
+        assert article["status"] == "published"
+        pipeline.close()
+
+    def test_article_generation_failure_is_non_fatal(self, tmp_path):
+        """If article generation fails, run_cycle still completes."""
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET article_enabled=1 WHERE id='default'",
+                commit=True,
+            )
+            # Make article_writer.run() raise
+            pipeline.article_writer.run = MagicMock(side_effect=RuntimeError("Article LLM error"))
+
+            result = pipeline.run_cycle(generate_only=True)
+
+        # Pipeline should complete despite article failure
+        assert len(result["errors"]) == 0
+        assert result["articles_generated"] == 0
         pipeline.close()

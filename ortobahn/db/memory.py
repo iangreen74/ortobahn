@@ -322,6 +322,20 @@ class MemoryMixin:
                 r["tags"] = json.loads(r["tags"])
         return rows
 
+    def get_approved_articles(self, client_id: str | None = None) -> list[dict]:
+        """Get articles in 'approved' status ready for publishing."""
+        query = "SELECT * FROM articles WHERE status='approved'"
+        params: list = []
+        if client_id:
+            query += " AND client_id=?"
+            params.append(client_id)
+        query += " ORDER BY created_at ASC"
+        rows = self.fetchall(query, params)
+        for r in rows:
+            if r.get("tags") and isinstance(r["tags"], str):
+                r["tags"] = json.loads(r["tags"])
+        return rows
+
     def approve_article(self, article_id: str) -> None:
         self.execute(
             "UPDATE articles SET status='approved', updated_at=CURRENT_TIMESTAMP WHERE id=?",

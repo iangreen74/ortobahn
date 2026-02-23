@@ -1,7 +1,10 @@
-.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ec2 deploy-ecs deploy-staging promote rollback deploy-status ecr-tags waf-setup clean
+.PHONY: install install-web test lint lint-fix typecheck run dry-run generate seed healthcheck validate dashboard web docker-build docker-up docker-down docker-logs deploy-landing deploy-ecs deploy-staging promote rollback deploy-status ecr-tags waf-setup clean
 
-ECR_REPO = 418295677815.dkr.ecr.us-west-2.amazonaws.com/ortobahn
-CLUSTER = ortobahn
+AWS_ACCOUNT_ID ?= 418295677815
+AWS_REGION     ?= us-west-2
+CF_DIST_ID     ?= E1R6PE83G6T984
+ECR_REPO       = $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/ortobahn
+CLUSTER        ?= ortobahn
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -62,22 +65,13 @@ docker-logs:
 
 deploy-landing:
 	aws s3 sync ortobahn/landing/ s3://ortobahn-landing/ --delete
-	aws cloudfront create-invalidation --distribution-id E1R6PE83G6T984 --paths "/*" > /dev/null
+	aws cloudfront create-invalidation --distribution-id $(CF_DIST_ID) --paths "/*" > /dev/null
 	@echo "\nLanding page deployed to ortobahn.com."
-
-deploy-ec2:
-	@echo "Deploying to EC2 via SSM..."
-	GITHUB_TOKEN= aws ssm send-command --region us-west-2 \
-		--instance-ids i-02525f63177387819 \
-		--document-name AWS-RunShellScript \
-		--parameters 'commands=["cd /app/ortobahn && git pull && docker compose build && docker compose up -d"]' \
-		--query 'Command.CommandId' --output text
-	@echo "\nDeploy command sent. Check SSM console for status."
 
 deploy-ecs:
 	$(eval SHA := $(shell git rev-parse --short=7 HEAD))
 	@echo "Building and pushing $(SHA) to ECR..."
-	aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 418295677815.dkr.ecr.us-west-2.amazonaws.com
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 	docker build -t ortobahn .
 	docker tag ortobahn:latest $(ECR_REPO):$(SHA)
 	docker tag ortobahn:latest $(ECR_REPO):latest
@@ -95,17 +89,17 @@ endif
 	jq --arg img "$(ECR_REPO):$(SHA)" '.containerDefinitions[0].image = $$img' \
 		ecs/staging-web-task-def.json > /tmp/staging-web-td.json
 	WEB_ARN=$$(aws ecs register-task-definition \
-		--cli-input-json file:///tmp/staging-web-td.json --region us-west-2 \
+		--cli-input-json file:///tmp/staging-web-td.json --region $(AWS_REGION) \
 		--query 'taskDefinition.taskDefinitionArn' --output text) && \
 	aws ecs update-service --cluster $(CLUSTER) --service ortobahn-web-staging \
-		--task-definition "$$WEB_ARN" --force-new-deployment --region us-west-2
+		--task-definition "$$WEB_ARN" --force-new-deployment --region $(AWS_REGION)
 	jq --arg img "$(ECR_REPO):$(SHA)" '.containerDefinitions[0].image = $$img' \
 		ecs/staging-scheduler-task-def.json > /tmp/staging-sched-td.json
 	SCHED_ARN=$$(aws ecs register-task-definition \
-		--cli-input-json file:///tmp/staging-sched-td.json --region us-west-2 \
+		--cli-input-json file:///tmp/staging-sched-td.json --region $(AWS_REGION) \
 		--query 'taskDefinition.taskDefinitionArn' --output text) && \
 	aws ecs update-service --cluster $(CLUSTER) --service ortobahn-scheduler-staging \
-		--task-definition "$$SCHED_ARN" --force-new-deployment --region us-west-2
+		--task-definition "$$SCHED_ARN" --force-new-deployment --region $(AWS_REGION)
 	@echo "\nStaging services updating with $(SHA)."
 
 # Promote a specific SHA to production
@@ -118,17 +112,17 @@ endif
 	jq --arg img "$(ECR_REPO):$(SHA)" '.containerDefinitions[0].image = $$img' \
 		ecs/web-task-def.json > /tmp/prod-web-td.json
 	WEB_ARN=$$(aws ecs register-task-definition \
-		--cli-input-json file:///tmp/prod-web-td.json --region us-west-2 \
+		--cli-input-json file:///tmp/prod-web-td.json --region $(AWS_REGION) \
 		--query 'taskDefinition.taskDefinitionArn' --output text) && \
 	aws ecs update-service --cluster $(CLUSTER) --service ortobahn-web-v2 \
-		--task-definition "$$WEB_ARN" --force-new-deployment --region us-west-2
+		--task-definition "$$WEB_ARN" --force-new-deployment --region $(AWS_REGION)
 	jq --arg img "$(ECR_REPO):$(SHA)" '.containerDefinitions[0].image = $$img' \
 		ecs/scheduler-task-def.json > /tmp/prod-sched-td.json
 	SCHED_ARN=$$(aws ecs register-task-definition \
-		--cli-input-json file:///tmp/prod-sched-td.json --region us-west-2 \
+		--cli-input-json file:///tmp/prod-sched-td.json --region $(AWS_REGION) \
 		--query 'taskDefinition.taskDefinitionArn' --output text) && \
 	aws ecs update-service --cluster $(CLUSTER) --service ortobahn-scheduler-v2 \
-		--task-definition "$$SCHED_ARN" --force-new-deployment --region us-west-2
+		--task-definition "$$SCHED_ARN" --force-new-deployment --region $(AWS_REGION)
 	@echo "\nProduction services updating with $(SHA)."
 
 # Rollback production to a previous SHA (image must exist in ECR)
@@ -144,26 +138,26 @@ endif
 deploy-status:
 	@echo "=== Production ==="
 	@aws ecs describe-services --cluster $(CLUSTER) \
-		--services ortobahn-web-v2 ortobahn-scheduler-v2 --region us-west-2 \
+		--services ortobahn-web-v2 ortobahn-scheduler-v2 --region $(AWS_REGION) \
 		--query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount}' \
 		--output table 2>/dev/null || echo "  (prod services not found)"
 	@echo "\n=== Staging ==="
 	@aws ecs describe-services --cluster $(CLUSTER) \
-		--services ortobahn-web-staging ortobahn-scheduler-staging --region us-west-2 \
+		--services ortobahn-web-staging ortobahn-scheduler-staging --region $(AWS_REGION) \
 		--query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount}' \
 		--output table 2>/dev/null || echo "  (staging services not yet created — see docs/STAGING_SETUP.md)"
 
 # List recent ECR image tags (useful for finding a SHA to rollback to)
 ecr-tags:
-	@aws ecr describe-images --repository-name ortobahn --region us-west-2 \
+	@aws ecr describe-images --repository-name ortobahn --region $(AWS_REGION) \
 		--query 'sort_by(imageDetails,&imagePushedAt)[-10:].{pushed:imagePushedAt,tags:imageTags}' \
 		--output table
 
 waf-setup:
 	@echo "Creating WAF Web ACL for Ortobahn ALB..."
-	aws wafv2 create-web-acl --region us-west-2 --cli-input-json file://ecs/waf-rules.json
+	aws wafv2 create-web-acl --region $(AWS_REGION) --cli-input-json file://ecs/waf-rules.json
 	@echo "\nWAF created. Associate it with the ALB:"
-	@echo "  aws wafv2 associate-web-acl --region us-west-2 --web-acl-arn <WAF_ARN> --resource-arn <ALB_ARN>"
+	@echo "  aws wafv2 associate-web-acl --region $(AWS_REGION) --web-acl-arn <WAF_ARN> --resource-arn <ALB_ARN>"
 
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage

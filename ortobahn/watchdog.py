@@ -654,10 +654,17 @@ class Watchdog:
         if not self.settings.slack_webhook_url:
             return
 
-        from ortobahn.integrations.slack import format_watchdog_alert, send_slack_message
+        from ortobahn.integrations.slack import format_watchdog_alert, send_slack_message_deduped
 
         text = format_watchdog_alert(actionable, remediations)
-        send_slack_message(self.settings.slack_webhook_url, text)
+        probe_names = sorted({f.probe for f in actionable})
+        fingerprint = f"watchdog:{'+'.join(probe_names)}"
+        send_slack_message_deduped(
+            self.settings.slack_webhook_url,
+            text,
+            fingerprint=fingerprint,
+            cooldown_minutes=60,
+        )
 
     # --- Record phase ---
 

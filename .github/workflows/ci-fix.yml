@@ -99,3 +99,14 @@ jobs:
             --body-file /tmp/pr_body.md \
             --base "$BASE_BRANCH")
           echo "Created PR: $PR_URL"
+
+      - name: Escalate to CI Fix Agent
+        if: steps.lint_fix.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "Mechanical fixes insufficient — escalating to LLM CI Fix Agent"
+          gh workflow run ci-fix-escalation.yml \
+            -f run_id="$RUN_ID" \
+            -f branch="${{ github.event.workflow_run.head_branch }}"

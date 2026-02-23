@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 import requests
 
 logger = logging.getLogger("ortobahn.slack")
+
+# In-memory alert deduplication — reset on process restart, which is fine
+# since the scheduler is a long-running process.
+_alert_cooldowns: dict[str, datetime] = {}
 
 
 def send_slack_message(webhook_url: str, text: str) -> bool:
@@ -20,6 +25,41 @@ def send_slack_message(webhook_url: str, text: str) -> bool:
     except Exception as e:
         logger.warning(f"Failed to send Slack alert: {e}")
         return False
+
+
+def send_slack_message_deduped(
+    webhook_url: str,
+    text: str,
+    fingerprint: str,
+    cooldown_minutes: int = 60,
+) -> bool:
+    """Send a Slack message, skipping if the same fingerprint was sent within the cooldown window.
+
+    Returns True if the message was sent, False if suppressed or failed.
+    """
+    now = datetime.now(timezone.utc)
+    last_sent = _alert_cooldowns.get(fingerprint)
+
+    if last_sent is not None:
+        elapsed_minutes = (now - last_sent).total_seconds() / 60
+        if elapsed_minutes < cooldown_minutes:
+            logger.debug(
+                "Alert suppressed (fingerprint=%s, elapsed=%.1fm, cooldown=%dm)",
+                fingerprint,
+                elapsed_minutes,
+                cooldown_minutes,
+            )
+            return False
+
+    sent = send_slack_message(webhook_url, text)
+    if sent:
+        _alert_cooldowns[fingerprint] = now
+    return sent
+
+
+def clear_alert_cooldowns() -> None:
+    """Reset all cooldowns. Useful for testing."""
+    _alert_cooldowns.clear()
 
 
 def format_sre_alert(health_status: str, alerts: list, recommendations: list) -> str:

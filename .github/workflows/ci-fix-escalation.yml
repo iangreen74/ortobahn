@@ -1,0 +1,61 @@
+name: CI Fix Escalation (LLM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Failed CI run ID to diagnose"
+        required: true
+      branch:
+        description: "Branch where the failure occurred"
+        required: true
+        default: "main"
+
+jobs:
+  llm-fix:
+    runs-on: ubuntu-latest
+    # Prevent infinite loops — don't fix branches created by cifix
+    if: "!startsWith(github.event.inputs.branch, 'cifix/')"
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+          token: ${{ steps.app_token.outputs.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,web]"
+
+      - name: Configure git
+        run: |
+          git config user.name "Ortobahn CI Fix"
+          git config user.email "cifix@ortobahn.com"
+
+      - name: Run LLM-powered CI Fix Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          CIFIX_ENABLED: "true"
+          CIFIX_AUTO_PR: "true"
+          DATABASE_URL: ""
+        run: |
+          echo "Running LLM-powered CI Fix Agent for run #${{ inputs.run_id }}..."
+          python -m ortobahn ci-fix
+        timeout-minutes: 10

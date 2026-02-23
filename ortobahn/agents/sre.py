@@ -93,13 +93,18 @@ Max confidence: {max_conf}
         except (json.JSONDecodeError, KeyError, TypeError):
             report.health_status = "healthy" if success_rate > 0.8 else "degraded"
 
-        # Send Slack alert if health is degraded/critical
+        # Send Slack alert if health is degraded/critical (with deduplication)
         slack_url = kwargs.get("slack_webhook_url", "")
         if slack_url and report.health_status in ("degraded", "critical"):
-            from ortobahn.integrations.slack import format_sre_alert, send_slack_message
+            from ortobahn.integrations.slack import format_sre_alert, send_slack_message_deduped
 
             message = format_sre_alert(report.health_status, report.alerts, report.recommendations)
-            send_slack_message(slack_url, message)
+            send_slack_message_deduped(
+                slack_url,
+                message,
+                fingerprint=f"sre:{report.health_status}",
+                cooldown_minutes=60,
+            )
 
         self.log_decision(
             run_id=run_id,

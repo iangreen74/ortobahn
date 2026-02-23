@@ -11,8 +11,12 @@
 <h1>Analytics</h1>
 <p><small>Content performance for <strong>{{ client.name }}</strong></small></p>
 
-<!-- KPI Cards -->
-<div class="grid">
+<!-- KPI Cards (auto-refresh) -->
+<div class="grid"
+     id="analytics-kpi-panel"
+     hx-get="/my/api/partials/analytics-kpi"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
     <article class="kpi-card">
         <div class="kpi-value">{{ total_posts }}</div>
         <div class="kpi-label">Total Posts</div>

@@ -316,3 +316,187 @@ nav ul li a.active {
     font-size: 0.9rem;
     white-space: nowrap;
 }
+
+/* --- AI Insights Card --- */
+
+.insights-card {
+    background: rgba(99, 102, 241, 0.04);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+}
+
+.insight-item {
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    background: rgba(99, 102, 241, 0.05);
+    border-radius: 0 6px 6px 0;
+}
+
+.insight-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.insight-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.insight-detail {
+    margin: 0.25rem 0 0 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
+    line-height: 1.4;
+}
+
+/* --- SRE Dashboard Enhancements --- */
+
+.sre-indicator {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+.sre-green {
+    background: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+}
+
+.sre-yellow {
+    background: #ffb74d;
+    box-shadow: 0 0 6px rgba(255, 183, 77, 0.6);
+    animation: sre-pulse 2s infinite;
+}
+
+.sre-red {
+    background: #ef5350;
+    box-shadow: 0 0 6px rgba(239, 83, 80, 0.6);
+    animation: sre-pulse 1.5s infinite;
+}
+
+.sre-gray {
+    background: #666;
+    box-shadow: 0 0 4px rgba(102, 102, 102, 0.4);
+}
+
+@keyframes sre-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.sre-gauge-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.sre-gauge {
+    height: 24px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.sre-gauge-fill {
+    height: 100%;
+    border-radius: 12px;
+    transition: width 0.5s ease-out;
+}
+
+.sre-error-item {
+    border-left: 3px solid #ef5350;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    background: rgba(239, 83, 80, 0.05);
+    border-radius: 0 4px 4px 0;
+}
+
+/* --- Toast Notifications --- */
+
+.toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 400px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    animation: toast-slide-in 0.3s ease-out;
+    pointer-events: auto;
+}
+
+.toast-success {
+    background: #0a3a0a;
+    border: 1px solid #4caf50;
+    color: #c8e6c9;
+}
+
+.toast-error {
+    background: #3a0a0a;
+    border: 1px solid #ef5350;
+    color: #ffcdd2;
+}
+
+.toast-warning {
+    background: #3a2a0a;
+    border: 1px solid #ffb74d;
+    color: #fff3e0;
+}
+
+.toast-info {
+    background: #0a1a3a;
+    border: 1px solid #42a5f5;
+    color: #bbdefb;
+}
+
+.toast-icon {
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.toast-close {
+    flex-shrink: 0;
+    background: none !important;
+    border: none !important;
+    color: inherit;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 !important;
+    margin: 0 0 0 auto !important;
+    opacity: 0.6;
+    line-height: 1;
+    width: auto !important;
+}
+.toast-close:hover { opacity: 1; }
+
+@keyframes toast-slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.toast-fade-out {
+    animation: toast-fade 0.4s ease-out forwards;
+}
+
+@keyframes toast-fade {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(100%); }
+}

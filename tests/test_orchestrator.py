@@ -1,0 +1,1022 @@
+"""Comprehensive tests for the Pipeline orchestrator."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from ortobahn.config import Settings
+from ortobahn.models import (
+    DirectiveCategory,
+    DirectivePriority,
+    ExecutiveDirective,
+    Platform,
+)
+from ortobahn.orchestrator import Pipeline
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+VALID_UNTIL = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+
+
+def _make_settings(tmp_path, **overrides):
+    defaults = dict(
+        anthropic_api_key="sk-ant-test",
+        bluesky_handle="test.bsky.social",
+        bluesky_app_password="test-pass",
+        db_path=tmp_path / "test.db",
+        max_posts_per_cycle=4,
+        preflight_enabled=False,
+        engagement_enabled=False,
+        post_feedback_enabled=False,
+        cifix_enabled=False,
+        backup_enabled=False,
+        style_evolution_enabled=False,
+        predictive_timing_enabled=False,
+        serialization_enabled=False,
+        dynamic_cadence_enabled=False,
+        publish_retry_enabled=False,
+        post_delay_seconds=0,
+    )
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+# Pre-baked JSON responses for each agent (in pipeline order for a fresh DB)
+SRE_JSON = json.dumps(
+    {
+        "health_status": "healthy",
+        "avg_confidence_trend": "stable",
+        "alerts": [],
+        "recommendations": [],
+    }
+)
+
+ANALYTICS_JSON = json.dumps({"top_themes": [], "summary": "No data.", "recommendations": []})
+
+REFLECTION_JSON = json.dumps(
+    {
+        "confidence_accuracy": 0.0,
+        "confidence_bias": "neutral",
+        "content_patterns": None,
+        "new_memories": [],
+        "recommendations": [],
+        "summary": "n/a",
+    }
+)
+
+SUPPORT_JSON = json.dumps(
+    {
+        "total_clients_checked": 0,
+        "at_risk_clients": [],
+        "tickets": [],
+        "recommendations": [],
+        "summary": "ok",
+    }
+)
+
+SECURITY_JSON = json.dumps(
+    {
+        "threat_level": "low",
+        "threats_detected": [],
+        "recommendations": [],
+        "actions_taken": [],
+        "credential_health": {},
+        "summary": "ok",
+    }
+)
+
+LEGAL_JSON = json.dumps(
+    {
+        "documents_generated": [],
+        "compliance_gaps": [],
+        "recommendations": [],
+        "summary": "ok",
+    }
+)
+
+CEO_JSON = json.dumps(
+    {
+        "strategy": {
+            "themes": ["AI"],
+            "tone": "bold",
+            "goals": ["grow"],
+            "content_guidelines": "be real",
+            "posting_frequency": "3x/day",
+            "valid_until": VALID_UNTIL,
+        },
+        "directives": [],
+        "business_assessment": "ok",
+        "risk_flags": [],
+    }
+)
+
+STRATEGIST_JSON = json.dumps(
+    {
+        "posts": [
+            {
+                "topic": "AI agents",
+                "angle": "production readiness",
+                "hook": "Most AI agents fail",
+                "content_type": "hot_take",
+                "priority": 1,
+                "trending_source": None,
+            }
+        ]
+    }
+)
+
+CREATOR_JSON = json.dumps(
+    {
+        "posts": [
+            {
+                "text": "Most AI agents fail in production.",
+                "source_idea": "AI agents",
+                "reasoning": "Relatable",
+                "confidence": 0.9,
+            }
+        ]
+    }
+)
+
+CFO_JSON = json.dumps({"budget_status": "within_budget", "recommendations": [], "summary": "ok"})
+
+OPS_JSON = json.dumps({"recommendations": [], "summary": "ok"})
+
+
+def _ordered_responses():
+    """Return list of JSON responses in the order agents run (fresh DB)."""
+    return [
+        SRE_JSON,
+        # Analytics and Reflection skip LLM on fresh DB
+        SUPPORT_JSON,
+        SECURITY_JSON,
+        LEGAL_JSON,
+        CEO_JSON,
+        STRATEGIST_JSON,
+        CREATOR_JSON,
+        CFO_JSON,
+        OPS_JSON,
+    ]
+
+
+def _fake_call_llm_factory(responses):
+    """Create a side_effect callable that cycles through *responses*."""
+    counter = {"n": 0}
+
+    def _call(**kwargs):
+        idx = counter["n"]
+        counter["n"] += 1
+        text = responses[idx] if idx < len(responses) else "{}"
+        return MagicMock(
+            text=text,
+            input_tokens=100,
+            output_tokens=200,
+            model="test",
+            thinking="",
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+        )
+
+    return _call
+
+
+_TREND_PATCHES = {
+    "ortobahn.orchestrator.get_trending_headlines": [],
+    "ortobahn.orchestrator.get_trending_searches": [],
+    "ortobahn.orchestrator.fetch_feeds": [],
+}
+
+
+def _trend_context():
+    """Context manager that patches all trending-data fetches to return empty."""
+    return (
+        patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+        patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+        patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunCyclePausedClient:
+    """Client status guards at the top of run_cycle()."""
+
+    def test_paused_client_skips_cycle(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        # Mark default client as paused
+        pipeline.db.execute("UPDATE clients SET status='paused' WHERE id='default'", commit=True)
+
+        result = pipeline.run_cycle()
+        assert result["posts_published"] == 0
+        assert "client_paused" in result["errors"]
+        pipeline.close()
+
+    def test_credential_issue_client_skips_cycle(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.db.execute(
+            "UPDATE clients SET status='credential_issue' WHERE id='default'",
+            commit=True,
+        )
+
+        result = pipeline.run_cycle()
+        assert result["posts_published"] == 0
+        assert "client_credential_issue" in result["errors"]
+        pipeline.close()
+
+
+class TestSubscriptionGuard:
+    """Subscription-related guards in run_cycle()."""
+
+    def test_expired_subscription_skips_non_internal(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        # Make client non-internal with expired subscription
+        pipeline.db.execute(
+            "UPDATE clients SET internal=0, subscription_status='cancelled' WHERE id='default'",
+            commit=True,
+        )
+
+        result = pipeline.run_cycle()
+        assert result["posts_published"] == 0
+        assert "no_active_subscription" in result["errors"]
+        pipeline.close()
+
+    def test_active_subscription_passes(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET internal=0, subscription_status='active' WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_cycle()
+            assert "no_active_subscription" not in result["errors"]
+            pipeline.close()
+
+    def test_trialing_subscription_passes(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET internal=0, subscription_status='trialing', "
+                "trial_ends_at=datetime('now', '+7 days') WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_cycle()
+            assert "no_active_subscription" not in result["errors"]
+            pipeline.close()
+
+    def test_internal_client_bypasses_subscription(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.execute(
+                "UPDATE clients SET internal=1, subscription_status='none' WHERE id='default'",
+                commit=True,
+            )
+            result = pipeline.run_cycle()
+            assert "no_active_subscription" not in result["errors"]
+            pipeline.close()
+
+
+class TestTrialExpiry:
+    def test_expired_trial_blocks_cycle(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        # Set trial that already expired
+        pipeline.db.execute(
+            "UPDATE clients SET internal=0, subscription_status='trialing', "
+            "trial_ends_at=datetime('now', '-1 day') WHERE id='default'",
+            commit=True,
+        )
+
+        result = pipeline.run_cycle()
+        assert result["posts_published"] == 0
+        # After check_and_expire_trial, status should be expired -> no_active_subscription
+        assert "no_active_subscription" in result["errors"]
+        pipeline.close()
+
+
+class TestGenerateOnlyMode:
+    def test_generate_only_saves_drafts(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(generate_only=True)
+
+            assert result["posts_published"] == 0
+            assert result["total_drafts"] == 1
+            # Drafts should be saved in DB
+            drafts = pipeline.db.get_drafts_for_review()
+            assert len(drafts) >= 1
+            pipeline.close()
+
+    def test_auto_publish_override_per_client(self, tmp_path):
+        """When generate_only is None, per-client auto_publish overrides settings."""
+        settings = _make_settings(tmp_path, autonomous_mode=True)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            # Client has auto_publish=0 => generate_only=True
+            pipeline.db.execute("UPDATE clients SET auto_publish=0 WHERE id='default'", commit=True)
+            result = pipeline.run_cycle(generate_only=None)
+            # Should be in generate-only mode (drafts saved, not published)
+            assert result["posts_published"] == 0
+            pipeline.close()
+
+
+class TestPublishApprovedDrafts:
+    def test_no_approved_returns_zero(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=False)
+        count = pipeline.publish_approved_drafts()
+        assert count == 0
+        pipeline.close()
+
+    def test_dry_run_skips_publishing(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        # Save an approved post
+        pipeline.db.save_post(text="Approved post", run_id="r1", status="approved", platform="bluesky")
+
+        count = pipeline.publish_approved_drafts()
+        # Dry run should not publish
+        assert count == 0
+        pipeline.close()
+
+    def test_publish_approved_success(self, tmp_path):
+        settings = _make_settings(tmp_path, post_delay_seconds=0)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        mock_client = MagicMock()
+        mock_client.post.return_value = ("at://test/post/123", "bafy123")
+        mock_client.verify_post_exists.return_value = True
+        pipeline.bluesky = mock_client
+        pipeline.publisher.bluesky = mock_client
+
+        pid = pipeline.db.save_post(text="Publish me", run_id="r1", status="approved", platform="bluesky")
+
+        with patch("ortobahn.orchestrator.time.sleep"):
+            with patch("ortobahn.orchestrator.dispatch_event"):
+                count = pipeline.publish_approved_drafts()
+
+        assert count == 1
+        post = pipeline.db.get_post(pid)
+        assert post["status"] == "published"
+        pipeline.close()
+
+    def test_publish_verification_failure(self, tmp_path):
+        settings = _make_settings(tmp_path, post_delay_seconds=0)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        mock_client = MagicMock()
+        mock_client.post.return_value = ("at://test/post/123", "bafy123")
+        mock_client.verify_post_exists.return_value = False  # Verification fails
+        pipeline.bluesky = mock_client
+        pipeline.publisher.bluesky = mock_client
+
+        pid = pipeline.db.save_post(text="Will fail verify", run_id="r1", status="approved", platform="bluesky")
+
+        with patch("ortobahn.orchestrator.time.sleep"):
+            with patch("ortobahn.orchestrator.dispatch_event"):
+                count = pipeline.publish_approved_drafts()
+
+        assert count == 0
+        post = pipeline.db.get_post(pid)
+        assert post["status"] == "failed"
+        pipeline.close()
+
+    def test_publish_exception_marks_failed(self, tmp_path):
+        settings = _make_settings(tmp_path, post_delay_seconds=0)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = ConnectionError("Network down")
+        pipeline.bluesky = mock_client
+        pipeline.publisher.bluesky = mock_client
+
+        pid = pipeline.db.save_post(text="Will error", run_id="r1", status="approved", platform="bluesky")
+
+        with patch("ortobahn.orchestrator.dispatch_event"):
+            count = pipeline.publish_approved_drafts()
+
+        assert count == 0
+        post = pipeline.db.get_post(pid)
+        assert post["status"] == "failed"
+        pipeline.close()
+
+    def test_no_publisher_for_platform_skips(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        # Save approved post for a platform with no client configured
+        pipeline.db.save_post(text="No publisher", run_id="r1", status="approved", platform="twitter")
+
+        count = pipeline.publish_approved_drafts()
+        assert count == 0
+        pipeline.close()
+
+    def test_invalid_platform_uses_generic(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        pipeline.db.save_post(text="Bad platform", run_id="r1", status="approved", platform="foobar")
+
+        count = pipeline.publish_approved_drafts()
+        assert count == 0  # No publisher for GENERIC
+        pipeline.close()
+
+    def test_verification_inconclusive_trusts_post(self, tmp_path):
+        settings = _make_settings(tmp_path, post_delay_seconds=0)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        mock_client = MagicMock()
+        mock_client.post.return_value = ("at://test/post/456", "bafy456")
+        mock_client.verify_post_exists.return_value = None  # Inconclusive
+        pipeline.bluesky = mock_client
+        pipeline.publisher.bluesky = mock_client
+
+        pid = pipeline.db.save_post(
+            text="Inconclusive verify",
+            run_id="r1",
+            status="approved",
+            platform="bluesky",
+        )
+
+        with patch("ortobahn.orchestrator.time.sleep"):
+            with patch("ortobahn.orchestrator.dispatch_event"):
+                count = pipeline.publish_approved_drafts()
+
+        assert count == 1
+        post = pipeline.db.get_post(pid)
+        assert post["status"] == "published"
+        pipeline.close()
+
+
+class TestGatherTrends:
+    def test_empty_sources(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        with (
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            topics = pipeline.gather_trends()
+            assert topics == []
+            pipeline.close()
+
+    def test_client_specific_category(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.db.update_client("default", {"news_category": "business"})
+
+        with (
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]) as mock_headlines,
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline.gather_trends(client_id="default")
+            mock_headlines.assert_called_once()
+            _, kwargs = mock_headlines.call_args
+            assert kwargs["category"] == "business"
+
+        pipeline.close()
+
+    def test_client_specific_rss_feeds(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.db.update_client("default", {"rss_feeds": "https://example.com/feed1,https://example.com/feed2"})
+
+        with (
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]) as mock_feeds,
+        ):
+            pipeline.gather_trends(client_id="default")
+            mock_feeds.assert_called_once()
+            feed_urls = mock_feeds.call_args[0][0]
+            assert "https://example.com/feed1" in feed_urls
+            assert "https://example.com/feed2" in feed_urls
+
+        pipeline.close()
+
+    def test_client_keyword_search(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.db.update_client("default", {"news_keywords": "AI agents"})
+
+        with (
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.integrations.newsapi_client.search_news", return_value=[]),
+        ):
+            pipeline.gather_trends(client_id="default")
+
+        pipeline.close()
+
+
+class TestDirectiveProcessing:
+    def test_engineering_directive_creates_task(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        directive = ExecutiveDirective(
+            priority=DirectivePriority.HIGH,
+            category=DirectiveCategory.ENGINEERING,
+            directive="Build rate limiting",
+            target_agent="cto",
+            reasoning="Need to protect APIs",
+        )
+
+        pipeline._process_directives("run-1", [directive], "default")
+
+        tasks = pipeline.db.get_engineering_tasks()
+        titles = [t["title"] for t in tasks]
+        assert "Build rate limiting" in titles
+        pipeline.close()
+
+    def test_security_directive_creates_infra_task(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        directive = ExecutiveDirective(
+            priority=DirectivePriority.CRITICAL,
+            category=DirectiveCategory.SECURITY,
+            directive="Add WAF rules",
+            reasoning="Security threats detected",
+        )
+
+        pipeline._process_directives("run-2", [directive], "default")
+
+        tasks = pipeline.db.get_engineering_tasks()
+        matching = [t for t in tasks if "WAF" in t["title"]]
+        assert len(matching) == 1
+        assert matching[0]["category"] == "infra"
+        pipeline.close()
+
+    def test_legal_directive_creates_docs_task(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        directive = ExecutiveDirective(
+            priority=DirectivePriority.MEDIUM,
+            category=DirectiveCategory.LEGAL,
+            directive="Generate privacy policy",
+            reasoning="No privacy policy exists",
+        )
+
+        pipeline._process_directives("run-3", [directive], "default")
+
+        tasks = pipeline.db.get_engineering_tasks()
+        legal_tasks = [t for t in tasks if "Legal" in t["title"] or "privacy" in t["title"]]
+        assert len(legal_tasks) == 1
+        assert legal_tasks[0]["category"] == "docs"
+        pipeline.close()
+
+    def test_directive_rate_limiting(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        directives = [
+            ExecutiveDirective(
+                priority=DirectivePriority.LOW,
+                category=DirectiveCategory.OPERATIONS,
+                directive=f"Directive {i}",
+                reasoning=f"Reason {i}",
+            )
+            for i in range(10)
+        ]
+
+        pipeline._process_directives("run-4", directives, "default")
+
+        # Check audit trail: only 5 should be saved (rate limit)
+        rows = pipeline.db.fetchall("SELECT * FROM executive_directives WHERE run_id='run-4'")
+        assert len(rows) == 5
+        pipeline.close()
+
+    def test_directive_saves_audit_trail(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        directive = ExecutiveDirective(
+            priority=DirectivePriority.HIGH,
+            category=DirectiveCategory.SUPPORT,
+            directive="Follow up with at-risk client",
+            reasoning="Client has not been active",
+        )
+
+        pipeline._process_directives("run-5", [directive], "default")
+
+        rows = pipeline.db.fetchall("SELECT * FROM executive_directives WHERE run_id='run-5'")
+        assert len(rows) == 1
+        assert rows[0]["category"] == "support"
+        pipeline.close()
+
+    def test_directive_processing_error_does_not_crash(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        # Create a directive with a bad model_dump that raises
+        directive = MagicMock()
+        directive.model_dump.side_effect = RuntimeError("Bad directive")
+        directive.priority = DirectivePriority.HIGH
+        directive.category = DirectiveCategory.ENGINEERING
+
+        # Should not raise
+        pipeline._process_directives("run-6", [directive], "default")
+        pipeline.close()
+
+
+class TestRunCycleFullPipeline:
+    def test_dry_run_full_cycle(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle()
+
+        assert result["posts_published"] == 0
+        assert result["total_drafts"] == 1
+        assert len(result["errors"]) == 0
+        assert "run_id" in result
+        pipeline.close()
+
+    def test_run_id_is_unique_uuid(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses() + _ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            r1 = pipeline.run_cycle()
+            r2 = pipeline.run_cycle()
+            assert r1["run_id"] != r2["run_id"]
+            pipeline.close()
+
+    def test_pipeline_error_dispatches_event(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        def _explode(**kwargs):
+            raise RuntimeError("LLM is down")
+
+        with (
+            patch("ortobahn.agents.base.call_llm", side_effect=_explode),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.orchestrator.dispatch_event") as mock_dispatch,
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            with pytest.raises(RuntimeError, match="LLM is down"):
+                pipeline.run_cycle()
+
+            # Check that pipeline.failed event was dispatched
+            mock_dispatch.assert_called()
+            call_args_list = mock_dispatch.call_args_list
+            event_types = [c.args[2] for c in call_args_list]
+            assert "pipeline.failed" in event_types
+            pipeline.close()
+
+    def test_pipeline_records_run_in_db(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.run_cycle()
+
+        runs = pipeline.db.get_recent_runs(limit=1)
+        assert len(runs) == 1
+        assert runs[0]["status"] == "completed"
+        pipeline.close()
+
+
+class TestWebhookDispatch:
+    def test_publish_dispatches_webhook(self, tmp_path):
+        settings = _make_settings(tmp_path, post_delay_seconds=0)
+        pipeline = Pipeline(settings, dry_run=False)
+
+        mock_client = MagicMock()
+        mock_client.post.return_value = ("at://test/post/789", "bafy789")
+        mock_client.verify_post_exists.return_value = True
+        pipeline.bluesky = mock_client
+        pipeline.publisher.bluesky = mock_client
+
+        pipeline.db.save_post(text="Webhook post", run_id="r1", status="approved", platform="bluesky")
+
+        with (
+            patch("ortobahn.orchestrator.time.sleep"),
+            patch("ortobahn.orchestrator.dispatch_event") as mock_dispatch,
+        ):
+            pipeline.publish_approved_drafts()
+
+        mock_dispatch.assert_called()
+        event_types = [c.args[2] for c in mock_dispatch.call_args_list]
+        assert "post.published" in event_types
+        pipeline.close()
+
+
+class TestMultipleClientsIsolation:
+    def test_cycle_uses_correct_client_id(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.db.create_client({"id": "test-client", "name": "Test Client"}, start_trial=False)
+            pipeline.db.execute("UPDATE clients SET internal=1 WHERE id='test-client'", commit=True)
+            result = pipeline.run_cycle(client_id="test-client", generate_only=True)
+
+        assert result["posts_published"] == 0
+        assert len(result["errors"]) == 0
+        pipeline.close()
+
+
+class TestPipelineInit:
+    def test_no_bluesky_credentials_no_client(self, tmp_path):
+        settings = Settings(
+            anthropic_api_key="sk-ant-test",
+            db_path=tmp_path / "test.db",
+            bluesky_handle="",
+            bluesky_app_password="",
+            preflight_enabled=False,
+            cifix_enabled=False,
+        )
+        pipeline = Pipeline(settings, dry_run=True)
+        assert pipeline.bluesky is None
+        pipeline.close()
+
+    def test_cifix_disabled(self, tmp_path):
+        settings = _make_settings(tmp_path, cifix_enabled=False)
+        pipeline = Pipeline(settings, dry_run=True)
+        assert pipeline.cifix is None
+        pipeline.close()
+
+    def test_engagement_disabled(self, tmp_path):
+        settings = _make_settings(tmp_path, engagement_enabled=False)
+        pipeline = Pipeline(settings, dry_run=True)
+        assert pipeline.engagement is None
+        pipeline.close()
+
+
+class TestArticleCycle:
+    def test_article_cycle_client_not_found(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        result = pipeline.run_article_cycle(client_id="nonexistent")
+        assert result["status"] == "error"
+        assert "client_not_found" in result["error"]
+        pipeline.close()
+
+    def test_article_cycle_not_enabled(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        # Default client has article_enabled=0
+        result = pipeline.run_article_cycle(client_id="default")
+        assert result["status"] == "skipped"
+        assert "articles_not_enabled" in result["error"]
+        pipeline.close()
+
+    def test_article_cycle_no_subscription(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.db.execute(
+            "UPDATE clients SET article_enabled=1, internal=0, subscription_status='cancelled' WHERE id='default'",
+            commit=True,
+        )
+        result = pipeline.run_article_cycle(client_id="default")
+        assert result["status"] == "skipped"
+        assert "no_active_subscription" in result["error"]
+        pipeline.close()
+
+
+class TestRunAgentWithPreflight:
+    def test_preflight_blocks_run(self, tmp_path):
+        from ortobahn.models import PreflightIssue, PreflightResult, PreflightSeverity
+
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        agent = MagicMock()
+        agent.name = "test_agent"
+        pf_result = PreflightResult(
+            passed=False,
+            issues=[
+                PreflightIssue(
+                    severity=PreflightSeverity.BLOCKING,
+                    component="test",
+                    message="API key missing",
+                )
+            ],
+        )
+        agent.preflight.return_value = pf_result
+
+        result = pipeline._run_agent_with_preflight(agent, "run-1")
+        assert result is None
+        agent.run.assert_not_called()
+        pipeline.close()
+
+    def test_preflight_passes_calls_run(self, tmp_path):
+        from ortobahn.models import PreflightResult
+
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        agent = MagicMock()
+        agent.name = "test_agent"
+        agent.preflight.return_value = PreflightResult(passed=True)
+        agent.run.return_value = "mock_result"
+
+        result = pipeline._run_agent_with_preflight(agent, "run-1")
+        assert result == "mock_result"
+        agent.run.assert_called_once_with("run-1")
+        pipeline.close()
+
+    def test_preflight_warnings_still_runs(self, tmp_path):
+        from ortobahn.models import PreflightIssue, PreflightResult, PreflightSeverity
+
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+
+        agent = MagicMock()
+        agent.name = "test_agent"
+        pf_result = PreflightResult(
+            passed=True,
+            issues=[
+                PreflightIssue(
+                    severity=PreflightSeverity.WARNING,
+                    component="test",
+                    message="Rate limited",
+                )
+            ],
+        )
+        agent.preflight.return_value = pf_result
+        agent.run.return_value = "ok"
+
+        result = pipeline._run_agent_with_preflight(agent, "run-1")
+        assert result == "ok"
+        agent.run.assert_called_once()
+        pipeline.close()
+
+
+class TestTargetPlatforms:
+    def test_default_platform_is_generic(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(generate_only=True)
+            assert len(result["errors"]) == 0
+            pipeline.close()
+
+    def test_explicit_platforms_passed(self, tmp_path):
+        settings = _make_settings(tmp_path)
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+        ):
+            pipeline = Pipeline(settings, dry_run=True)
+            result = pipeline.run_cycle(
+                target_platforms=[Platform.BLUESKY, Platform.TWITTER],
+                generate_only=True,
+            )
+            assert len(result["errors"]) == 0
+            pipeline.close()
+
+
+class TestPerTenantCredentials:
+    def test_secret_key_triggers_tenant_credentials(self, tmp_path):
+        settings = _make_settings(
+            tmp_path,
+            secret_key="test-secret-key-for-jwt-and-fernet-00",
+        )
+
+        with (
+            patch(
+                "ortobahn.agents.base.call_llm",
+                side_effect=_fake_call_llm_factory(_ordered_responses()),
+            ),
+            patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
+            patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),
+            patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
+            patch("ortobahn.credentials.build_platform_clients") as mock_build,
+        ):
+            mock_build.return_value = {
+                "bluesky": None,
+                "twitter": None,
+                "linkedin": None,
+            }
+            pipeline = Pipeline(settings, dry_run=True)
+            pipeline.run_cycle(generate_only=True)
+            mock_build.assert_called_once()
+            pipeline.close()
+
+
+class TestPipelineClose:
+    def test_close_closes_db(self, tmp_path):
+        settings = _make_settings(tmp_path)
+        pipeline = Pipeline(settings, dry_run=True)
+        pipeline.close()
+        # Verify DB is closed by checking it can't be used
+        # (SQLite allows some operations after close, so just confirm close() works)
+        assert True

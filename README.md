@@ -2,65 +2,133 @@
 
 Autonomous AI marketing engine. A Vaultscaler subsidiary.
 
-AI agents autonomously create, publish, and optimize marketing content across social platforms — no human in the loop. Multi-tenant SaaS with self-monitoring, self-healing CI/CD, and a live public dashboard.
+AI agents autonomously create, publish, and optimize marketing content across social platforms — no human in the loop. Multi-tenant SaaS with self-monitoring, self-healing CI/CD, autonomous engineering, and a live public dashboard.
 
 ## Architecture
 
-Twelve AI agents orchestrated in a pipeline with closed-loop monitoring:
+Eighteen AI agents orchestrated in a four-phase pipeline with closed-loop monitoring and cross-session learning:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  SRE → Analytics → Reflection → CEO → Strategist → Creator │
-│                                                     ↓       │
-│  Watchdog ← CFO ← Ops ← Support ← Marketing ← Publisher   │
-│     ↓                                                       │
-│  CIFix (self-healing CI/CD)                                 │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│  PHASE 1: Intelligence Gathering                                         │
+│  SRE → CIFix → Analytics → Reflection → Trends → Support → Security     │
+│                                                          → Legal         │
+│                                                                          │
+│  PHASE 2: Executive Decision-Making                                      │
+│  CEO (extended thinking) → Dynamic Cadence                               │
+│                                                                          │
+│  PHASE 3: Content Execution                                              │
+│  Strategist → Creator → Publisher → Engagement → Post Feedback           │
+│                    ↳ ArticleWriter → Medium / Substack / LinkedIn        │
+│                                                                          │
+│  PHASE 4: Operations & Learning                                          │
+│  CFO → Ops → Marketing → Learning Engine → Meta-Learning                 │
+│                                                                          │
+│  AUTONOMOUS:                                                             │
+│  CTO (engineering tasks → branch → test → PR → auto-merge)              │
+│  Enrichment (profile auto-fill from website analysis)                    │
+│  Watchdog (sense/decide/act/verify remediation loop)                     │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Core Pipeline Agents
+### Eighteen Pipeline Agents
 
 | Agent | Role |
 |-------|------|
-| **SRE** | System health monitoring and pre-flight checks |
-| **Analytics** | Past post performance analysis (engagement, trends) |
-| **Reflection** | Pattern analysis, memory building, confidence calibration |
-| **CEO** | Strategic direction setting (extended thinking) |
-| **Strategist** | Content planning and idea generation (extended thinking) |
-| **Creator** | Multi-platform content generation with self-critique |
-| **Publisher** | Confidence-gated publishing with post verification |
-| **CFO** | Cost analysis and budget enforcement |
-| **Ops** | Client operations management |
-| **Support** | Customer health monitoring, churn detection |
-| **Marketing** | Self-marketing for Ortobahn itself |
+| **SRE** | System health monitoring, pre-flight checks, alert routing |
+| **CI Fix** | Self-healing CI/CD — auto-fixes lint, format, and type errors from failed GitHub Actions runs |
+| **Analytics** | Past post performance analysis (engagement rates, trends, per-platform metrics) |
+| **Reflection** | Pattern analysis, cross-session memory building, confidence calibration (extended thinking) |
+| **CEO** | Executive strategy and directive routing — ingests all reports to set themes and goals (extended thinking) |
+| **Strategist** | Content planning and idea generation from trends, strategy, and client context (extended thinking) |
+| **Creator** | Multi-platform content generation with built-in self-critique loop (extended thinking) |
+| **Publisher** | Confidence-gated publishing with post verification and automatic retry with backoff |
+| **CFO** | Cost analysis, budget enforcement, ROI estimation per post |
+| **Ops** | Client operations management, onboarding pipeline |
+| **Support** | Customer health monitoring, churn detection, at-risk client alerts |
+| **Marketing** | Self-marketing — Ortobahn promoting itself |
+| **Security** | Threat detection, access log analysis, credential health scanning (extended thinking) |
+| **Legal** | Compliance gap analysis, Terms of Service and Privacy Policy generation (extended thinking) |
+| **Engagement** | Autonomous reply and conversation participation on Bluesky |
+| **ArticleWriter** | Long-form article generation for cross-platform publishing (extended thinking) |
+| **Enrichment** | Profile auto-enrichment — scrapes client websites and fills brand fields via LLM |
+| **CTO** | Autonomous engineering — picks up backlog tasks, writes code, runs tests, creates auto-merge PRs |
 
-### Supporting Systems
+### Intelligence Systems
 
 | System | Role |
 |--------|------|
+| **Learning Engine** | Confidence calibration, theme tracking, anomaly detection, A/B experiment conclusions (0 LLM calls) |
+| **Meta-Learning** | Cross-client pattern promotion — insights reinforced across 3+ clients become shared knowledge (0 LLM calls) |
+| **Memory Store** | Agent cross-cycle memory with confidence scoring, category tagging, and automatic pruning |
+| **Predictive Timing** | Topic velocity tracking — detects emerging trends before they peak |
+| **Content Serialization** | Multi-part series management — maintains narrative continuity across posts |
+| **Style Evolution** | Organic voice development through A/B experimentation on tone and style |
+| **Dynamic Cadence** | Posting frequency optimization based on engagement trends |
+| **Post Feedback Loop** | Real-time engagement monitoring — checks post performance minutes after publishing |
+| **Publish Recovery** | Automatic retry with exponential backoff on publish failures |
+| **A/B Testing** | Causal inference experiments with statistical significance testing |
+| **Prompt Tuner** | Performance-aware prompt optimization based on historical outcomes |
+| **Preflight Intelligence** | Pre-cycle blocking checks (credentials, API health, budget, subscription status) |
 | **Watchdog** | Sense/decide/act/verify loop — remediates stale runs, phantom posts, credential issues |
-| **CIFix** | Self-healing CI/CD — auto-fixes lint, format, and type errors from failed GitHub Actions runs |
-| **Learning Engine** | Confidence calibration, A/B testing, anomaly detection |
-| **Memory Store** | Agent cross-cycle memory with confidence scoring and pruning |
-| **Preflight** | Pre-cycle blocking checks (credentials, API health, budget) |
+
+## Platform Support
+
+### Social Posts
+| Platform | Status | Features |
+|----------|--------|----------|
+| **Bluesky** | Production | Publish, verify, engagement replies, analytics |
+| **Twitter/X** | Production | Publish, analytics |
+| **LinkedIn** | Production | Publish, analytics |
+
+### Long-Form Articles
+| Platform | Status | Features |
+|----------|--------|----------|
+| **Medium** | Production | Article publishing via API |
+| **Substack** | Production | Draft/publish via web API |
+| **LinkedIn Articles** | Production | Long-form publishing via REST API |
+
+### Data Sources
+| Source | Usage |
+|--------|-------|
+| **NewsAPI** | Trending headlines + keyword search by client industry |
+| **Google Trends** | Global trending searches |
+| **RSS Feeds** | Per-client configurable feed monitoring |
+
+## Self-Healing CI/CD
+
+The CI Fix Agent runs every pipeline cycle and autonomously repairs broken builds:
+
+1. **Detection** — Fetches failed GitHub Actions runs via `gh` CLI
+2. **Diagnosis** — Categorizes failures (lint, format, type errors, test failures)
+3. **Mechanical Fix** — Runs `ruff check --fix`, `ruff format`, auto-imports
+4. **LLM Escalation** — For failures that can't be mechanically fixed, sends the error context to Claude for code-level patches
+5. **Validation** — Runs the full test suite against the fix
+6. **Ship** — Commits, pushes, creates PR with auto-merge enabled
+
+The CTO Agent handles deeper engineering work: it picks up backlog tasks (created by CEO directives or manual entry), reads relevant source files, generates implementation code, writes tests, validates everything passes, and opens auto-merge PRs. Failed tests trigger automatic rollback.
 
 ## Multi-Tenant Architecture
 
 - Per-client data isolation (`client_id` on all tables)
 - AWS Cognito authentication (email/password, JWT sessions)
-- Per-tenant platform credentials (Bluesky, Twitter, LinkedIn) — encrypted at rest
-- Stripe subscription management with free trial support
-- Tenant self-service dashboard with live monitoring
+- Per-tenant platform credentials (Bluesky, Twitter, LinkedIn, Medium, Substack) — encrypted at rest with Fernet
+- Stripe subscription management with free trial support and automatic expiry
+- Tenant self-service dashboard with live pipeline monitoring
+- Per-client configuration: news categories, RSS feeds, brand voice, target audience, posting cadence
+- Webhook system for pipeline events (post published, pipeline completed/failed)
 
 ## Web Dashboards
 
 | Dashboard | URL | Purpose |
 |-----------|-----|---------|
-| Admin | `/` | Internal operations — all clients, content review, pipeline management |
-| Tenant | `/my/dashboard` | Self-service — generate content, monitor health, manage settings |
-| Glass | `/glass` | Public live dashboard showing Ortobahn's own internals |
+| **Admin** | `/` | Internal operations — all clients, content review, pipeline management |
+| **Tenant** | `/my/dashboard` | Self-service — generate content, monitor health, manage settings, connect platforms |
+| **Glass** | `/glass` | Public live dashboard showing Ortobahn's own internals (pipeline steps, post history) |
+| **SRE Panel** | `/sre` | System health — success rates, token usage, cost estimates, platform health |
+| **Analytics** | `/my/analytics` | Per-tenant performance metrics, engagement trends, content analysis |
 
-All dashboards use HTMX for live-updating panels (no page reloads).
+All dashboards use HTMX for live-updating panels (no page reloads). Templates rendered server-side with Jinja2.
 
 ## Quick Start
 
@@ -138,28 +206,40 @@ See `.env.example` for all options. Key variables:
 
 ```
 ortobahn/
-  agents/           # AI agent implementations (12 agents + base class)
-  integrations/     # External API clients (Bluesky, Twitter, LinkedIn, NewsAPI, RSS, Trends)
+  agents/           # AI agent implementations (18 agents + base class)
+  integrations/     # External API clients (Bluesky, Twitter, LinkedIn, Medium, Substack, NewsAPI, RSS, Trends)
   web/
-    routes/         # FastAPI route modules (admin, tenant, glass, auth, payments, etc.)
+    routes/         # FastAPI route modules (admin, tenant, glass, SRE, auth, payments, legal, onboard, etc.)
     templates/      # Jinja2 HTML templates
     static/         # CSS and static assets
-  prompts/          # LLM system prompts (editable .txt files)
+  prompts/          # LLM system prompts (editable .txt files — one per agent)
   dashboard/        # Rich terminal dashboard
   config.py         # Settings from environment variables
   db.py             # Database layer (SQLite + PostgreSQL)
   llm.py            # Shared Claude API wrapper with caching and Bedrock support
   models.py         # Pydantic data contracts
-  orchestrator.py   # Pipeline coordinator
+  orchestrator.py   # Pipeline coordinator (4-phase execution)
   migrations.py     # Schema migration system
   watchdog.py       # Closed-loop self-monitoring
-  learning.py       # Confidence calibration, A/B testing
+  learning.py       # Confidence calibration, A/B testing, anomaly detection
+  meta_learning.py  # Cross-client pattern promotion
   memory.py         # Agent cross-cycle memory store
   preflight.py      # Pre-cycle health checks
+  predictive_timing.py  # Topic velocity tracking
+  serialization.py  # Multi-part content series
+  style_evolution.py    # Organic voice A/B experiments
+  cadence.py        # Dynamic posting frequency
+  post_feedback.py  # Real-time engagement monitoring
+  publish_recovery.py   # Retry with exponential backoff
+  ab_testing.py     # Causal inference experiments
+  prompt_tuner.py   # Performance-aware prompt optimization
   healthcheck.py    # Dependency health checks
   auth.py           # Authentication (Cognito + API keys)
-  credentials.py    # Encrypted credential storage
-tests/              # Test suite (390+ tests)
+  credentials.py    # Encrypted credential storage (Fernet)
+  git_utils.py      # Git operations for CTO agent
+  webhooks.py       # Event dispatch system
+  backup.py         # SQLite database backups
+tests/              # Test suite (60+ test files)
 CLAUDE.md           # Project conventions for AI assistants
 INVARIANTS.md       # Stability protections
 ```

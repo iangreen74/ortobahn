@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -183,6 +183,127 @@ def create_app() -> FastAPI:
             except Exception:
                 pass  # Never let logging break a request
 
+        return response
+
+    # ---------------------------------------------------------------------------
+    # Toast notifications endpoint (polled by base.html on every page)
+    # ---------------------------------------------------------------------------
+
+    @app.get("/api/toasts", response_class=HTMLResponse)
+    async def api_toasts(request: Request):
+        """Return pending toast notifications as HTML fragments.
+
+        Reads recent pipeline events and returns unseen notifications.
+        Uses a simple cookie-based watermark so each browser session
+        only sees each event once.
+        """
+        db = app.state.db
+        last_seen = request.cookies.get("toast_watermark", "")
+
+        # Find recently completed/failed pipeline runs (last 2 minutes)
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        recent_events = db.fetchall(
+            "SELECT id, status, posts_published, completed_at, client_id"
+            " FROM pipeline_runs WHERE completed_at >= ? AND status IN ('completed', 'failed')"
+            " ORDER BY completed_at DESC LIMIT 5",
+            (cutoff,),
+        )
+
+        # Find recently published posts (last 2 minutes)
+        recent_posts = db.fetchall(
+            "SELECT id, text, platform, status FROM posts"
+            " WHERE published_at >= ? AND status='published'"
+            " ORDER BY published_at DESC LIMIT 5",
+            (cutoff,),
+        )
+
+        # Find recently approved/rejected posts (last 2 minutes)
+        recent_moderated = db.fetchall(
+            "SELECT id, text, status FROM posts"
+            " WHERE created_at >= ? AND status IN ('approved', 'rejected')"
+            " ORDER BY created_at DESC LIMIT 5",
+            (cutoff,),
+        )
+
+        toasts: list[str] = []
+
+        for event in recent_events:
+            eid = event["id"][:8]
+            if eid <= last_seen:
+                continue
+            if event["status"] == "completed":
+                count = event.get("posts_published") or 0
+                toasts.append(
+                    '<div class="toast toast-success">'
+                    f'<span class="toast-icon">&#10003;</span>'
+                    f"<span>Pipeline completed &mdash; {count} post(s) published</span>"
+                    '<button class="toast-close">&times;</button>'
+                    "</div>"
+                )
+            elif event["status"] == "failed":
+                toasts.append(
+                    '<div class="toast toast-error">'
+                    f'<span class="toast-icon">&#10007;</span>'
+                    f"<span>Pipeline run failed for {event.get('client_id', 'unknown')}</span>"
+                    '<button class="toast-close">&times;</button>'
+                    "</div>"
+                )
+
+        for post in recent_posts:
+            pid = post["id"][:8]
+            if pid <= last_seen:
+                continue
+            platform = post.get("platform") or "generic"
+            text_preview = (post.get("text") or "")[:50]
+            if len(post.get("text", "")) > 50:
+                text_preview += "..."
+            toasts.append(
+                '<div class="toast toast-info">'
+                f'<span class="toast-icon">&#9998;</span>'
+                f"<span>Published on {platform}: {text_preview}</span>"
+                '<button class="toast-close">&times;</button>'
+                "</div>"
+            )
+
+        for post in recent_moderated:
+            pid = post["id"][:8]
+            if pid <= last_seen:
+                continue
+            if post["status"] == "approved":
+                toasts.append(
+                    '<div class="toast toast-success">'
+                    '<span class="toast-icon">&#10003;</span>'
+                    "<span>Post approved</span>"
+                    '<button class="toast-close">&times;</button>'
+                    "</div>"
+                )
+            elif post["status"] == "rejected":
+                toasts.append(
+                    '<div class="toast toast-warning">'
+                    '<span class="toast-icon">&#9888;</span>'
+                    "<span>Post rejected</span>"
+                    '<button class="toast-close">&times;</button>'
+                    "</div>"
+                )
+
+        # Only show first 3 toasts to avoid overwhelming the user
+        html = "".join(toasts[:3])
+
+        # Set watermark cookie to prevent repeat toasts
+        from fastapi.responses import HTMLResponse as _HTML
+
+        response = _HTML(html)
+        if recent_events or recent_posts or recent_moderated:
+            new_watermark = datetime.now(timezone.utc).isoformat()
+            response.set_cookie(
+                "toast_watermark",
+                new_watermark,
+                max_age=300,
+                httponly=True,
+                samesite="lax",
+            )
         return response
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

@@ -3,7 +3,11 @@
 {% block content %}
 <h1>Dashboard</h1>
 
-<div class="grid">
+<div class="grid"
+     id="admin-kpi-panel"
+     hx-get="/api/admin/partials/kpi"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
     <article>
         <header>Clients</header>
         <p><strong>{{ clients|length }}</strong> active clients</p>
@@ -35,8 +39,20 @@
     </article>
 </div>
 
+<h2>Live Pipeline Status</h2>
+<article id="admin-pipeline-status"
+         hx-get="/api/admin/partials/pipeline"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+    <p style="opacity:0.6">Loading pipeline status...</p>
+</article>
+
 {% if recent_runs %}
 <h2>Recent Pipeline Runs</h2>
+<div id="admin-runs-panel"
+     hx-get="/api/admin/partials/runs"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
 <table>
     <thead>
         <tr>
@@ -65,5 +81,6 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% endif %}
 {% endblock %}

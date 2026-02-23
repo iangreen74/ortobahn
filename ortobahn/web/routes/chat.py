@@ -118,6 +118,19 @@ def _render_message(role: str, content: str) -> str:
     )
 
 
+@router.get("/", name="chat_page")
+async def chat_page(request: Request, client: AuthClient):
+    """Full-page chat view using the chat.html template."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "chat.html",
+        {
+            "request": request,
+            "client": client,
+        },
+    )
+
+
 @router.get("/history", response_class=HTMLResponse)
 async def chat_history(request: Request, client: AuthClient):
     """Load chat history for the widget."""

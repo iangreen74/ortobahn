@@ -38,7 +38,11 @@
 {% endif %}
 {% endif %}
 
-<div class="grid">
+<div class="grid"
+     id="tenant-kpi-panel"
+     hx-get="/my/api/partials/kpi"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
     <article>
         <header>Published Posts</header>
         <p><strong>{{ total_published }}</strong></p>
@@ -57,6 +61,16 @@
         {% endif %}
     </article>
 </div>
+
+<!-- AI Insights -->
+<h2>AI Insights</h2>
+<article class="insights-card"
+         id="ai-insights-panel"
+         hx-get="/my/api/partials/insights"
+         hx-trigger="load, every 60s"
+         hx-swap="innerHTML">
+    <p style="opacity:0.6">Analyzing your data...</p>
+</article>
 
 <h2>Content Output</h2>
 <article hx-get="/my/api/health" hx-trigger="load, every 30s" hx-swap="innerHTML">
@@ -124,6 +138,10 @@
 
 {% if posts %}
 <h2>Recent Posts</h2>
+<div id="tenant-recent-posts"
+     hx-get="/my/api/partials/recent-posts"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
 <table>
     <thead>
         <tr>
@@ -163,6 +181,7 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% else %}
 <article>
     <p>No posts yet. Click "Generate Content" above to create your first content.</p>

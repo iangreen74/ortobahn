@@ -3,17 +3,27 @@
 {% block content %}
 <h1>System Health</h1>
 
+<!-- Auto-refresh: entire SRE overview panel -->
+<div id="sre-overview"
+     hx-get="/sre/partials/overview"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
+
 <div class="grid">
     <article>
         <header>Overall Health</header>
-        <p>
+        <p style="text-align: center; font-size: 2rem;">
             {% if health == 'healthy' %}
+            <span class="sre-indicator sre-green"></span>
             <span class="badge completed">HEALTHY</span>
             {% elif health == 'degraded' %}
+            <span class="sre-indicator sre-yellow"></span>
             <span class="badge running">DEGRADED</span>
             {% elif health == 'critical' %}
+            <span class="sre-indicator sre-red"></span>
             <span class="badge failed">CRITICAL</span>
             {% else %}
+            <span class="sre-indicator sre-gray"></span>
             <span class="badge">UNKNOWN</span>
             {% endif %}
         </p>
@@ -31,7 +41,15 @@
     <article>
         <header>Platform Health</header>
         {% for platform, status in platform_health.items() %}
-        <p>{{ platform | capitalize }}:
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            {% if status == 'healthy' %}
+            <span class="sre-indicator sre-green"></span>
+            {% elif status == 'failing' %}
+            <span class="sre-indicator sre-red"></span>
+            {% else %}
+            <span class="sre-indicator sre-gray"></span>
+            {% endif %}
+            <strong>{{ platform | capitalize }}</strong>
             {% if status == 'healthy' %}
             <span class="badge completed">healthy</span>
             {% elif status == 'failing' %}
@@ -39,10 +57,38 @@
             {% else %}
             <span class="badge">no data</span>
             {% endif %}
-        </p>
+        </div>
         {% endfor %}
     </article>
 </div>
+
+<!-- Pipeline Success Rate Gauge -->
+<h2>Pipeline Success Rate</h2>
+<article>
+    <div class="sre-gauge-container">
+        <div class="sre-gauge">
+            <div class="sre-gauge-fill" style="width: {{ success_rate }}%;
+                 background: {% if success_rate >= 80 %}linear-gradient(90deg, #10b981, #4caf50){% elif success_rate >= 50 %}linear-gradient(90deg, #f59e0b, #ffb74d){% else %}linear-gradient(90deg, #ef4444, #ef5350){% endif %};">
+            </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 0.5rem;">
+            <small style="opacity: 0.5;">0%</small>
+            <strong>{{ success_rate }}%</strong>
+            <small style="opacity: 0.5;">100%</small>
+        </div>
+    </div>
+</article>
+
+</div><!-- end sre-overview -->
+
+<!-- Token Usage Trend (last 7 days) - auto-refreshes -->
+<h2>Token Usage Trend <small style="opacity: 0.5;">(last 7 days)</small></h2>
+<article id="sre-token-trend"
+         hx-get="/sre/partials/token-trend"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+    <p style="opacity: 0.6; text-align: center;">Loading token trend...</p>
+</article>
 
 {% if recent_runs %}
 <h2>Recent Pipeline Runs</h2>
@@ -77,6 +123,15 @@
     </tbody>
 </table>
 {% endif %}
+
+<!-- Recent Error Log -->
+<h2>Recent Errors</h2>
+<article id="sre-error-log"
+         hx-get="/sre/partials/errors"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+    <p style="opacity: 0.6; text-align: center;">Loading error log...</p>
+</article>
 
 {% if agent_logs %}
 <h2>Recent Agent Activity</h2>

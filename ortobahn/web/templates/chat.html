@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Chat{% endblock %}
+{% block nav_home %}/my/dashboard{% endblock %}
+{% block nav_links %}
+<li><a href="/my/dashboard">Overview</a></li>
+<li><a href="/my/analytics">Analytics</a></li>
+<li><a href="/my/settings">Settings</a></li>
+<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
+{% endblock %}
+{% block content %}
+<h1>Support Chat</h1>
+<p><small>Chat with your Ortobahn AI assistant about your account, strategy, and content performance.</small></p>
+
+<article>
+    <div id="chat-fullpage-messages" class="chat-messages" style="max-height: 500px; min-height: 300px;"
+         hx-get="/my/chat/history"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <p style="opacity:0.6">Loading conversation...</p>
+    </div>
+    <form class="chat-input-form"
+          hx-post="/my/chat/send"
+          hx-target="#chat-fullpage-messages"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset(); document.getElementById('chat-fullpage-messages').scrollTop = document.getElementById('chat-fullpage-messages').scrollHeight;">
+        <input type="text" name="message" placeholder="Ask a question about your account..." autocomplete="off" required>
+        <button type="submit">Send</button>
+    </form>
+</article>
+{% endblock %}

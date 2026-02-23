@@ -56,8 +56,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
 
     total_published = len([p for p in posts if p.get("status") == "published"])
     total_engagement = sum(
-        (p.get("like_count") or 0) + (p.get("repost_count") or 0)
-        for p in posts if p.get("status") == "published"
+        (p.get("like_count") or 0) + (p.get("repost_count") or 0) for p in posts if p.get("status") == "published"
     )
 
     # Check connected platforms
@@ -86,6 +85,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
 
     # Time-based greeting
     import time
+
     hour = int(time.strftime("%H"))
     if hour < 12:
         greeting = "Good morning"
@@ -881,8 +881,7 @@ async def tenant_kpi_partial(request: Request, client: AuthClient):
 
     # Total engagement
     total_engagement = sum(
-        (p.get("like_count") or 0) + (p.get("repost_count") or 0)
-        for p in posts if p.get("status") == "published"
+        (p.get("like_count") or 0) + (p.get("repost_count") or 0) for p in posts if p.get("status") == "published"
     )
 
     # Connected platforms
@@ -928,8 +927,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
 
     # Recent articles
     articles = db.fetchall(
-        "SELECT title, status, word_count, created_at FROM articles"
-        " WHERE client_id=? ORDER BY created_at DESC LIMIT 3",
+        "SELECT title, status, word_count, created_at FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT 3",
         (cid,),
     )
 
@@ -943,8 +941,8 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
     if not published and not articles and not runs:
         return HTMLResponse(
             '<div class="activity-empty">'
-            '<p>Your AI is ready to create. Click <strong>Create Content</strong> to get started.</p>'
-            '</div>'
+            "<p>Your AI is ready to create. Click <strong>Create Content</strong> to get started.</p>"
+            "</div>"
         )
 
     parts = []
@@ -961,9 +959,9 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
         if likes or reposts:
             engagement = (
                 f'<span class="activity-stats">'
-                f'{likes} like{"s" if likes != 1 else ""}'
-                f' &middot; {reposts} repost{"s" if reposts != 1 else ""}'
-                f'</span>'
+                f"{likes} like{'s' if likes != 1 else ''}"
+                f" &middot; {reposts} repost{'s' if reposts != 1 else ''}"
+                f"</span>"
             )
         parts.append(
             f'<div class="activity-item">'
@@ -972,10 +970,10 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
             f'<div class="activity-header">'
             f'<span class="badge {_escape(platform)}">{platform}</span>'
             f'<span class="activity-time">{ts}</span>'
-            f'</div>'
+            f"</div>"
             f'<p class="activity-text">{text}</p>'
-            f'{engagement}'
-            f'</div></div>'
+            f"{engagement}"
+            f"</div></div>"
         )
 
     for a in articles:
@@ -991,9 +989,9 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
             f'<div class="activity-header">'
             f'<span class="badge draft">article</span>'
             f'<span class="activity-time">{ts}</span>'
-            f'</div>'
+            f"</div>"
             f'<p class="activity-text"><strong>{title}</strong> &mdash; {words} words ({status})</p>'
-            f'</div></div>'
+            f"</div></div>"
         )
 
     for r in runs:
@@ -1008,9 +1006,9 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-header">'
                 f'<span class="badge completed">pipeline</span>'
                 f'<span class="activity-time">{ts}</span>'
-                f'</div>'
+                f"</div>"
                 f'<p class="activity-text">Created and published {count} post{"s" if count != 1 else ""}</p>'
-                f'</div></div>'
+                f"</div></div>"
             )
         elif status == "failed":
             parts.append(
@@ -1020,9 +1018,9 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-header">'
                 f'<span class="badge failed">pipeline</span>'
                 f'<span class="activity-time">{ts}</span>'
-                f'</div>'
+                f"</div>"
                 f'<p class="activity-text">Pipeline run encountered an issue</p>'
-                f'</div></div>'
+                f"</div></div>"
             )
 
     return HTMLResponse("".join(parts[:12]))

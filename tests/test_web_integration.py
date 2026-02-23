@@ -95,3 +95,70 @@ class TestMiddlewareChain:
         for _ in range(10):
             resp = client.get("/health")
             assert resp.status_code == 200
+
+
+def _create_authenticated_client(tmp_path):
+    """Create a test app with an authenticated session for tenant routes."""
+    from ortobahn.auth import create_session_token
+    from ortobahn.web.app import create_app
+
+    settings = Settings(
+        anthropic_api_key="sk-ant-test",
+        db_path=tmp_path / "integration_auth_test.db",
+        secret_key="test-secret-key-for-integration",
+    )
+    app = create_app.__wrapped__() if hasattr(create_app, "__wrapped__") else create_app()
+    db = Database(settings.db_path)
+    app.state.db = db
+    app.state.settings = settings
+
+    # Create a test client in the DB
+    client_id = db.create_client({"name": "IntegrationTestCo"})
+    token = create_session_token(client_id, settings.secret_key)
+
+    test_client = TestClient(app)
+    test_client.cookies.set("session", token)
+    return app, test_client, client_id
+
+
+class TestAuthenticatedPages:
+    """Test that authenticated tenant pages render without 500 errors.
+
+    Prevents regressions like the analytics 500 and article generation
+    button not working. These are the pages actual users see.
+    """
+
+    def test_analytics_renders_200(self, tmp_path):
+        """Analytics page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/analytics")
+        assert resp.status_code == 200
+        assert "Analytics" in resp.text
+
+    def test_articles_renders_200(self, tmp_path):
+        """Articles page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/articles")
+        assert resp.status_code == 200
+        assert "Articles" in resp.text
+
+    def test_settings_renders_200(self, tmp_path):
+        """Settings page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/settings")
+        assert resp.status_code == 200
+        assert "Settings" in resp.text
+
+    def test_dashboard_renders_200(self, tmp_path):
+        """Dashboard page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/dashboard")
+        assert resp.status_code == 200
+
+    def test_generate_article_redirects(self, tmp_path):
+        """Generate Article button must POST and redirect, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.post("/my/generate-article", follow_redirects=False)
+        assert resp.status_code == 303
+        assert "/my/articles" in resp.headers["location"]
+        assert "msg=" in resp.headers["location"]

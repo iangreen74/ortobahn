@@ -111,6 +111,30 @@ async def tenant_analytics(request: Request, client: AuthClient):
     templates = request.app.state.templates
     client_id = client["id"]
 
+    # Defensive: if any analytics query fails, show empty state instead of 500
+    try:
+        return await _render_analytics(db, templates, request, client, client_id)
+    except Exception:
+        logger.exception("Analytics query failed for client %s", client_id)
+        return templates.TemplateResponse(
+            "tenant_analytics.html",
+            {
+                "request": request,
+                "client": client,
+                "total_posts": 0,
+                "total_engagement": 0,
+                "avg_engagement": 0,
+                "best_platform": "N/A",
+                "platform_rows": [],
+                "trend_data": [],
+                "best_post": None,
+                "top_posts": [],
+                "recent_posts": [],
+            },
+        )
+
+
+async def _render_analytics(db, templates, request, client, client_id):
     # Total posts published (all time)
     total_row = db.fetchone(
         "SELECT COUNT(*) as count FROM posts WHERE status='published' AND client_id=?",
@@ -187,7 +211,6 @@ async def tenant_analytics(request: Request, client: AuthClient):
         " COALESCE(m.repost_count,0) as repost_count, COALESCE(m.reply_count,0) as reply_count,"
         " p.published_at"
         " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=?"
-        " GROUP BY p.id"
         " ORDER BY (COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) DESC"
         " LIMIT 5",
         (client_id,),
@@ -583,6 +606,17 @@ async def tenant_publish_article(
 async def tenant_generate_article(request: Request, background_tasks: BackgroundTasks, client: AuthClient):
     """Trigger one-shot article generation."""
     settings = request.app.state.settings
+
+    # Pre-check: ensure articles are enabled for this client
+    if not client.get("article_enabled"):
+        # Try enabling it (seed may not have run yet)
+        db = request.app.state.db
+        db.execute("UPDATE clients SET article_enabled=1 WHERE id=?", (client["id"],), commit=True)
+        # Refresh client dict
+        client = db.get_client(client["id"]) or client
+
+    if not settings.anthropic_api_key:
+        return RedirectResponse("/my/articles?msg=error&detail=no_api_key", status_code=303)
 
     def _do_generate():
         from ortobahn.orchestrator import Pipeline

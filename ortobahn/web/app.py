@@ -345,7 +345,16 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _startup_checks():
-        """Log warnings for misconfigured settings at startup."""
+        """Seed internal clients and log warnings for misconfigured settings."""
+        # Seed internal clients (idempotent) — ensures article_enabled, auto_publish, etc.
+        try:
+            from ortobahn.seed import seed_all
+
+            seed_all(app.state.db, settings=settings)
+            _logger.info("Seed completed")
+        except Exception as e:
+            _logger.warning(f"Seed failed (non-fatal): {e}")
+
         issues = []
         if not settings.secret_key:
             issues.append("ORTOBAHN_SECRET_KEY not set")

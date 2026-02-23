@@ -126,7 +126,7 @@ async def tenant_analytics(request: Request, client: AuthClient):
 
     # Per-platform breakdown: posts count, likes, reposts, replies
     platform_rows = db.fetchall(
-        "SELECT p.platform, COUNT(*) as count,"
+        "SELECT p.platform, COUNT(DISTINCT p.id) as count,"
         " SUM(COALESCE(m.like_count,0)) as likes,"
         " SUM(COALESCE(m.repost_count,0)) as reposts,"
         " SUM(COALESCE(m.reply_count,0)) as replies"
@@ -154,7 +154,7 @@ async def tenant_analytics(request: Request, client: AuthClient):
     # Engagement trend (last 7 days)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     trend_rows = db.fetchall(
-        "SELECT DATE(p.published_at) as day, COUNT(*) as posts,"
+        "SELECT DATE(p.published_at) as day, COUNT(DISTINCT p.id) as posts,"
         " SUM(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as engagement"
         " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?"
         " GROUP BY DATE(p.published_at) ORDER BY day",
@@ -183,10 +183,11 @@ async def tenant_analytics(request: Request, client: AuthClient):
 
     # Top 5 posts by engagement
     top_posts = db.fetchall(
-        "SELECT p.text, p.platform, COALESCE(m.like_count,0) as like_count,"
+        "SELECT p.id, p.text, p.platform, COALESCE(m.like_count,0) as like_count,"
         " COALESCE(m.repost_count,0) as repost_count, COALESCE(m.reply_count,0) as reply_count,"
         " p.published_at"
         " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=?"
+        " GROUP BY p.id"
         " ORDER BY (COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) DESC"
         " LIMIT 5",
         (client_id,),
@@ -269,6 +270,63 @@ async def tenant_publish_drafts(
     """Approve and publish all pending drafts for this tenant."""
     settings = request.app.state.settings
     background_tasks.add_task(_publish_drafts, settings, client["id"])
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
+@router.get("/api/partials/drafts", response_class=HTMLResponse)
+async def tenant_drafts_partial(request: Request, client: AuthClient):
+    """Return pending drafts as HTML cards for review."""
+    db = request.app.state.db
+    drafts = db.get_drafts_for_review(client_id=client["id"])
+
+    if not drafts:
+        return HTMLResponse('<p style="opacity:0.6;text-align:center;">No pending drafts.</p>')
+
+    parts = []
+    for d in drafts:
+        pid = d["id"]
+        platform = d.get("platform") or "generic"
+        text = _escape(d.get("text") or "")
+        confidence = d.get("confidence") or 0
+        parts.append(
+            f'<div class="draft-card" style="border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:0.75rem;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
+            f'<span style="background:#3b82f6;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.75em;">{_escape(platform)}</span>'
+            f'<span style="opacity:0.5;font-size:0.8em;">confidence: {confidence:.2f}</span>'
+            f"</div>"
+            f'<p style="margin:0.5rem 0;white-space:pre-wrap;">{text}</p>'
+            f'<div style="display:flex;gap:0.5rem;margin-top:0.5rem;">'
+            f'<form method="post" action="/my/drafts/{pid}/approve" style="margin:0;">'
+            f'<button type="submit" style="padding:4px 12px;font-size:0.8em;">Approve</button>'
+            f"</form>"
+            f'<form method="post" action="/my/drafts/{pid}/reject" style="margin:0;">'
+            f'<button type="submit" class="secondary" style="padding:4px 12px;font-size:0.8em;">Reject</button>'
+            f"</form>"
+            f"</div>"
+            f"</div>"
+        )
+
+    return HTMLResponse("".join(parts))
+
+
+@router.post("/drafts/{post_id}/approve")
+async def tenant_approve_draft(request: Request, post_id: str, client: AuthClient):
+    db = request.app.state.db
+    # Verify the post belongs to this client
+    post = db.get_post(post_id)
+    if not post or post.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404)
+    db.approve_post(post_id)
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
+@router.post("/drafts/{post_id}/reject")
+async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient):
+    db = request.app.state.db
+    post = db.get_post(post_id)
+    if not post or post.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404)
+    db.reject_post(post_id)
     return RedirectResponse("/my/dashboard", status_code=303)
 
 
@@ -899,69 +957,75 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     # ------------------------------------------------------------------
     # 1. Best posting day analysis
     # ------------------------------------------------------------------
-    day_stats = db.fetchall(
-        "SELECT CASE CAST(strftime('%%w', p.published_at) AS INTEGER)"
-        "  WHEN 0 THEN 'Sunday' WHEN 1 THEN 'Monday' WHEN 2 THEN 'Tuesday'"
-        "  WHEN 3 THEN 'Wednesday' WHEN 4 THEN 'Thursday'"
-        "  WHEN 5 THEN 'Friday' WHEN 6 THEN 'Saturday' END as day_name,"
-        " COUNT(*) as cnt,"
-        " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
-        " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
-        " GROUP BY strftime('%%w', p.published_at)"
-        " HAVING cnt >= 2"
-        " ORDER BY avg_eng DESC",
-        (client_id,),
-    )
-    if len(day_stats) >= 2:
-        best_day = day_stats[0]
-        worst_day = day_stats[-1]
-        best_avg = best_day["avg_eng"] or 0
-        worst_avg = worst_day["avg_eng"] or 0
-        if worst_avg > 0:
-            ratio = best_avg / worst_avg
-            if ratio >= 1.5:
-                insights.append(
-                    {
-                        "icon": "calendar",
-                        "title": f"Your posts perform {ratio:.1f}x better on {best_day['day_name']}s",
-                        "detail": (
-                            f"Average engagement on {best_day['day_name']}: {best_avg:.0f} vs "
-                            f"{worst_day['day_name']}: {worst_avg:.0f}. "
-                            f"Consider scheduling more content for {best_day['day_name']}."
-                        ),
-                        "category": "timing",
-                    }
-                )
+    try:
+        day_stats = db.fetchall(
+            "SELECT CASE CAST(strftime('%%w', p.published_at) AS INTEGER)"
+            "  WHEN 0 THEN 'Sunday' WHEN 1 THEN 'Monday' WHEN 2 THEN 'Tuesday'"
+            "  WHEN 3 THEN 'Wednesday' WHEN 4 THEN 'Thursday'"
+            "  WHEN 5 THEN 'Friday' WHEN 6 THEN 'Saturday' END as day_name,"
+            " COUNT(*) as cnt,"
+            " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+            " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
+            " GROUP BY strftime('%%w', p.published_at)"
+            " HAVING cnt >= 2"
+            " ORDER BY avg_eng DESC",
+            (client_id,),
+        )
+        if len(day_stats) >= 2:
+            best_day = day_stats[0]
+            worst_day = day_stats[-1]
+            best_avg = best_day["avg_eng"] or 0
+            worst_avg = worst_day["avg_eng"] or 0
+            if worst_avg > 0:
+                ratio = best_avg / worst_avg
+                if ratio >= 1.5:
+                    insights.append(
+                        {
+                            "icon": "calendar",
+                            "title": f"Your posts perform {ratio:.1f}x better on {best_day['day_name']}s",
+                            "detail": (
+                                f"Average engagement on {best_day['day_name']}: {best_avg:.0f} vs "
+                                f"{worst_day['day_name']}: {worst_avg:.0f}. "
+                                f"Consider scheduling more content for {best_day['day_name']}."
+                            ),
+                            "category": "timing",
+                        }
+                    )
+    except Exception:
+        pass  # strftime not available on PostgreSQL
 
     # ------------------------------------------------------------------
     # 2. Best posting hour analysis
     # ------------------------------------------------------------------
-    hour_stats = db.fetchall(
-        "SELECT CAST(strftime('%%H', p.published_at) AS INTEGER) as hour,"
-        " COUNT(*) as cnt,"
-        " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
-        " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
-        " GROUP BY strftime('%%H', p.published_at)"
-        " HAVING cnt >= 2"
-        " ORDER BY avg_eng DESC",
-        (client_id,),
-    )
-    if hour_stats:
-        top_hours = hour_stats[:3]
-        hours_str = ", ".join(f"{h['hour']}:00" for h in top_hours)
-        if len(top_hours) >= 2:
-            insights.append(
-                {
-                    "icon": "clock",
-                    "title": f"Your audience is most active around {top_hours[0]['hour']}:00",
-                    "detail": (
-                        f"Top engagement hours: {hours_str}. "
-                        f"Posts at {top_hours[0]['hour']}:00 average "
-                        f"{top_hours[0]['avg_eng']:.0f} engagement."
-                    ),
-                    "category": "timing",
-                }
-            )
+    try:
+        hour_stats = db.fetchall(
+            "SELECT CAST(strftime('%%H', p.published_at) AS INTEGER) as hour,"
+            " COUNT(*) as cnt,"
+            " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+            " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
+            " GROUP BY strftime('%%H', p.published_at)"
+            " HAVING cnt >= 2"
+            " ORDER BY avg_eng DESC",
+            (client_id,),
+        )
+        if hour_stats:
+            top_hours = hour_stats[:3]
+            hours_str = ", ".join(f"{h['hour']}:00" for h in top_hours)
+            if len(top_hours) >= 2:
+                insights.append(
+                    {
+                        "icon": "clock",
+                        "title": f"Your audience is most active around {top_hours[0]['hour']}:00",
+                        "detail": (
+                            f"Top engagement hours: {hours_str}. "
+                            f"Posts at {top_hours[0]['hour']}:00 average "
+                            f"{top_hours[0]['avg_eng']:.0f} engagement."
+                        ),
+                        "category": "timing",
+                    }
+                )
+    except Exception:
+        pass  # strftime not available on PostgreSQL
 
     # ------------------------------------------------------------------
     # 3. Content type / platform comparison
@@ -1231,7 +1295,10 @@ _CATEGORY_COLORS = {
 async def tenant_insights_partial(request: Request, client: AuthClient):
     """Return AI-generated insights as an HTML fragment."""
     db = request.app.state.db
-    insights = _generate_insights(db, client["id"])
+    try:
+        insights = _generate_insights(db, client["id"])
+    except Exception:
+        insights = []
 
     if not insights:
         return HTMLResponse('<p style="opacity: 0.6; text-align: center;">Not enough data for insights yet.</p>')

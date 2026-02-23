@@ -107,8 +107,15 @@
 </article>
 
 {% if total_drafts > 0 %}
-<form method="post" action="/my/publish-drafts" style="margin-bottom: 1rem;">
-    <button type="submit" class="outline">Publish {{ total_drafts }} pending draft{{ 's' if total_drafts != 1 else '' }}</button>
+<h2>Pending Drafts ({{ total_drafts }})</h2>
+<div id="drafts-panel"
+     hx-get="/my/api/partials/drafts"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+    <p style="opacity:0.6">Loading drafts...</p>
+</div>
+<form method="post" action="/my/publish-drafts" style="margin-top: 0.5rem;">
+    <button type="submit" class="outline">Publish all {{ total_drafts }} approved &amp; pending drafts</button>
 </form>
 {% endif %}
 

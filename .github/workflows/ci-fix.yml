@@ -75,7 +75,7 @@ jobs:
             -f workflow_name="Deploy"
 
       # --- CI failures: try mechanical fix first, then escalate ---
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: >
           steps.loop_check.outputs.should_skip != 'true' &&
           steps.detect.outputs.is_deploy == 'false'

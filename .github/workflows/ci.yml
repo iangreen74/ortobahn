@@ -51,6 +51,9 @@ jobs:
       - name: Run tests
         if: matrix.python-version != '3.12'
         run: pytest -v
+      - name: Install git for Codecov
+        if: matrix.python-version == '3.12'
+        run: apt-get update -qq && apt-get install -y -qq git > /dev/null
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4

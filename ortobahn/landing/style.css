@@ -261,6 +261,47 @@ section h2 {
     left: 28px;
 }
 
+/* Tier Sections (Operations Layer, Intelligence Systems) */
+.tier-section {
+    margin-top: 64px;
+    padding-top: 48px;
+    border-top: 1px solid var(--border);
+}
+
+.tier-label {
+    font-size: clamp(1.3rem, 3vw, 1.6rem);
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 12px;
+    color: var(--primary);
+    letter-spacing: -0.01em;
+}
+
+.agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 18px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.agent-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 16px var(--primary-glow);
+}
+
+.agent-card h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+}
+
+.agent-card p {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
 /* Features Grid */
 .features-grid {
     display: grid;

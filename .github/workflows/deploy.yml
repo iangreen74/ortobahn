@@ -372,6 +372,19 @@ jobs:
           aws ecs wait services-stable --cluster ortobahn \
             --services ortobahn-web-v2 ortobahn-scheduler-v2
 
+      - name: Notify Slack of deploy
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then exit 0; fi
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:8}"
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \":rocket: Production deploy successful — \`${SHORT_SHA}\` on \`${{ github.ref_name }}\`\"}" \
+            || true
+
   post-deploy-validate:
     runs-on: self-hosted
     needs: [build-and-push, deploy-prod]
@@ -555,3 +568,18 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"text\": \":white_check_mark: *Ortobahn Deploy: VALIDATED*\n  Environment: production\n  SHA: \`${IMAGE_TAG:0:7}\`\n  All smoke tests passed.\"}" \
           || echo "Warning: Slack notification failed"
+
+  notify-deploy-failure:
+    runs-on: self-hosted
+    needs: [deploy-prod]
+    if: failure()
+    steps:
+      - name: Notify Slack of deploy failure
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then exit 0; fi
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \":rotating_light: Production deploy FAILED — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"}" \
+            || true

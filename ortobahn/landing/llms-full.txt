@@ -1,10 +1,10 @@
 # Ortobahn
 
-> Autonomous AI marketing engine by Vaultscaler
+> Autonomous AI marketing company by Vaultscaler
 
 ## Summary
 
-Ortobahn is a fully autonomous marketing engine that uses a pipeline of 5 specialized AI agents to generate strategy, create platform-native content, and publish across social media — with zero human intervention. It operates as an autonomous AI company: once configured, it runs itself indefinitely.
+Ortobahn is a fully autonomous marketing company that uses 20 specialized AI agents organized in 3 tiers to generate strategy, create platform-native social posts and long-form articles, and publish across 6 platforms — with zero human intervention. It operates as an autonomous AI company: once configured, it runs itself indefinitely.
 
 ## Product Details
 
@@ -17,9 +17,9 @@ Ortobahn is a fully autonomous marketing engine that uses a pipeline of 5 specia
 
 ## How It Works
 
-Ortobahn runs a 5-agent AI pipeline on a configurable schedule (default: every 6 hours):
+Ortobahn runs a 20-agent autonomous pipeline organized in 3 tiers on a configurable schedule (default: every 6 hours):
 
-### Agent Pipeline
+### Tier 1: Content Pipeline (6 agents)
 
 1. **Analytics Agent** — Analyzes past post performance: engagement rates, impressions, likes, reposts, top-performing themes, audience signals, and time-of-day patterns. Grounds every downstream decision in data.
 
@@ -27,46 +27,83 @@ Ortobahn runs a 5-agent AI pipeline on a configurable schedule (default: every 6
 
 3. **Strategist Agent** — Translates the CEO's strategy into a concrete content plan: specific post ideas with hooks, angles, target platforms, and content formats. Incorporates trending news (via Google Trends, NewsAPI, RSS feeds) for timely content.
 
-4. **Creator Agent** — Writes platform-native content for each post idea. Respects platform character limits (Bluesky: 300 chars, Twitter: 280 chars, LinkedIn: 3000 chars), tone conventions, hashtag practices, and formatting expectations. Produces multiple drafts per idea.
+4. **Creator Agent** — Writes platform-native social posts for each post idea. Respects platform character limits (Bluesky: 300 chars, Twitter: 280 chars, LinkedIn: 3000 chars), tone conventions, hashtag practices, and formatting expectations. Produces multiple drafts per idea.
 
-5. **Publisher Agent** — Evaluates each draft with a confidence score (0.0–1.0). Posts above the client's confidence threshold are published automatically to connected platforms. Below-threshold posts are saved as drafts for optional human review.
+5. **ArticleWriter Agent** — Produces long-form thought leadership articles for Medium, Substack, and LinkedIn Articles. Transforms strategy themes into in-depth pieces with proper structure, headings, and narrative flow.
 
-### Additional Operational Agents
+6. **Publisher Agent** — Evaluates each draft with a confidence score (0.0–1.0). Posts above the client's confidence threshold are published automatically to connected platforms. Below-threshold posts are saved as drafts for optional human review.
 
-- **CFO Agent** — Tracks API costs, token usage, and per-client profitability
-- **SRE Agent** — Monitors system health, error rates, and pipeline performance
-- **Ops Agent** — Manages client onboarding, scheduling, and platform connectivity
-- **CTO Agent** — Handles engineering tasks, code changes, and CI/CD
-- **Reflection Agent** — Periodic self-assessment comparing predictions to outcomes
-- **Marketing Agent** — Meta-marketing: promotes Ortobahn itself using the same pipeline
+### Tier 2: Operations Layer (7 agents)
 
-### Learning System
+7. **CFO Agent** — Tracks API costs, token usage, and per-client profitability. Flags budget anomalies and optimizes spend.
 
-Ortobahn includes a persistent memory and learning engine:
-- **Agent Memory** — Stores observations, patterns, and preferences per agent per client
-- **Confidence Calibration** — Tracks prediction accuracy and adjusts confidence thresholds
-- **A/B Experiments** — Tests content variations (hooks, tones, formats) and learns from results
-- **Reflection Reports** — Periodic analysis of what worked and what didn't
+8. **SRE Agent** — Monitors system health, error rates, and pipeline performance. Triggers alerts on degradation and coordinates incident response.
 
-## Supported Platforms
+9. **Ops Agent** — Manages client onboarding, scheduling, and platform connectivity across tenants.
 
-| Platform    | Status | Post Format                       |
-|-------------|--------|-----------------------------------|
-| Bluesky     | Live   | 300 chars, optional link facets   |
-| Twitter / X | Live   | 280 chars, hashtags, threads      |
-| LinkedIn    | Live   | 3000 chars, professional tone     |
+10. **CTO Agent** — Handles engineering tasks, code changes, CI/CD, and technical backlog prioritization.
+
+11. **Security Agent** — Watches for threats, audits access patterns, and enforces security policies.
+
+12. **Legal Agent** — Reviews content for compliance risks, copyright concerns, and brand safety.
+
+13. **Support Agent** — Monitors client health, detects issues proactively, and surfaces actionable recommendations.
+
+### Tier 3: Intelligence Systems (8 systems)
+
+14. **Memory** — Persistent storage of observations, patterns, and preferences per agent per client. Ensures continuity across cycles.
+
+15. **Learning Engine** — Extracts lessons from outcomes and feeds them back into agent decision-making for continuous improvement.
+
+16. **A/B Testing** — Tests content variations (hooks, tones, formats, CTAs) and learns from engagement results.
+
+17. **Cadence Optimization** — Finds the ideal posting frequency and schedule for each platform and audience.
+
+18. **Predictive Timing** — Analyzes historical engagement data to publish at the moment audiences are most likely to engage.
+
+19. **Style Evolution** — Gradually refines brand voice based on what performs — without losing brand identity.
+
+20. **Reflection** — Periodic self-assessment comparing predictions to actual outcomes. Identifies systematic biases and blind spots.
+
+21. **Prompt Tuning** — Automatically optimizes agent prompts based on output quality and downstream performance metrics.
+
+## Supported Platforms (6)
+
+| Platform           | Status | Content Format                          |
+|--------------------|--------|-----------------------------------------|
+| Bluesky            | Live   | 300 chars, optional link facets         |
+| Twitter / X        | Live   | 280 chars, hashtags, threads            |
+| LinkedIn Posts     | Live   | 3000 chars, professional tone           |
+| LinkedIn Articles  | Live   | Long-form thought leadership            |
+| Medium             | Live   | Long-form articles with rich formatting |
+| Substack           | Live   | Newsletter-style long-form articles     |
+
+## Data Sources (3)
+
+- **Google Trends** — Real-time trending topic discovery
+- **NewsAPI** — Breaking news and industry headlines
+- **RSS Feeds** — Custom content source monitoring
+
+## Notifications
+
+- **Slack** — Real-time pipeline notifications, alerts, and status updates
 
 ## Key Features
 
 - **Fully Autonomous** — Runs without human intervention after initial setup
-- **Multi-Platform Publishing** — Publishes to Bluesky, Twitter/X, and LinkedIn simultaneously
+- **20 Specialized Agents** — Full C-suite, operations team, and intelligence layer
+- **3-Tier Architecture** — Content pipeline, operations layer, intelligence systems
+- **6 Publishing Platforms** — Bluesky, Twitter/X, LinkedIn (posts + articles), Medium, Substack
+- **Long-Form Articles** — Thought leadership for Medium, Substack, and LinkedIn Articles
 - **Confidence Gating** — Only high-quality content auto-publishes; low-confidence drafts held for review
 - **Brand Voice Control** — Configure tone, themes, industry, target audience, content pillars
 - **Analytics Feedback Loop** — Performance data feeds into the next cycle for continuous improvement
 - **Trend-Aware** — Integrates Google Trends, NewsAPI, and custom RSS feeds
 - **Multi-Tenant** — Each client gets independent strategy, voice, and schedule
-- **Self-Learning** — Agent memory, A/B testing, and confidence calibration improve over time
-- **Self-Healing** — SRE agent monitors health; CI fix agent auto-repairs build failures
+- **Self-Learning** — Agent memory, A/B testing, predictive timing, and style evolution improve over time
+- **Self-Healing** — SRE agent monitors health; CTO agent manages engineering tasks
+- **Autonomous Operations** — CFO tracks costs, Security monitors threats, Legal reviews compliance
+- **Slack Notifications** — Real-time alerts and status updates
 
 ## API Endpoints
 
@@ -108,8 +145,8 @@ Ortobahn includes a persistent memory and learning engine:
 1. User visits ortobahn.com and fills in company info + brand voice
 2. Account created in Cognito + database, 14-day trial starts
 3. CEO agent generates initial strategy based on brand profile
-4. User connects social platform credentials (Bluesky/Twitter/LinkedIn)
-5. Pipeline begins autonomous publishing on configured schedule
+4. User connects social platform credentials (Bluesky/Twitter/LinkedIn/Medium/Substack)
+5. 20-agent pipeline begins autonomous publishing on configured schedule
 
 ## Use Cases
 
@@ -118,14 +155,16 @@ Ortobahn includes a persistent memory and learning engine:
 - **Solo Founders** — Focus on product while Ortobahn handles marketing
 - **Small Businesses** — Professional social media presence at $49/month
 - **Content Teams** — Augment human marketers with autonomous content generation
+- **Thought Leaders** — Publish long-form articles on Medium and Substack automatically
 
 ## Competitive Positioning
 
-Ortobahn is not a writing assistant or scheduling tool. It is a complete autonomous marketing organization:
+Ortobahn is not a writing assistant or scheduling tool. It is a complete autonomous marketing company with 20 specialized agents:
 - Unlike Buffer/Hootsuite: Ortobahn generates content, not just schedules it
-- Unlike Jasper/Copy.ai: Ortobahn runs end-to-end (strategy → creation → publishing)
+- Unlike Jasper/Copy.ai: Ortobahn runs end-to-end (strategy → creation → publishing) with a full C-suite
 - Unlike human agencies: Ortobahn operates 24/7 with zero labor costs
-- The confidence-gating system provides quality control without human bottlenecks
+- The intelligence systems (A/B testing, predictive timing, style evolution) make it smarter every cycle
+- The operations layer (CFO, SRE, Security, Legal) provides enterprise-grade oversight autonomously
 
 ## Technical Integrations
 
@@ -134,7 +173,10 @@ Ortobahn is not a writing assistant or scheduling tool. It is a complete autonom
 - **RSS Feeds** — Custom content source monitoring
 - **Bluesky AT Protocol** — Native API publishing
 - **Twitter/X API v2** — OAuth 2.0 posting
-- **LinkedIn API** — Share API for company pages and profiles
+- **LinkedIn API** — Share API for posts and articles
+- **Medium API** — Long-form article publishing
+- **Substack** — Newsletter article publishing
+- **Slack** — Real-time notifications and alerts
 - **Stripe** — Subscription billing and customer portal
 - **AWS Cognito** — User authentication and email verification
 

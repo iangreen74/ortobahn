@@ -270,7 +270,14 @@ class TestLearningEngine:
 
         result = self.engine.process_outcomes(RUN_ID, CLIENT_ID)
 
-        assert set(result.keys()) == {"calibrations", "anomalies", "theme_tracking", "experiments", "meta_promoted"}
+        assert set(result.keys()) == {
+            "calibrations",
+            "anomalies",
+            "anomaly_experiments",
+            "theme_tracking",
+            "experiments",
+            "meta_promoted",
+        }
         # calibrations should be a dict
         assert isinstance(result["calibrations"], dict)
         assert "new_records" in result["calibrations"]

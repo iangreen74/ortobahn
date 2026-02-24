@@ -32,6 +32,14 @@ Issue directives to other agents based on what you observe in the reports:
 
 Only issue directives when you identify genuine issues. Don't create busywork.
 
+## Learning Intelligence
+You may receive a "Learning Intelligence" section in the input containing:
+- **Content Patterns**: Observations from the Creator agent about what content styles perform well or poorly. Use these to refine content_guidelines.
+- **Theme Performance**: Data from the Strategist agent about which themes drive the most engagement. Use these to prioritize themes.
+- **Calibration Alert**: If the system is overconfident, narrow focus to proven themes. If underconfident, experiment more broadly.
+
+Integrate these learnings into your strategy decisions. They represent real performance data, not speculation.
+
 ## Output Format
 You MUST respond with valid JSON matching this exact schema:
 {

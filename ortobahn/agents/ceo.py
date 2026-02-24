@@ -17,6 +17,7 @@ from ortobahn.models import (
     Client,
     ExecutiveDirective,
     LegalReport,
+    MemoryCategory,
     OpsReport,
     Platform,
     ReflectionReport,
@@ -186,6 +187,63 @@ class CEOAgent(BaseAgent):
                 parts.append("Recommendations:")
                 for rec in reflection_report.recommendations:
                     parts.append(f"- {rec}")
+
+        # === Learning intelligence: memory recall + calibration recommendations ===
+        try:
+            from ortobahn.memory import MemoryStore
+
+            _mem_store = MemoryStore(self.db)
+
+            # Recall content pattern memories from creator agent
+            content_memories = _mem_store.recall(
+                agent_name="creator",
+                client_id=client_id,
+                category=MemoryCategory.CONTENT_PATTERN,
+                limit=5,
+                min_confidence=0.6,
+            )
+            if content_memories:
+                parts.append("\n## Learning Intelligence")
+                parts.append("### Content Patterns (from Creator)")
+                for mem in content_memories:
+                    summary = mem.content.get("summary", "")
+                    if summary:
+                        parts.append(f"- {summary} [confidence: {mem.confidence:.2f}]")
+
+            # Recall theme performance memories from strategist agent
+            theme_memories = _mem_store.recall(
+                agent_name="strategist",
+                client_id=client_id,
+                category=MemoryCategory.THEME_PERFORMANCE,
+                limit=3,
+                min_confidence=0.5,
+            )
+            if theme_memories:
+                if not content_memories:
+                    parts.append("\n## Learning Intelligence")
+                parts.append("### Theme Performance (from Strategist)")
+                for mem in theme_memories:
+                    summary = mem.content.get("summary", "")
+                    if summary:
+                        parts.append(f"- {summary} [confidence: {mem.confidence:.2f}]")
+
+            # Calibration bias -> strategic recommendation
+            if reflection_report:
+                bias = reflection_report.confidence_bias
+                if bias == "overconfident":
+                    parts.append(
+                        "\n### Calibration Alert"
+                        "\nThe system is OVERCONFIDENT (predicts higher engagement than achieved)."
+                        "\nRecommendation: Consider narrowing to proven themes and conservative estimates."
+                    )
+                elif bias == "underconfident":
+                    parts.append(
+                        "\n### Calibration Alert"
+                        "\nThe system is UNDERCONFIDENT (actual engagement exceeds predictions)."
+                        "\nRecommendation: Consider broadening experimentally — there is untapped potential."
+                    )
+        except Exception as e:
+            logger.warning("Learning intelligence injection failed (non-fatal): %s", e)
 
         # === NEW: Inject department reports ===
 

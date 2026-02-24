@@ -40,15 +40,21 @@ ORTOBAHN_CLIENT = {
     "brand_voice": "Sharp, confident, technical but accessible. Shows don't tell. "
     "Let results speak. Never salesy, never generic.",
     "website": "https://ortobahn.com",
-    "products": "Ortobahn: Autonomous marketing engine powered by a pipeline of specialized AI agents "
-    "(Analytics, CEO, Strategist, Creator, Publisher, SRE, CFO, Ops).",
+    "products": "Ortobahn: Autonomous marketing company powered by 20 specialized AI agents in 3 tiers. "
+    "Content Pipeline (Analytics, CEO, Strategist, Creator, ArticleWriter, Publisher), "
+    "Operations Layer (CFO, SRE, Ops, CTO, Security, Legal, Support), "
+    "Intelligence Systems (Memory, Learning Engine, A/B Testing, Cadence Optimization, "
+    "Predictive Timing, Style Evolution, Reflection, Prompt Tuning). "
+    "Publishes across 6 platforms: Bluesky, Twitter/X, LinkedIn (posts + articles), Medium, Substack.",
     "competitive_positioning": "Not a scheduling tool. Not a writing assistant. "
-    "Ortobahn is a fully autonomous marketing company — strategy, creation, and publishing "
-    "with no human in the loop. The marketing runs itself.",
+    "Ortobahn is a fully autonomous marketing company with a full C-suite and 20 specialized agents — "
+    "strategy, creation, publishing, operations, and self-improvement "
+    "with no human in the loop. The marketing runs itself and gets smarter every cycle.",
     "key_messages": "Autonomous marketing, AI agents that strategize and create, "
     "confidence-gated publishing, multi-platform content at scale",
     "content_pillars": "AI marketing, autonomous systems, content at scale, marketing ROI, "
-    "the death of manual social media management",
+    "the death of manual social media management, intelligence systems that learn and improve, "
+    "autonomous operations with full C-suite oversight, long-form thought leadership",
     "company_story": "Born from Vaultscaler's autonomous engineering DNA. "
     "If software can build itself, marketing can run itself. "
     "Ortobahn is living proof — it markets itself using its own pipeline.",

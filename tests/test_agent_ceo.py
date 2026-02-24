@@ -7,7 +7,15 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from ortobahn.agents.ceo import CEOAgent
-from ortobahn.models import AnalyticsReport, CEOReport
+from ortobahn.memory import MemoryStore
+from ortobahn.models import (
+    AgentMemory,
+    AnalyticsReport,
+    CEOReport,
+    MemoryCategory,
+    MemoryType,
+    ReflectionReport,
+)
 
 VALID_CEO_REPORT_JSON = json.dumps(
     {
@@ -117,3 +125,86 @@ class TestCEOAgent:
 
         assert isinstance(result, CEOReport)
         assert result.strategy.themes == ["general marketing"]
+
+    def test_ceo_receives_content_pattern_memories(self, test_db, mock_llm_response):
+        """When creator has CONTENT_PATTERN memories, they appear in the CEO prompt."""
+        store = MemoryStore(test_db)
+        store.remember(
+            AgentMemory(
+                agent_name="creator",
+                client_id="default",
+                memory_type=MemoryType.OBSERVATION,
+                category=MemoryCategory.CONTENT_PATTERN,
+                content={"summary": "Short posts get 3x more engagement"},
+                confidence=0.8,
+                source_run_id="prev-run",
+            )
+        )
+
+        agent = CEOAgent(db=test_db, api_key="sk-ant-test")
+        fake = mock_llm_response(text=VALID_CEO_REPORT_JSON)
+
+        captured_messages: list[str] = []
+        original_call_llm = agent.call_llm
+
+        def _capture_call(user_message, system_prompt=None):
+            captured_messages.append(user_message)
+            return original_call_llm(user_message, system_prompt=system_prompt)
+
+        with patch.object(agent, "call_llm", side_effect=_capture_call):
+            with patch("ortobahn.agents.base.call_llm", return_value=fake):
+                agent.run(run_id="run-1")
+
+        assert len(captured_messages) == 1
+        assert "Content Patterns" in captured_messages[0]
+        assert "Short posts get 3x more engagement" in captured_messages[0]
+
+    def test_ceo_calibration_alert_overconfident(self, test_db, mock_llm_response):
+        """When reflection_report says overconfident, prompt includes narrowing advice."""
+        agent = CEOAgent(db=test_db, api_key="sk-ant-test")
+        fake = mock_llm_response(text=VALID_CEO_REPORT_JSON)
+
+        reflection = ReflectionReport(
+            confidence_accuracy=0.3,
+            confidence_bias="overconfident",
+        )
+
+        captured_messages: list[str] = []
+        original_call_llm = agent.call_llm
+
+        def _capture_call(user_message, system_prompt=None):
+            captured_messages.append(user_message)
+            return original_call_llm(user_message, system_prompt=system_prompt)
+
+        with patch.object(agent, "call_llm", side_effect=_capture_call):
+            with patch("ortobahn.agents.base.call_llm", return_value=fake):
+                agent.run(run_id="run-1", reflection_report=reflection)
+
+        assert len(captured_messages) == 1
+        assert "OVERCONFIDENT" in captured_messages[0]
+        assert "narrowing" in captured_messages[0].lower() or "proven themes" in captured_messages[0].lower()
+
+    def test_ceo_calibration_alert_underconfident(self, test_db, mock_llm_response):
+        """When reflection_report says underconfident, prompt includes broadening advice."""
+        agent = CEOAgent(db=test_db, api_key="sk-ant-test")
+        fake = mock_llm_response(text=VALID_CEO_REPORT_JSON)
+
+        reflection = ReflectionReport(
+            confidence_accuracy=0.3,
+            confidence_bias="underconfident",
+        )
+
+        captured_messages: list[str] = []
+        original_call_llm = agent.call_llm
+
+        def _capture_call(user_message, system_prompt=None):
+            captured_messages.append(user_message)
+            return original_call_llm(user_message, system_prompt=system_prompt)
+
+        with patch.object(agent, "call_llm", side_effect=_capture_call):
+            with patch("ortobahn.agents.base.call_llm", return_value=fake):
+                agent.run(run_id="run-1", reflection_report=reflection)
+
+        assert len(captured_messages) == 1
+        assert "UNDERCONFIDENT" in captured_messages[0]
+        assert "broadening" in captured_messages[0].lower() or "untapped" in captured_messages[0].lower()

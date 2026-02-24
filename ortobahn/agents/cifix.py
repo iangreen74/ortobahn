@@ -125,10 +125,19 @@ class CIFixAgent(BaseAgent):
             raw_logs=raw_logs[-3000:],
         )
 
-        # 5. Check memory for past fix patterns
+        # 5. Check memory for past fix patterns + build fix playbook
         memory_context = self.get_memory_context()
         if memory_context:
             logger.info("Found past fix patterns in memory")
+
+        fix_playbook = self._build_fix_playbook(category)
+        fix_context = ""
+        if memory_context and fix_playbook:
+            fix_context = f"{memory_context}\n\n{fix_playbook}"
+        elif memory_context:
+            fix_context = memory_context
+        elif fix_playbook:
+            fix_context = fix_playbook
 
         # 6. Apply fix based on category tier
         original_branch = current_branch()
@@ -147,19 +156,19 @@ class CIFixAgent(BaseAgent):
 
             # Tier 2: targeted LLM fix
             elif category == CIFailureCategory.TYPECHECK:
-                fix_attempt = self._fix_typecheck(errors)
+                fix_attempt = self._fix_typecheck(errors, fix_context=fix_context)
 
             # Tier 3: complex LLM fix
             elif category == CIFailureCategory.TEST:
-                fix_attempt = self._fix_tests(errors)
+                fix_attempt = self._fix_tests(errors, fix_context=fix_context)
 
             # Tier 4: deploy failures — map endpoints to source, LLM diagnosis
             elif category == CIFailureCategory.DEPLOY:
-                fix_attempt = self._fix_deploy(errors, raw_logs)
+                fix_attempt = self._fix_deploy(errors, raw_logs, fix_context=fix_context)
 
             # Unknown / install — attempt LLM diagnosis
             else:
-                fix_attempt = self._fix_unknown(errors, raw_logs)
+                fix_attempt = self._fix_unknown(errors, raw_logs, fix_context=fix_context)
 
             if not fix_attempt or not fix_attempt.files_changed:
                 raise RuntimeError("Fix produced no file changes")
@@ -259,6 +268,70 @@ class CIFixAgent(BaseAgent):
                 error=str(e)[:300],
                 summary=f"Failed to fix {category.value} errors: {e}",
             )
+
+    # ------------------------------------------------------------------
+    # Fix playbook from historical data
+    # ------------------------------------------------------------------
+
+    def _build_fix_playbook(self, category: CIFailureCategory) -> str:
+        """Build a playbook of past fix strategies for this failure category.
+
+        Queries the ci_fix_attempts table and formats successes and failures
+        into a context string.  Pure computation, no LLM calls.
+        """
+        try:
+            history = self.db.get_ci_fix_history(category=category.value, limit=10)
+            if not history:
+                return ""
+
+            success_rate = self.db.get_ci_fix_success_rate(category.value)
+
+            # Two-pass deduplication: first collect all successful strategies,
+            # then only add failures that were never successful.
+            seen_success: set[str] = set()
+            for entry in history:
+                strategy = entry.get("fix_strategy", "").strip()
+                if strategy and entry.get("status") == "success":
+                    seen_success.add(strategy)
+
+            successes: list[str] = []
+            seen_failure: set[str] = set()
+            failures: list[str] = []
+            seen_success_ordered: set[str] = set()
+
+            for entry in history:
+                strategy = entry.get("fix_strategy", "").strip()
+                if not strategy:
+                    continue
+                status = entry.get("status", "")
+                if status == "success" and strategy not in seen_success_ordered:
+                    seen_success_ordered.add(strategy)
+                    successes.append(strategy)
+                elif status != "success" and strategy not in seen_failure:
+                    if strategy not in seen_success:
+                        seen_failure.add(strategy)
+                        failures.append(strategy)
+
+            if not successes and not failures:
+                return ""
+
+            lines = [
+                f"## Fix Playbook ({category.value}, {success_rate:.0%} historical success rate)",
+            ]
+            if successes:
+                lines.append("Strategies that WORKED:")
+                for s in successes:
+                    lines.append(f"  - {s}")
+            if failures:
+                lines.append("Strategies that FAILED (avoid repeating):")
+                for f in failures:
+                    lines.append(f"  - {f}")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning("Failed to build fix playbook: %s", e)
+            return ""
 
     # ------------------------------------------------------------------
     # CI data fetchers
@@ -478,7 +551,7 @@ class CIFixAgent(BaseAgent):
             tokens_used=0,
         )
 
-    def _fix_typecheck(self, errors: list[CIError]) -> FixAttempt:
+    def _fix_typecheck(self, errors: list[CIError], fix_context: str = "") -> FixAttempt:
         """Tier 2: fix type errors — simple patterns inline, complex via LLM."""
         files_changed: list[str] = []
         total_tokens = 0
@@ -547,6 +620,8 @@ class CIFixAgent(BaseAgent):
                 user_message = "Fix the following type errors. Return JSON with your changes.\n\n" + "\n\n".join(
                     context_parts
                 )
+                if fix_context:
+                    user_message = f"{fix_context}\n\n{user_message}"
                 response = self.call_llm(user_message)
                 total_tokens = response.input_tokens + response.output_tokens
 
@@ -560,7 +635,7 @@ class CIFixAgent(BaseAgent):
             tokens_used=total_tokens,
         )
 
-    def _fix_tests(self, errors: list[CIError]) -> FixAttempt:
+    def _fix_tests(self, errors: list[CIError], fix_context: str = "") -> FixAttempt:
         """Tier 3: fix failing tests by reading test and source files, then calling LLM."""
         context_parts: list[str] = []
 
@@ -586,6 +661,8 @@ class CIFixAgent(BaseAgent):
             f"Fix the following test failures:\n{error_summary}\n\n"
             "Here are the relevant files:\n\n" + "\n\n".join(context_parts)
         )
+        if fix_context:
+            user_message = f"{fix_context}\n\n{user_message}"
 
         response = self.call_llm(user_message)
         changed = self._apply_llm_changes(response.text)
@@ -597,9 +674,11 @@ class CIFixAgent(BaseAgent):
             tokens_used=response.input_tokens + response.output_tokens,
         )
 
-    def _fix_unknown(self, errors: list[CIError], raw_logs: str) -> FixAttempt:
+    def _fix_unknown(self, errors: list[CIError], raw_logs: str, fix_context: str = "") -> FixAttempt:
         """Fallback: send raw logs to LLM for diagnosis and fix."""
         user_message = f"Diagnose and fix this CI failure. Here are the logs:\n\n```\n{raw_logs[-3000:]}\n```"
+        if fix_context:
+            user_message = f"{fix_context}\n\n{user_message}"
 
         response = self.call_llm(user_message)
         changed = self._apply_llm_changes(response.text)
@@ -611,7 +690,7 @@ class CIFixAgent(BaseAgent):
             tokens_used=response.input_tokens + response.output_tokens,
         )
 
-    def _fix_deploy(self, errors: list[CIError], raw_logs: str) -> FixAttempt:
+    def _fix_deploy(self, errors: list[CIError], raw_logs: str, fix_context: str = "") -> FixAttempt:
         """Fix deploy failures by mapping endpoints to source files and calling LLM."""
         context_parts: list[str] = []
 
@@ -654,6 +733,8 @@ class CIFixAgent(BaseAgent):
             f"## Deploy logs (last 3000 chars)\n```\n{raw_logs[-3000:]}\n```\n\n"
             "## Relevant source files\n\n" + "\n\n".join(context_parts)
         )
+        if fix_context:
+            user_message = f"{fix_context}\n\n{user_message}"
 
         response = self.call_llm(user_message)
         changed = self._apply_llm_changes(response.text)

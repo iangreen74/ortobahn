@@ -108,6 +108,11 @@ class Settings:
     cifix_auto_pr: bool = True
     cifix_max_llm_attempts: int = 2
 
+    # CTO Agent (autonomous engineering)
+    cto_enabled: bool = True
+    cto_max_tasks_per_cycle: int = 1
+    thinking_budget_cto: int = 16_000
+
     # Ortobahn self-marketing Bluesky credentials
     ortobahn_bluesky_handle: str = ""
     ortobahn_bluesky_app_password: str = ""
@@ -268,6 +273,9 @@ def load_settings() -> Settings:
         cifix_enabled=os.environ.get("CIFIX_ENABLED", "true").lower() in ("true", "1", "yes"),
         cifix_auto_pr=os.environ.get("CIFIX_AUTO_PR", "true").lower() in ("true", "1", "yes"),
         cifix_max_llm_attempts=int(os.environ.get("CIFIX_MAX_LLM_ATTEMPTS", "2")),
+        cto_enabled=os.environ.get("CTO_ENABLED", "true").lower() in ("true", "1", "yes"),
+        cto_max_tasks_per_cycle=int(os.environ.get("CTO_MAX_TASKS_PER_CYCLE", "1")),
+        thinking_budget_cto=int(os.environ.get("THINKING_BUDGET_CTO", "16000")),
         stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
         stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
         stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),

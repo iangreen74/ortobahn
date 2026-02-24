@@ -23,6 +23,8 @@ from ortobahn.web.rate_limit import RateLimitMiddleware
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
+_start_time = time.time()
+
 
 def get_db(request: Request) -> Database:
     """Get database from app state."""
@@ -68,19 +70,25 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        """ALB health check — verifies DB connectivity and reports deploy info."""
+        """Health check endpoint for ALB and synthetic monitoring."""
+        db_ok = True
         try:
             db = app.state.db
             db.fetchone("SELECT 1 AS ok")
-            result: dict = {"status": "healthy", "db": db.backend}
-            deploy_sha = os.environ.get("DEPLOY_SHA", "")
-            if deploy_sha:
-                result["sha"] = deploy_sha
-            environment = os.environ.get("ENVIRONMENT", "production")
-            result["environment"] = environment
-            return result
-        except Exception as e:
-            return JSONResponse({"status": "unhealthy", "error": str(e)}, status_code=503)
+        except Exception:
+            db_ok = False
+
+        result: dict = {
+            "status": "healthy" if db_ok else "degraded",
+            "db": db_ok,
+            "uptime_seconds": int(time.time() - _start_time),
+        }
+        deploy_sha = os.environ.get("DEPLOY_SHA", "")
+        if deploy_sha:
+            result["sha"] = deploy_sha
+        environment = os.environ.get("ENVIRONMENT", "production")
+        result["environment"] = environment
+        return result
 
     @app.post("/api/deploy/register")
     async def register_deploy(request: Request):

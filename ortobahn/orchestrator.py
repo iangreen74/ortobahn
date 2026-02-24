@@ -12,6 +12,7 @@ from ortobahn.agents.ceo import CEOAgent
 from ortobahn.agents.cfo import CFOAgent
 from ortobahn.agents.cifix import CIFixAgent
 from ortobahn.agents.creator import CreatorAgent
+from ortobahn.agents.cto import CTOAgent
 from ortobahn.agents.engagement import EngagementAgent
 from ortobahn.agents.legal import LegalAgent
 from ortobahn.agents.marketing import MarketingAgent
@@ -120,6 +121,13 @@ class Pipeline:
             if settings.cifix_enabled
             else None
         )
+        self.cto = (
+            CTOAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+            if settings.cto_enabled
+            else None
+        )
+        if self.cto:
+            self.cto.thinking_budget = settings.thinking_budget_cto
         self.security = SecurityAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.security.thinking_budget = getattr(settings, "thinking_budget_security", 8000)
         self.legal = LegalAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
@@ -653,6 +661,15 @@ class Pipeline:
             if self.series_manager:
                 series_context = self.series_manager.get_series_context(client_id)
 
+            # Calibration feedback for Creator confidence scoring
+            calibration_context = ""
+            try:
+                from ortobahn.calibration_adapter import get_calibration_context
+
+                calibration_context = get_calibration_context(self.db, client_id)
+            except Exception as e:
+                logger.warning("  -> Calibration adapter error (non-fatal): %s", e)
+
             # 3.2 Creator
             logger.info("[10/14] Creator Agent writing posts...")
             drafts = self.creator.run(
@@ -663,7 +680,9 @@ class Pipeline:
                 target_platforms=platforms,
                 enable_self_critique=self.settings.enable_self_critique,
                 critique_threshold=self.settings.creator_critique_threshold,
-                style_context=style_context,
+                style_context=(style_context + "\n" + calibration_context).strip()
+                if calibration_context
+                else style_context,
                 series_context=series_context,
             )
             logger.info(f"  -> {len(drafts.posts)} drafts written")
@@ -852,6 +871,23 @@ class Pipeline:
                 f"Experiments concluded: {len(learning_results.get('experiments', []))}"
             )
 
+            # Slack notification for anomalies
+            anomalies = learning_results.get("anomalies", [])
+            if anomalies and self.settings.slack_webhook_url:
+                try:
+                    from ortobahn.integrations.slack import send_slack_message_deduped
+
+                    high_performers = [a for a in anomalies if a.get("type") == "high_performer"]
+                    if high_performers:
+                        send_slack_message_deduped(
+                            self.settings.slack_webhook_url,
+                            f":chart_with_upwards_trend: Viral content detected! {len(high_performers)} post(s) performing above 3x average.",
+                            fingerprint=f"anomaly-{client_id}-{run_id[:8]}",
+                            cooldown_minutes=60,
+                        )
+                except Exception:
+                    pass
+
             # Prune stale memories
             self.memory_store.prune(
                 max_age_days=self.settings.memory_prune_days,
@@ -861,6 +897,27 @@ class Pipeline:
             # Clean up old topic velocity data
             if self.topic_tracker:
                 self.topic_tracker.cleanup_old_topics(max_age_days=30)
+
+            # ═══════════════════════════════════════════
+            # PHASE 4.5: Autonomous Engineering (CTO)
+            # ═══════════════════════════════════════════
+            if self.cto:
+                pending_tasks = self.db.get_engineering_tasks(status="backlog", limit=1)
+                if pending_tasks:
+                    logger.info("[14.5/14] CTO Agent processing engineering tasks...")
+                    try:
+                        cto_result = self.cto.run(run_id)
+                        logger.info(
+                            "  -> CTO: %s (task=%s)",
+                            cto_result.status,
+                            getattr(cto_result, "task_id", "none")[:8]
+                            if getattr(cto_result, "task_id", None)
+                            else "none",
+                        )
+                    except Exception as e:
+                        logger.warning("  -> CTO agent error (non-fatal): %s", e)
+                else:
+                    logger.info("[14.5/14] CTO Agent: no backlog tasks")
 
         except Exception as e:
             import traceback
@@ -874,6 +931,19 @@ class Pipeline:
                 EVENT_PIPELINE_FAILED,
                 {"run_id": run_id, "error": str(e)},
             )
+            # Slack notification for pipeline failure
+            if self.settings.slack_webhook_url:
+                try:
+                    from ortobahn.integrations.slack import send_slack_message_deduped
+
+                    send_slack_message_deduped(
+                        self.settings.slack_webhook_url,
+                        f":rotating_light: Pipeline {run_id[:8]} FAILED: {str(e)[:200]}",
+                        fingerprint=f"pipeline-fail-{client_id}",
+                        cooldown_minutes=30,
+                    )
+                except Exception:
+                    pass  # Slack notification is best-effort
             raise
 
         # Calculate token usage from agent logs
@@ -903,6 +973,18 @@ class Pipeline:
             EVENT_PIPELINE_COMPLETED,
             {"run_id": run_id, "posts_published": posts_published},
         )
+
+        # Slack notification for pipeline completion
+        if self.settings.slack_webhook_url:
+            try:
+                from ortobahn.integrations.slack import send_slack_message
+
+                send_slack_message(
+                    self.settings.slack_webhook_url,
+                    f":white_check_mark: Pipeline {run_id[:8]} completed: {posts_published} posts published",
+                )
+            except Exception:
+                pass  # Slack notification is best-effort
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} completed: {posts_published} posts published ===")
 

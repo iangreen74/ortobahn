@@ -72,6 +72,24 @@ jobs:
       - name: Validate landing page links
         run: pytest tests/test_landing_links.py -v -m network
 
+  notify-failure:
+    runs-on: self-hosted
+    needs: [lint, typecheck, security, test, validate-landing]
+    if: failure()
+    steps:
+      - name: Send Slack notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set, skipping notification"
+            exit 0
+          fi
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \":x: CI failed on branch \`${{ github.ref_name }}\` — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"}" \
+            || true
+
   deploy-landing:
     runs-on: self-hosted
     needs: [test, validate-landing]

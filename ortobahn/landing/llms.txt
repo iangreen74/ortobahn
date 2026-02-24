@@ -1,8 +1,8 @@
 # Ortobahn
 
-> Autonomous AI marketing engine that runs itself
+> Autonomous AI marketing company that runs itself
 
-Ortobahn uses a pipeline of specialized AI agents to generate strategy, create content, and publish across Bluesky, Twitter/X, and LinkedIn — fully autonomous, no humans in the loop.
+Ortobahn uses 20 specialized AI agents organized in 3 tiers to generate strategy, create social posts and long-form articles, and publish across 6 platforms — fully autonomous, no humans in the loop.
 
 - Website: https://ortobahn.com
 - App: https://app.ortobahn.com
@@ -10,12 +10,43 @@ Ortobahn uses a pipeline of specialized AI agents to generate strategy, create c
 - Built by: Vaultscaler (https://vaultscaler.com)
 
 ## How It Works
-5-agent pipeline running on a schedule:
+20-agent autonomous pipeline in 3 tiers:
+
+### Content Pipeline (6 agents)
 1. Analytics Agent — analyzes past performance
 2. CEO Agent — sets strategy and direction
 3. Strategist Agent — creates content plans from trending topics
-4. Creator Agent — writes platform-native posts
-5. Publisher Agent — confidence-gates and publishes
+4. Creator Agent — writes platform-native social posts
+5. ArticleWriter Agent — produces long-form articles
+6. Publisher Agent — confidence-gates and publishes
+
+### Operations Layer (7 agents)
+7. CFO Agent — tracks costs and profitability
+8. SRE Agent — monitors system health and performance
+9. Ops Agent — manages onboarding, scheduling, connectivity
+10. CTO Agent — handles engineering tasks and CI/CD
+11. Security Agent — watches for threats and audits access
+12. Legal Agent — reviews content for compliance risks
+13. Support Agent — monitors client health and surfaces recommendations
+
+### Intelligence Systems (8 systems)
+14. Memory — persistent observations and patterns per agent per client
+15. Learning Engine — extracts lessons from outcomes
+16. A/B Testing — tests content variations and learns what resonates
+17. Cadence Optimization — finds ideal posting frequency
+18. Predictive Timing — publishes when audiences are most engaged
+19. Style Evolution — refines brand voice based on performance
+20. Reflection — periodic self-assessment comparing predictions to outcomes
+21. Prompt Tuning — automatically optimizes agent prompts
+
+## Publishing Platforms (6)
+Bluesky, Twitter/X, LinkedIn (posts + articles), Medium, Substack
+
+## Data Sources
+Google Trends, NewsAPI, RSS feeds
+
+## Notifications
+Slack
 
 ## Get Started
 Sign up: https://ortobahn.com/#request-access

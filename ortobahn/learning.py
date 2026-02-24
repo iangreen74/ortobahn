@@ -34,6 +34,7 @@ class LearningEngine:
         results: dict = {}
         results["calibrations"] = self._update_calibration_records(client_id, run_id)
         results["anomalies"] = self._detect_anomalies(client_id, run_id)
+        results["anomaly_experiments"] = self._generate_anomaly_experiments(client_id, run_id, results["anomalies"])
         results["theme_tracking"] = self._track_theme_performance(client_id, run_id)
         results["experiments"] = self._check_experiments(client_id, run_id)
 
@@ -246,6 +247,116 @@ class LearningEngine:
                 sum(1 for a in anomalies if a["type"] == "low_performer"),
             )
         return anomalies
+
+    # ------------------------------------------------------------------
+    # 2b. Anomaly-to-experiment generation
+    # ------------------------------------------------------------------
+
+    def _generate_anomaly_experiments(self, client_id: str, run_id: str, anomalies: list[dict]) -> list[dict]:
+        """Generate A/B experiments from high-performing anomalies.
+
+        Pure computation (0 LLM calls).  Uses heuristic feature extraction
+        to create a hypothesis, then delegates to StyleEvolution.create_experiment().
+
+        Rules:
+        - Only processes ``high_performer`` anomalies.
+        - Will NOT create an experiment if an ``anomaly_`` experiment is already active.
+        - Returns a list of created experiment dicts.
+        """
+        try:
+            from ortobahn.style_evolution import StyleEvolution
+
+            high_performers = [a for a in anomalies if a.get("type") == "high_performer"]
+            if not high_performers:
+                return []
+
+            # Don't stack: skip if an anomaly-sourced experiment is already active
+            active_experiments = self.db.fetchall(
+                "SELECT id, variable FROM ab_experiments WHERE client_id = ? AND status = 'active'",
+                (client_id,),
+            )
+            for exp in active_experiments:
+                if exp["variable"].startswith("anomaly_"):
+                    logger.debug(
+                        "Skipping anomaly experiment creation: active anomaly experiment %s exists",
+                        exp["id"],
+                    )
+                    return []
+
+            style_evo = StyleEvolution(self.db)
+            created: list[dict] = []
+
+            for anomaly in high_performers:
+                text = anomaly.get("text_preview", "")
+
+                # Heuristic feature extraction
+                hypothesis, variable, variant_a, variant_b = self._extract_anomaly_features(text)
+
+                exp = style_evo.create_experiment(
+                    client_id=client_id,
+                    hypothesis=hypothesis,
+                    variable=variable,
+                    variant_a=variant_a,
+                    variant_b=variant_b,
+                    run_id=run_id,
+                )
+                created.append(exp)
+                logger.info(
+                    "Created anomaly experiment '%s' from post %s",
+                    hypothesis,
+                    anomaly.get("post_id", "?")[:8],
+                )
+                # Only create one experiment per cycle
+                break
+
+            return created
+
+        except Exception as e:
+            logger.warning("Anomaly experiment generation failed (non-fatal): %s", e)
+            return []
+
+    @staticmethod
+    def _extract_anomaly_features(text: str) -> tuple[str, str, str, str]:
+        """Extract heuristic features from anomaly text to build an experiment hypothesis.
+
+        Returns (hypothesis, variable, variant_a, variant_b).
+        """
+        # Feature: short text (under 100 chars)
+        if len(text) < 100:
+            return (
+                "Short punchy posts outperform longer detailed posts",
+                "anomaly_length",
+                "Short and punchy (under 100 characters)",
+                "Detailed and informative (200+ characters)",
+            )
+
+        # Feature: question post (contains ?)
+        if "?" in text:
+            return (
+                "Question-based posts drive more engagement",
+                "anomaly_question",
+                "Open with a direct question to the audience",
+                "Make a declarative statement",
+            )
+
+        # Feature: data-driven (contains numbers / percentages)
+        import re
+
+        if re.search(r"\d+%|\d+x|\d{2,}", text):
+            return (
+                "Data-driven posts with specific numbers outperform opinion posts",
+                "anomaly_data",
+                "Lead with specific data, stats, or numbers",
+                "Lead with opinion or narrative",
+            )
+
+        # Default: general high-engagement pattern
+        return (
+            "Replicating high-engagement content style improves performance",
+            "anomaly_style",
+            "Mirror the tone and structure of recent viral posts",
+            "Use standard brand voice and structure",
+        )
 
     # ------------------------------------------------------------------
     # 3. Theme performance tracking

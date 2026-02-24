@@ -95,7 +95,7 @@ def create_pr(branch_name: str, title: str, body: str, base: str = "main") -> st
         pr_url = result.stdout.strip()
         logger.info("Created PR: %s", pr_url)
         return pr_url
-    except subprocess.SubprocessError as e:
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
         logger.warning("Failed to create PR: %s", e)
         return ""
 
@@ -113,7 +113,7 @@ def enable_auto_merge(pr_url: str) -> bool:
         )
         logger.info("Enabled auto-merge on %s", pr_url)
         return True
-    except subprocess.SubprocessError as e:
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
         logger.warning("Failed to enable auto-merge: %s", e)
         return False
 

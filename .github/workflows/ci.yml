@@ -29,6 +29,7 @@ jobs:
     container: python:3.12-slim
     steps:
       - uses: actions/checkout@v4
+      - run: pip install --upgrade pip
       - run: pip install pip-audit
       - run: pip install "."
       - name: Audit dependencies for vulnerabilities

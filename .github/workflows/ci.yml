@@ -82,7 +82,7 @@ jobs:
         run: pytest ${{ steps.select.outputs.selected }} -v --tb=short
         continue-on-error: false
       - name: Run full test suite with coverage
-        run: pytest -n auto --cov=ortobahn --cov-report=xml -v
+        run: pytest -n 2 --cov=ortobahn --cov-report=xml -v
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -107,7 +107,7 @@ jobs:
           restore-keys: |
             pip-${{ matrix.python-version }}-
       - run: pip install -e ".[dev,web]"
-      - run: pytest -n auto -v
+      - run: pytest -n 2 -v
 
   validate-landing:
     runs-on: self-hosted

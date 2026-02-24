@@ -90,8 +90,8 @@ jobs:
           steps.loop_check.outputs.should_skip != 'true' &&
           steps.detect.outputs.is_deploy == 'false'
         run: |
-          ruff check --fix ortobahn/ tests/ || true
-          ruff format ortobahn/ tests/
+          python3.12 -m ruff check --fix ortobahn/ tests/ || true
+          python3.12 -m ruff format ortobahn/ tests/
           if git diff --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
@@ -104,8 +104,8 @@ jobs:
           steps.detect.outputs.is_deploy == 'false' &&
           steps.lint_fix.outputs.changed == 'true'
         run: |
-          ruff check ortobahn/ tests/
-          ruff format --check ortobahn/ tests/
+          python3.12 -m ruff check ortobahn/ tests/
+          python3.12 -m ruff format --check ortobahn/ tests/
 
       - name: Attempt typecheck fix
         if: >
@@ -115,7 +115,7 @@ jobs:
         id: mypy_check
         run: |
           set -o pipefail
-          if mypy ortobahn/ 2>&1 | tee /tmp/mypy_output.txt; then
+          if python3.12 -m mypy ortobahn/ 2>&1 | tee /tmp/mypy_output.txt; then
             echo "passed=true" >> $GITHUB_OUTPUT
           else
             echo "passed=false" >> $GITHUB_OUTPUT

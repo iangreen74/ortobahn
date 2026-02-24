@@ -72,6 +72,8 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v6
         with:

@@ -13,6 +13,9 @@ jobs:
       github.event.workflow_run.conclusion == 'failure' &&
       !startsWith(github.event.workflow_run.head_branch, 'cifix/')
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
+
       - name: Generate GitHub App token
         id: app_token
         uses: actions/create-github-app-token@v2

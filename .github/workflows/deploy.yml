@@ -17,6 +17,8 @@ jobs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
       image_uri: ${{ steps.meta.outputs.image_uri }}
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v6
@@ -56,6 +58,8 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v6
@@ -300,6 +304,8 @@ jobs:
     outputs:
       previous_web_image: ${{ steps.capture-current.outputs.previous_web_image }}
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v6
@@ -373,6 +379,8 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v6

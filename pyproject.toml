@@ -21,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 ortobahn = "ortobahn.__main__:main"
+ortobahn-mcp = "ortobahn.mcp_server:main"
 
 [project.optional-dependencies]
 web = [
@@ -44,6 +45,10 @@ dev = [
     "httpx>=0.27",
     "types-requests>=2.31",
     "types-Markdown>=3.5",
+    "mcp[cli]>=1.0",
+]
+mcp = [
+    "mcp[cli]>=1.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -45,7 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install -e ".[dev,web]"
-      - run: pytest --cov=ortobahn --cov-report=xml -v
+      - name: Run tests with coverage
+        if: matrix.python-version == '3.12'
+        run: pytest --cov=ortobahn --cov-report=xml -v
+      - name: Run tests
+        if: matrix.python-version != '3.12'
+        run: pytest -v
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4

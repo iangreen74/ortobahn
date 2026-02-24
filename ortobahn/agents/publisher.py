@@ -35,6 +35,7 @@ class PublisherAgent(BaseAgent):
         bluesky_client: BlueskyClient | None = None,
         twitter_client=None,
         linkedin_client=None,
+        reddit_client=None,
         confidence_threshold: float = 0.7,
         post_delay_seconds: int = 0,
     ):
@@ -42,6 +43,7 @@ class PublisherAgent(BaseAgent):
         self.bluesky = bluesky_client
         self.twitter = twitter_client
         self.linkedin = linkedin_client
+        self.reddit = reddit_client
         self.confidence_threshold = confidence_threshold
         self.post_delay = post_delay_seconds
         self._recovery_manager: Any = None  # Wired by orchestrator if publish_retry_enabled
@@ -49,7 +51,7 @@ class PublisherAgent(BaseAgent):
     def preflight(self, **kwargs: Any) -> PreflightResult:
         """Check that at least one platform client is available."""
         issues: list[PreflightIssue] = []
-        if self.bluesky is None and self.twitter is None and self.linkedin is None:
+        if self.bluesky is None and self.twitter is None and self.linkedin is None and self.reddit is None:
             issues.append(
                 PreflightIssue(
                     severity=PreflightSeverity.WARNING,
@@ -67,6 +69,7 @@ class PublisherAgent(BaseAgent):
             Platform.BLUESKY: self.bluesky,
             Platform.TWITTER: self.twitter,
             Platform.LINKEDIN: self.linkedin,
+            Platform.REDDIT: self.reddit,
         }
         return publishers.get(platform)
 

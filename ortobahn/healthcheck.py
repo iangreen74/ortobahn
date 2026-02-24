@@ -113,6 +113,25 @@ def check_linkedin(settings: Settings) -> HealthResult:
         return HealthResult("linkedin", False, f"LinkedIn auth failed: {exc}")
 
 
+def check_reddit(settings: Settings) -> HealthResult:
+    """Verify Reddit credentials."""
+    if not settings.has_reddit():
+        return HealthResult("reddit", True, "Reddit not configured")
+    try:
+        from ortobahn.integrations.reddit import RedditClient
+
+        client = RedditClient(
+            client_id=settings.reddit_client_id,
+            client_secret=settings.reddit_client_secret,
+            username=settings.reddit_username,
+            password=settings.reddit_password,
+        )
+        client.get_profile()
+        return HealthResult("reddit", True, f"Reddit authenticated as {settings.reddit_username}")
+    except Exception as exc:
+        return HealthResult("reddit", False, f"Reddit auth failed: {exc}")
+
+
 def run_all_checks(settings: Settings) -> list[HealthResult]:
     """Run all health checks and return results."""
     return [
@@ -122,4 +141,5 @@ def run_all_checks(settings: Settings) -> list[HealthResult]:
         check_bluesky(settings),
         check_twitter(settings),
         check_linkedin(settings),
+        check_reddit(settings),
     ]

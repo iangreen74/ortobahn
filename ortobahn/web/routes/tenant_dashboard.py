@@ -61,7 +61,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
 
     # Check connected platforms
     connected_platforms = []
-    for platform in ("bluesky", "twitter", "linkedin"):
+    for platform in ("bluesky", "twitter", "linkedin", "medium", "substack", "reddit"):
         row = db.fetchone(
             "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
             (client["id"], platform),
@@ -102,6 +102,65 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     )
     published_today = today_row["c"] if today_row else 0
 
+    # Best post (highest engagement)
+    _MJ = (
+        " LEFT JOIN metrics m ON p.id = m.post_id"
+        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+    )
+    best_post = db.fetchone(
+        "SELECT p.text, p.platform,"
+        " COALESCE(m.like_count,0) as like_count,"
+        " COALESCE(m.repost_count,0) as repost_count,"
+        " COALESCE(m.reply_count,0) as reply_count"
+        " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=?"
+        " ORDER BY (COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) DESC"
+        " LIMIT 1",
+        (client["id"],),
+    )
+    best_post_engagement = 0
+    if best_post:
+        best_post_engagement = (
+            (best_post.get("like_count") or 0)
+            + (best_post.get("repost_count") or 0)
+            + (best_post.get("reply_count") or 0)
+        )
+
+    # Engagement trend (week-over-week percentage change)
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    cutoff_14d = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+    this_week_eng = db.fetchone(
+        "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+        " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?",
+        (client["id"], cutoff_7d),
+    )
+    last_week_eng = db.fetchone(
+        "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+        " FROM posts p"
+        + _MJ
+        + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ? AND p.published_at < ?",
+        (client["id"], cutoff_14d, cutoff_7d),
+    )
+    this_avg = (this_week_eng["avg_eng"] or 0) if this_week_eng else 0
+    last_avg = (last_week_eng["avg_eng"] or 0) if last_week_eng else 0
+    if last_avg > 0:
+        engagement_trend_pct = round(((this_avg - last_avg) / last_avg) * 100)
+    else:
+        engagement_trend_pct = 0
+
+    # Draft count
+    draft_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM posts WHERE status='draft' AND client_id=?",
+        (client["id"],),
+    )
+    draft_count = draft_row["c"] if draft_row else 0
+
+    # Article count
+    article_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM articles WHERE client_id=?",
+        (client["id"],),
+    )
+    article_count = article_row["c"] if article_row else 0
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -115,6 +174,11 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "credential_issue": credential_issue,
             "greeting": greeting,
             "published_today": published_today,
+            "best_post": best_post,
+            "best_post_engagement": best_post_engagement,
+            "engagement_trend_pct": engagement_trend_pct,
+            "draft_count": draft_count,
+            "article_count": article_count,
         },
     )
 
@@ -396,7 +460,7 @@ async def tenant_settings(request: Request, client: AuthClient):
 
     # Check which platforms have credentials stored
     connected_platforms = []
-    for platform in ("bluesky", "twitter", "linkedin"):
+    for platform in ("bluesky", "twitter", "linkedin", "medium", "substack", "reddit"):
         row = db.fetchone(
             "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
             (client["id"], platform),
@@ -438,13 +502,21 @@ async def tenant_settings_update(request: Request, client: AuthClient):
             },
         )
     elif section == "article_settings":
+        # Build article_platforms from individual checkboxes
+        platforms = []
+        if form.get("article_platform_medium"):
+            platforms.append("medium")
+        if form.get("article_platform_substack"):
+            platforms.append("substack")
+        if form.get("article_platform_linkedin"):
+            platforms.append("linkedin")
         db.update_client(
             client["id"],
             {
                 "article_enabled": 1 if form.get("article_enabled") == "on" else 0,
                 "article_frequency": form.get("article_frequency", "weekly"),
                 "article_voice": form.get("article_voice", ""),
-                "article_platforms": form.get("article_platforms", ""),
+                "article_platforms": ",".join(platforms),
                 "article_topics": form.get("article_topics", ""),
                 "article_length": form.get("article_length", "medium"),
             },
@@ -601,12 +673,27 @@ async def tenant_publish_article(
 
         pipeline = Pipeline(settings)
         try:
-            pipeline._publish_article(article_id, client["id"])
-            pipeline.db.execute(
-                "UPDATE articles SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (article_id,),
-                commit=True,
-            )
+            pub_results = pipeline._publish_article(article_id, client["id"])
+            if not pub_results:
+                logger.warning(f"Article {article_id}: no platforms configured, marking as failed")
+                pipeline.db.execute(
+                    "UPDATE articles SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (article_id,),
+                    commit=True,
+                )
+            elif any(r["status"] == "published" for r in pub_results):
+                pipeline.db.execute(
+                    "UPDATE articles SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (article_id,),
+                    commit=True,
+                )
+            else:
+                logger.warning(f"Article {article_id}: all platforms skipped/failed, marking as failed")
+                pipeline.db.execute(
+                    "UPDATE articles SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (article_id,),
+                    commit=True,
+                )
         except Exception as e:
             logger.error(f"Article publish failed: {e}")
         finally:
@@ -886,13 +973,43 @@ async def tenant_kpi_partial(request: Request, client: AuthClient):
 
     # Connected platforms
     connected = []
-    for plat in ("bluesky", "twitter", "linkedin"):
+    for plat in ("bluesky", "twitter", "linkedin", "medium", "substack", "reddit"):
         row = db.fetchone(
             "SELECT id FROM platform_credentials WHERE client_id=? AND platform=?",
             (client["id"], plat),
         )
         if row:
             connected.append(plat)
+
+    # Engagement trend
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    cutoff_14d = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+    _MJ2 = (
+        " LEFT JOIN metrics m ON p.id = m.post_id"
+        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+    )
+    this_week = db.fetchone(
+        "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+        " FROM posts p" + _MJ2 + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?",
+        (client["id"], cutoff_7d),
+    )
+    last_week = db.fetchone(
+        "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
+        " FROM posts p"
+        + _MJ2
+        + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ? AND p.published_at < ?",
+        (client["id"], cutoff_14d, cutoff_7d),
+    )
+    this_avg = (this_week["avg_eng"] or 0) if this_week else 0
+    last_avg = (last_week["avg_eng"] or 0) if last_week else 0
+    trend_pct = round(((this_avg - last_avg) / last_avg) * 100) if last_avg > 0 else 0
+
+    if trend_pct > 0:
+        trend_html = f'<span style="color:#10b981;">&#9650; {trend_pct}%</span>'
+    elif trend_pct < 0:
+        trend_html = f'<span style="color:#ef4444;">&#9660; {abs(trend_pct)}%</span>'
+    else:
+        trend_html = '<span style="opacity:0.6;">&mdash;</span>'
 
     html = (
         '<article class="kpi-card">'
@@ -904,6 +1021,9 @@ async def tenant_kpi_partial(request: Request, client: AuthClient):
         '<article class="kpi-card">'
         f'<div class="kpi-value">{len(connected)}</div>'
         '<div class="kpi-label">Platforms</div></article>'
+        '<article class="kpi-card">'
+        f'<div class="kpi-value">{trend_html}</div>'
+        '<div class="kpi-label">Weekly Trend</div></article>'
     )
     return HTMLResponse(html)
 

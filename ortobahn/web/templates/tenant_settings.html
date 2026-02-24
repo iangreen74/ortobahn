@@ -137,6 +137,41 @@
     </form>
 </article>
 
+<h2>Article Publishing</h2>
+<article>
+    <form method="post" action="/my/settings">
+        <input type="hidden" name="_section" value="article_settings">
+        <label>
+            <input type="checkbox" name="article_enabled" value="on" {% if client.article_enabled %}checked{% endif %}>
+            Enable long-form article generation
+        </label>
+        <label for="article_frequency">Frequency</label>
+        <select id="article_frequency" name="article_frequency">
+            <option value="weekly" {% if (client.article_frequency or 'weekly') == 'weekly' %}selected{% endif %}>Weekly</option>
+            <option value="biweekly" {% if client.article_frequency == 'biweekly' %}selected{% endif %}>Biweekly</option>
+            <option value="monthly" {% if client.article_frequency == 'monthly' %}selected{% endif %}>Monthly</option>
+        </select>
+        <label>Publish To</label>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <label><input type="checkbox" name="article_platform_medium" value="medium" {% if 'medium' in (client.article_platforms or '') %}checked{% endif %}> Medium</label>
+            <label><input type="checkbox" name="article_platform_substack" value="substack" {% if 'substack' in (client.article_platforms or '') %}checked{% endif %}> Substack</label>
+            <label><input type="checkbox" name="article_platform_linkedin" value="linkedin" {% if 'linkedin' in (client.article_platforms or '') %}checked{% endif %}> LinkedIn</label>
+        </div>
+        <small>Select where articles should be published. Configure credentials for each platform below.</small>
+        <label for="article_topics">Topics / Focus Areas</label>
+        <textarea id="article_topics" name="article_topics" rows="2" placeholder="AI trends, industry insights, thought leadership">{{ client.article_topics or '' }}</textarea>
+        <label for="article_voice">Article Voice / Style</label>
+        <textarea id="article_voice" name="article_voice" rows="2" placeholder="Authoritative yet accessible, data-driven">{{ client.article_voice or '' }}</textarea>
+        <label for="article_length">Article Length</label>
+        <select id="article_length" name="article_length">
+            <option value="short" {% if client.article_length == 'short' %}selected{% endif %}>Short (~500 words)</option>
+            <option value="medium" {% if (client.article_length or 'medium') == 'medium' %}selected{% endif %}>Medium (~1000 words)</option>
+            <option value="long" {% if client.article_length == 'long' %}selected{% endif %}>Long (~2000 words)</option>
+        </select>
+        <button type="submit" class="outline">Save Article Settings</button>
+    </form>
+</article>
+
 <h2>Platform Credentials</h2>
 <p><small>Credentials are encrypted at rest. Only provide fields relevant to each platform.</small></p>
 
@@ -192,6 +227,60 @@
         <label for="li_person_urn">Person URN</label>
         <input type="text" id="li_person_urn" name="person_urn" placeholder="urn:li:person:...">
         <button type="submit" class="outline">Save LinkedIn</button>
+    </form>
+</article>
+
+<article>
+    <header>Reddit {% if "reddit" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/reddit">
+        <div class="grid">
+            <div>
+                <label for="reddit_client_id">Client ID</label>
+                <input type="password" id="reddit_client_id" name="client_id">
+            </div>
+            <div>
+                <label for="reddit_client_secret">Client Secret</label>
+                <input type="password" id="reddit_client_secret" name="client_secret">
+            </div>
+        </div>
+        <div class="grid">
+            <div>
+                <label for="reddit_username">Username</label>
+                <input type="text" id="reddit_username" name="username" placeholder="u/yourname">
+            </div>
+            <div>
+                <label for="reddit_password">Password</label>
+                <input type="password" id="reddit_password" name="password">
+            </div>
+        </div>
+        <label for="reddit_subreddit">Default Subreddit</label>
+        <input type="text" id="reddit_subreddit" name="default_subreddit" placeholder="yoursubreddit">
+        <small>Posts will be submitted to this subreddit by default.</small>
+        <button type="submit" class="outline">Save Reddit</button>
+    </form>
+</article>
+
+<article>
+    <header>Medium {% if "medium" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/medium">
+        <label for="med_token">Integration Token</label>
+        <input type="password" id="med_token" name="integration_token" placeholder="Your Medium integration token">
+        <small>Generate at <a href="https://medium.com/me/settings/security" target="_blank" rel="noopener">medium.com/me/settings/security</a></small>
+        <button type="submit" class="outline">Save Medium</button>
+    </form>
+</article>
+
+<article>
+    <header>Substack {% if "substack" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <form method="post" action="/my/credentials/substack">
+        <label for="sub_subdomain">Subdomain</label>
+        <input type="text" id="sub_subdomain" name="subdomain" placeholder="yourname">
+        <small>Your Substack subdomain (e.g. "yourname" for yourname.substack.com)</small>
+        <label for="sub_email">Email</label>
+        <input type="email" id="sub_email" name="email" placeholder="you@example.com">
+        <label for="sub_password">Password</label>
+        <input type="password" id="sub_password" name="password">
+        <button type="submit" class="outline">Save Substack</button>
     </form>
 </article>
 

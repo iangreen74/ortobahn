@@ -213,6 +213,7 @@ class TestCheckLinkedin:
 
 
 class TestRunAllChecks:
+    @patch("ortobahn.healthcheck.check_reddit")
     @patch("ortobahn.healthcheck.check_linkedin")
     @patch("ortobahn.healthcheck.check_twitter")
     @patch("ortobahn.healthcheck.check_bluesky")
@@ -227,6 +228,7 @@ class TestRunAllChecks:
         mock_bluesky,
         mock_twitter,
         mock_linkedin,
+        mock_reddit,
         test_settings,
     ):
         """run_all_checks should return a list of HealthResult objects."""
@@ -237,12 +239,13 @@ class TestRunAllChecks:
             (mock_bluesky, "bluesky"),
             (mock_twitter, "twitter"),
             (mock_linkedin, "linkedin"),
+            (mock_reddit, "reddit"),
         ]:
             mock_fn.return_value = HealthResult(name, True, "OK")
 
         results = run_all_checks(test_settings)
 
-        assert len(results) == 6
+        assert len(results) == 7
         assert all(isinstance(r, HealthResult) for r in results)
         names = [r.name for r in results]
         assert "config" in names
@@ -251,3 +254,4 @@ class TestRunAllChecks:
         assert "bluesky" in names
         assert "twitter" in names
         assert "linkedin" in names
+        assert "reddit" in names

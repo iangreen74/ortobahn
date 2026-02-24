@@ -28,6 +28,12 @@
     <p class="subtitle">Long-form content for <strong>{{ client.name }}</strong></p>
 </div>
 
+{% if not client.article_platforms %}
+<div class="flash-msg warning" style="margin-bottom:1rem;">
+    No article platforms configured. <a href="/my/settings">Configure article publishing</a> to publish to Medium, Substack, or LinkedIn.
+</div>
+{% endif %}
+
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
     <small style="color: var(--text-secondary);">{{ articles|length }} article{{ 's' if articles|length != 1 else '' }}</small>
     <form method="post" action="/my/generate-article" style="margin:0">

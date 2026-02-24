@@ -123,7 +123,7 @@ def build_platform_clients(db: Database, client_id: str, secret_key: str, settin
     from ortobahn.integrations.twitter import TwitterClient
 
     all_creds = get_all_platform_credentials(db, client_id, secret_key)
-    clients: dict = {"bluesky": None, "twitter": None, "linkedin": None}
+    clients: dict = {"bluesky": None, "twitter": None, "linkedin": None, "reddit": None}
 
     # Bluesky
     bs_creds = all_creds.get("bluesky")
@@ -160,6 +160,19 @@ def build_platform_clients(db: Database, client_id: str, secret_key: str, settin
         clients["linkedin"] = LinkedInClient(
             access_token=settings.linkedin_access_token,
             person_urn=settings.linkedin_person_urn,
+        )
+
+    # Reddit
+    reddit_creds = all_creds.get("reddit")
+    if reddit_creds and reddit_creds.get("client_id") and reddit_creds.get("client_secret"):
+        from ortobahn.integrations.reddit import RedditClient
+
+        clients["reddit"] = RedditClient(
+            client_id=reddit_creds["client_id"],
+            client_secret=reddit_creds["client_secret"],
+            username=reddit_creds.get("username", ""),
+            password=reddit_creds.get("password", ""),
+            default_subreddit=reddit_creds.get("default_subreddit", ""),
         )
 
     return clients

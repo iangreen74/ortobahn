@@ -29,6 +29,12 @@ class Settings:
     linkedin_access_token: str = ""
     linkedin_person_urn: str = ""
 
+    # Reddit
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_username: str = ""
+    reddit_password: str = ""
+
     # Autonomous mode (auto-publish above confidence threshold)
     autonomous_mode: bool = True
 
@@ -216,6 +222,9 @@ class Settings:
     def has_linkedin(self) -> bool:
         return bool(self.linkedin_access_token and self.linkedin_person_urn)
 
+    def has_reddit(self) -> bool:
+        return bool(self.reddit_client_id and self.reddit_client_secret)
+
 
 def load_settings() -> Settings:
     load_dotenv()
@@ -231,6 +240,10 @@ def load_settings() -> Settings:
         twitter_access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET", ""),
         linkedin_access_token=os.environ.get("LINKEDIN_ACCESS_TOKEN", ""),
         linkedin_person_urn=os.environ.get("LINKEDIN_PERSON_URN", ""),
+        reddit_client_id=os.environ.get("REDDIT_CLIENT_ID", ""),
+        reddit_client_secret=os.environ.get("REDDIT_CLIENT_SECRET", ""),
+        reddit_username=os.environ.get("REDDIT_USERNAME", ""),
+        reddit_password=os.environ.get("REDDIT_PASSWORD", ""),
         autonomous_mode=os.environ.get("AUTONOMOUS_MODE", "true").lower() in ("true", "1", "yes"),
         claude_model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
         claude_max_tokens=int(os.environ.get("CLAUDE_MAX_TOKENS", "4096")),

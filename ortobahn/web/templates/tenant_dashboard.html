@@ -72,7 +72,35 @@
         <div class="kpi-value">{{ connected_platforms|length }}</div>
         <div class="kpi-label">Platforms</div>
     </article>
+    <article class="kpi-card">
+        <div class="kpi-value">
+            {% if engagement_trend_pct > 0 %}
+            <span style="color: var(--success, #10b981);">&#9650; {{ engagement_trend_pct }}%</span>
+            {% elif engagement_trend_pct < 0 %}
+            <span style="color: var(--danger, #ef4444);">&#9660; {{ engagement_trend_pct|abs }}%</span>
+            {% else %}
+            <span style="opacity: 0.6;">&mdash;</span>
+            {% endif %}
+        </div>
+        <div class="kpi-label">Weekly Trend</div>
+    </article>
 </div>
+
+{% if best_post and best_post_engagement > 0 %}
+<!-- Best Post Highlight -->
+<article class="best-post-card" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(0, 212, 170, 0.08)); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <strong style="font-size: 0.9rem; opacity: 0.7;">Top Performing Post</strong>
+        <span class="badge {{ best_post.platform or 'bluesky' }}">{{ best_post.platform or 'bluesky' }}</span>
+    </div>
+    <p style="margin: 0 0 0.75rem 0; line-height: 1.5;">{{ (best_post.text or '')[:200] }}{% if (best_post.text or '')|length > 200 %}...{% endif %}</p>
+    <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; opacity: 0.7;">
+        <span>{{ best_post.like_count or 0 }} likes</span>
+        <span>{{ best_post.repost_count or 0 }} reposts</span>
+        <span>{{ best_post.reply_count or 0 }} replies</span>
+    </div>
+</article>
+{% endif %}
 
 <!-- Create Content CTA -->
 <div class="create-section">
@@ -89,6 +117,17 @@
     <p class="create-subtitle">Publishing to {{ connected_platforms | join(' + ') }}</p>
     {% else %}
     <p class="create-subtitle"><a href="/my/settings">Connect a platform</a> to start publishing</p>
+    {% endif %}
+    {% if draft_count > 0 %}
+    <p class="create-subtitle" style="margin-top: 0.5rem;">
+        <strong>{{ draft_count }}</strong> draft{{ 's' if draft_count != 1 else '' }} awaiting review
+        &middot; <a href="/my/dashboard#activity-feed">View below</a>
+    </p>
+    {% endif %}
+    {% if article_count > 0 %}
+    <p class="create-subtitle" style="margin-top: 0.25rem;">
+        <a href="/my/articles">{{ article_count }} article{{ 's' if article_count != 1 else '' }}</a> in your library
+    </p>
     {% endif %}
 </div>
 

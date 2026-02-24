@@ -24,6 +24,7 @@ class Platform(str, Enum):
     LINKEDIN = "linkedin"
     GOOGLE_ADS = "google_ads"
     INSTAGRAM = "instagram"
+    REDDIT = "reddit"
     MEDIUM = "medium"
     SUBSTACK = "substack"
     GENERIC = "generic"
@@ -61,6 +62,7 @@ PLATFORM_CONSTRAINTS: dict[str, dict] = {
     Platform.LINKEDIN: {"max_chars": 3000, "hashtags": True, "tone": "professional"},
     Platform.GOOGLE_ADS: {"max_chars": 90, "hashtags": False, "tone": "action-oriented"},
     Platform.INSTAGRAM: {"max_chars": 2200, "hashtags": True, "tone": "visual-friendly"},
+    Platform.REDDIT: {"max_chars": 40_000, "hashtags": False, "tone": "conversational"},
     Platform.MEDIUM: {"max_chars": 100_000, "hashtags": False, "tone": "thoughtful"},
     Platform.SUBSTACK: {"max_chars": 100_000, "hashtags": False, "tone": "personal-expert"},
     Platform.GENERIC: {"max_chars": 500, "hashtags": False, "tone": "neutral"},

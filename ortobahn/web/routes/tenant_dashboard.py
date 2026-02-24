@@ -105,7 +105,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     # Best post (highest engagement)
     _MJ = (
         " LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
     best_post = db.fetchone(
         "SELECT p.text, p.platform,"
@@ -221,10 +221,10 @@ async def _render_analytics(db, templates, request, client, client_id):
     )
     total_posts = total_row["count"] if total_row else 0
 
-    # Common metrics JOIN: posts LEFT JOIN latest metrics snapshot
+    # Common metrics JOIN: posts LEFT JOIN latest metrics snapshot (exactly one row per post)
     _METRICS_JOIN = (
         " LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
 
     # Per-platform breakdown: posts count, likes, reposts, replies
@@ -986,7 +986,7 @@ async def tenant_kpi_partial(request: Request, client: AuthClient):
     cutoff_14d = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
     _MJ2 = (
         " LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
     this_week = db.fetchone(
         "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
@@ -1039,7 +1039,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
         "SELECT p.text, p.platform, p.published_at, p.status, p.created_at,"
         " COALESCE(m.like_count,0) as likes, COALESCE(m.repost_count,0) as reposts"
         " FROM posts p LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
         " WHERE p.client_id=? AND p.status='published'"
         " ORDER BY COALESCE(p.published_at, p.created_at) DESC LIMIT 10",
         (cid,),
@@ -1195,10 +1195,10 @@ async def tenant_analytics_kpi_partial(request: Request, client: AuthClient):
 
     _MJ = (
         " LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
     platform_rows = db.fetchall(
-        "SELECT p.platform, COUNT(*) as count,"
+        "SELECT p.platform, COUNT(DISTINCT p.id) as count,"
         " SUM(COALESCE(m.like_count,0)) as likes,"
         " SUM(COALESCE(m.repost_count,0)) as reposts,"
         " SUM(COALESCE(m.reply_count,0)) as replies"
@@ -1258,7 +1258,7 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     # Metrics live in a separate table; join to get engagement data
     _MJ = (
         " LEFT JOIN metrics m ON p.id = m.post_id"
-        " AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)"
+        " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
 
     # ------------------------------------------------------------------

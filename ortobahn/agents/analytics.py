@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from ortobahn.agents.base import BaseAgent
 from ortobahn.integrations.bluesky import BlueskyClient
 from ortobahn.models import AnalyticsReport
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyticsAgent(BaseAgent):
@@ -117,5 +120,5 @@ Avg engagement per post: {report.avg_engagement_per_post}
                         like_count=metrics.like_count,
                         reply_count=metrics.comment_count,
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to refresh metrics for post %s on %s: %s", post["id"][:8], platform, exc)

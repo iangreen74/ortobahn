@@ -91,8 +91,8 @@ class PostsMixin:
                    COALESCE(latest_m.quote_count, 0) AS quote_count
                FROM posts p
                LEFT JOIN metrics latest_m ON p.id = latest_m.post_id
-                   AND latest_m.measured_at = (
-                       SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id
+                   AND latest_m.id = (
+                       SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1
                    )
                WHERE p.status IN ('published', 'failed')"""
         params: list = []

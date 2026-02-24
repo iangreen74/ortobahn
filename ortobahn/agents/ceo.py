@@ -49,7 +49,7 @@ def _compute_engagement_trend(db: Database, client_id: str) -> dict | None:
         """SELECT COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0) + COALESCE(m.reply_count, 0) AS engagement
            FROM posts p
            LEFT JOIN metrics m ON p.id = m.post_id
-               AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)
+               AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)
            WHERE p.status = 'published' AND p.client_id = ? AND p.published_at > ? AND p.published_at <= ?""",
         (client_id, this_week_start, this_week_end),
     )
@@ -58,7 +58,7 @@ def _compute_engagement_trend(db: Database, client_id: str) -> dict | None:
         """SELECT COALESCE(m.like_count, 0) + COALESCE(m.repost_count, 0) + COALESCE(m.reply_count, 0) AS engagement
            FROM posts p
            LEFT JOIN metrics m ON p.id = m.post_id
-               AND m.measured_at = (SELECT MAX(m2.measured_at) FROM metrics m2 WHERE m2.post_id = p.id)
+               AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)
            WHERE p.status = 'published' AND p.client_id = ? AND p.published_at > ? AND p.published_at <= ?""",
         (client_id, last_week_start, last_week_end),
     )

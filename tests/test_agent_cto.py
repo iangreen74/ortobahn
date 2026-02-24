@@ -384,7 +384,7 @@ class TestCTOPriorityOrderingAdvanced:
 class TestCTORunWithMockedLLM:
     """Test full run() by mocking git operations and LLM calls."""
 
-    def test_run_success_with_valid_llm_response(self, db):
+    def test_run_success_with_valid_llm_response(self, db, tmp_path):
         import json
         from unittest.mock import patch
 
@@ -427,6 +427,7 @@ class TestCTORunWithMockedLLM:
             patch("ortobahn.agents.cto.enable_auto_merge", return_value=True),
             patch("ortobahn.agents.cto.is_path_safe", return_value=True),
             patch.object(agent, "_run_tests", return_value=(True, "10 passed")),
+            patch("ortobahn.agents.cto.PROJECT_ROOT", tmp_path),
         ):
             result = agent.run("run-cto-001")
 
@@ -464,7 +465,7 @@ class TestCTORunWithMockedLLM:
         assert result.status == "failed"
         assert "JSON" in result.error
 
-    def test_run_rollback_on_test_failure(self, db):
+    def test_run_rollback_on_test_failure(self, db, tmp_path):
         import json
         from unittest.mock import patch
 
@@ -497,6 +498,7 @@ class TestCTORunWithMockedLLM:
             patch("ortobahn.agents.cto.delete_branch") as mock_delete,
             patch("ortobahn.agents.cto.is_path_safe", return_value=True),
             patch.object(agent, "_run_tests", return_value=(False, "FAILED test_x.py")),
+            patch("ortobahn.agents.cto.PROJECT_ROOT", tmp_path),
         ):
             result = agent.run("run-cto-test-fail")
 

@@ -175,11 +175,11 @@ class TestCFOAgent:
             status="published",
             confidence=0.9,
         )
-        test_db.execute(
-            "INSERT INTO metrics (post_id, like_count, repost_count, reply_count, quote_count, measured_at) "
-            "VALUES (?, 10, 5, 3, 0, datetime('now'))",
-            (post_id,),
-            commit=True,
+        test_db.save_metrics(
+            post_id=post_id,
+            like_count=10,
+            repost_count=5,
+            reply_count=3,
         )
 
         llm_resp = mock_llm_response(

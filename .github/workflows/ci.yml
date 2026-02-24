@@ -7,22 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  lint:
-    runs-on: self-hosted
-    container: python:3.12-slim
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: /root/.cache/pip
-          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-3.12-
-      - run: pip install -e ".[dev]"
-      - run: ruff check ortobahn/ tests/
-      - run: ruff format --check ortobahn/ tests/
-
-  typecheck:
+  # Lint + typecheck combined into one job (saves ~60s container startup + pip install)
+  quality:
     runs-on: self-hosted
     container: python:3.12-slim
     steps:
@@ -34,6 +20,8 @@ jobs:
           restore-keys: |
             pip-3.12-
       - run: pip install -e ".[dev,web]"
+      - run: ruff check ortobahn/ tests/
+      - run: ruff format --check ortobahn/ tests/
       - run: mypy ortobahn/
 
   security:
@@ -53,21 +41,18 @@ jobs:
       - name: Audit dependencies for vulnerabilities
         run: pip-audit --desc
 
+  # Tests run in PARALLEL with quality/security — no blocking dependency
   test:
     runs-on: self-hosted
-    needs: [lint, typecheck]
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-    container: python:${{ matrix.python-version }}-slim
+    container: python:3.12-slim
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: /root/.cache/pip
-          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            pip-${{ matrix.python-version }}-
+            pip-3.12-
       - run: pip install -e ".[dev,web]"
       - name: Select tests based on changes
         id: select
@@ -89,30 +74,42 @@ jobs:
             echo "Running full test suite"
           fi
       - name: Run selected tests (fast feedback)
-        if: steps.select.outputs.selected != '' && matrix.python-version == '3.12'
+        if: steps.select.outputs.selected != ''
         run: pytest ${{ steps.select.outputs.selected }} -v --tb=short
         continue-on-error: false
       - name: Run full test suite with coverage
-        if: matrix.python-version == '3.12'
-        run: pytest --cov=ortobahn --cov-report=xml -v
-      - name: Run full test suite
-        if: matrix.python-version != '3.12'
-        run: pytest -v
+        run: pytest -n auto --cov=ortobahn --cov-report=xml -v
       - name: Install git for Codecov
-        if: matrix.python-version == '3.12'
         run: apt-get update -qq && apt-get install -y -qq git > /dev/null
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
+  # Multi-version compatibility — only on PRs, not every push
+  test-compat:
+    runs-on: self-hosted
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+    container: python:${{ matrix.python-version }}-slim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ matrix.python-version }}-
+      - run: pip install -e ".[dev,web]"
+      - run: pytest -n auto -v
+
   validate-landing:
     runs-on: self-hosted
     container: python:3.12-slim
-    needs: [lint]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -127,7 +124,7 @@ jobs:
 
   notify-failure:
     runs-on: self-hosted
-    needs: [lint, typecheck, security, test, validate-landing]
+    needs: [quality, security, test, validate-landing]
     if: failure()
     steps:
       - name: Send Slack notification

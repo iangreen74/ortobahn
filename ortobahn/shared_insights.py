@@ -145,7 +145,7 @@ class SharedInsightBus:
         # Shift back by since_hours
         from datetime import timedelta
 
-        cutoff = (cutoff - timedelta(hours=since_hours)).isoformat()
+        cutoff_str = (cutoff - timedelta(hours=since_hours)).isoformat()
 
         if insight_type:
             rows = self.db.fetchall(
@@ -154,7 +154,7 @@ class SharedInsightBus:
                    WHERE insight_type = ? AND confidence >= ? AND updated_at >= ?
                    ORDER BY relevance DESC
                    LIMIT ?""",
-                (insight_type, min_confidence, cutoff, limit),
+                (insight_type, min_confidence, cutoff_str, limit),
             )
         else:
             rows = self.db.fetchall(
@@ -163,7 +163,7 @@ class SharedInsightBus:
                    WHERE confidence >= ? AND updated_at >= ?
                    ORDER BY relevance DESC
                    LIMIT ?""",
-                (min_confidence, cutoff, limit),
+                (min_confidence, cutoff_str, limit),
             )
         return [dict(r) for r in rows]
 

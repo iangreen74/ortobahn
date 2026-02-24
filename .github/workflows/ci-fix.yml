@@ -16,6 +16,20 @@ jobs:
       - name: Fix workspace permissions
         run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" 2>/dev/null || true
 
+      - name: Ensure gh CLI is available
+        run: |
+          if command -v gh &>/dev/null; then
+            echo "gh CLI already installed: $(gh --version | head -1)"
+          else
+            echo "Installing gh CLI..."
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+              | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+              | sudo tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
+            sudo apt-get update -qq && sudo apt-get install -y -qq gh > /dev/null
+            echo "Installed: $(gh --version | head -1)"
+          fi
+
       - name: Generate GitHub App token
         id: app_token
         uses: actions/create-github-app-token@v2

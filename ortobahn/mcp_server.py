@@ -443,9 +443,11 @@ def trigger_pipeline(client_id: str) -> str:
         if not client.get("active", False):
             return f"Client {client_id} is not active."
 
+        from ortobahn.config import load_settings
         from ortobahn.orchestrator import Pipeline
 
-        pipeline = Pipeline(_settings, dry_run=False)
+        settings = _settings or load_settings()
+        pipeline = Pipeline(settings, dry_run=False)
         result = pipeline.run_cycle(client_id=client_id)
         return (
             f"Pipeline completed for {client_id}:\n"

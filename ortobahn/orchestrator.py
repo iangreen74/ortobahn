@@ -39,6 +39,13 @@ from ortobahn.post_feedback import PostFeedbackLoop
 from ortobahn.predictive_timing import TopicVelocityTracker
 from ortobahn.publish_recovery import ArticlePublishRecoveryManager, PublishRecoveryManager
 from ortobahn.serialization import SeriesManager
+from ortobahn.shared_insights import (
+    CONTENT_TREND,
+    COST_ANOMALY,
+    DEPLOY_HEALTH,
+    PLATFORM_ISSUE,
+    SharedInsightBus,
+)
 from ortobahn.style_evolution import StyleEvolution
 from ortobahn.webhooks import (
     EVENT_PIPELINE_COMPLETED,
@@ -176,6 +183,9 @@ class Pipeline:
             if settings.publish_retry_enabled
             else None
         )
+
+        # Cross-agent shared insight bus
+        self.insight_bus = SharedInsightBus(self.db)
 
     def gather_trends(self, client_id: str = "default") -> list[TrendingTopic]:
         """Gather trending topics from all sources, filtered by client's industry."""
@@ -518,6 +528,17 @@ class Pipeline:
             sre_report = self.sre.run(run_id, slack_webhook_url=self.settings.slack_webhook_url)
             logger.info(f"  -> Health: {sre_report.health_status}, Alerts: {len(sre_report.alerts)}")
 
+            # Publish SRE insights to shared bus
+            if sre_report.health_status != "healthy":
+                self.insight_bus.publish(
+                    source_agent="sre",
+                    insight_type=PLATFORM_ISSUE,
+                    content=f"System health: {sre_report.health_status}. "
+                    + "; ".join(a.message for a in sre_report.alerts[:5]),
+                    confidence=0.8,
+                    metadata={"health_status": sre_report.health_status, "alert_count": len(sre_report.alerts)},
+                )
+
             # 1.1 CI Fix Agent (self-healing CI/CD)
             if self.cifix:
                 logger.info("[1.5/14] CI Fix Agent checking for failures...")
@@ -610,6 +631,9 @@ class Pipeline:
             # PHASE 2: Executive Decision-Making
             # ═══════════════════════════════════════════════════════════════
 
+            # Gather cross-agent insights for CEO
+            shared_insights_summary = self.insight_bus.summarize()
+
             logger.info("[8/14] CEO Agent making executive decisions...")
             ceo_report = self.ceo.run(
                 run_id,
@@ -622,6 +646,7 @@ class Pipeline:
                 support_report=support_report,
                 security_report=security_report,
                 legal_report=legal_report,
+                shared_insights=shared_insights_summary,
             )
             strategy = ceo_report.strategy
             logger.info(f"  -> Themes: {strategy.themes}, Directives: {len(ceo_report.directives)}")
@@ -850,6 +875,21 @@ class Pipeline:
             cfo_report = self.cfo.run(run_id)
             logger.info(f"  -> Cost/post: ${cfo_report.cost_per_post:.4f}, ROI: {cfo_report.roi_estimate:.1f}")
 
+            # Publish cost anomaly insight if budget warning
+            if cfo_report.budget_status not in ("within_budget", "no_data"):
+                self.insight_bus.publish(
+                    source_agent="cfo",
+                    insight_type=COST_ANOMALY,
+                    content=f"Budget status: {cfo_report.budget_status}. "
+                    f"Cost/post: ${cfo_report.cost_per_post:.4f}, ROI: {cfo_report.roi_estimate:.1f}",
+                    confidence=0.8,
+                    metadata={
+                        "budget_status": cfo_report.budget_status,
+                        "cost_per_post": cfo_report.cost_per_post,
+                        "roi": cfo_report.roi_estimate,
+                    },
+                )
+
             # 4.2 Ops Agent
             logger.info("[13/14] Ops Agent managing operations...")
             ops_report = self.ops.run(run_id)
@@ -871,8 +911,23 @@ class Pipeline:
                 f"Experiments concluded: {len(learning_results.get('experiments', []))}"
             )
 
-            # Slack notification for anomalies
+            # Publish content trend insights for high performers
             anomalies = learning_results.get("anomalies", [])
+            high_performers = [a for a in anomalies if a.get("type") == "high_performer"]
+            if high_performers:
+                self.insight_bus.publish(
+                    source_agent="learning_engine",
+                    insight_type=CONTENT_TREND,
+                    content=f"{len(high_performers)} high-performing post(s) detected this cycle. "
+                    + "; ".join(
+                        f"post {hp.get('post_id', '?')[:8]} ({hp.get('engagement', 0)} eng)"
+                        for hp in high_performers[:5]
+                    ),
+                    confidence=0.85,
+                    metadata={"high_performer_count": len(high_performers)},
+                )
+
+            # Slack notification for anomalies
             if anomalies and self.settings.slack_webhook_url:
                 try:
                     from ortobahn.integrations.slack import send_slack_message_deduped
@@ -965,6 +1020,20 @@ class Pipeline:
             total_output_tokens=total_output_tokens,
             total_cache_creation_tokens=total_cache_creation,
             total_cache_read_tokens=total_cache_read,
+        )
+
+        # Publish pipeline deploy health insight
+        self.insight_bus.publish(
+            source_agent="pipeline",
+            insight_type=DEPLOY_HEALTH,
+            content=f"Pipeline {run_id[:8]} completed: {posts_published} posts published, "
+            f"{len(errors)} errors, {total_input_tokens + total_output_tokens} tokens used",
+            confidence=0.9 if not errors else 0.5,
+            metadata={
+                "run_id": run_id,
+                "posts_published": posts_published,
+                "error_count": len(errors),
+            },
         )
 
         dispatch_event(

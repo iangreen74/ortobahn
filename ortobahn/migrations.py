@@ -808,6 +808,94 @@ def _migration_028_add_article_pub_recovery(db: Database) -> None:
     _safe_add_column(db, "article_publications", "retry_count INTEGER NOT NULL DEFAULT 0")
 
 
+def _migration_029_add_shared_insights(db: Database) -> None:
+    """Add shared_insights table for cross-agent learning."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS shared_insights (
+            id TEXT PRIMARY KEY,
+            source_agent TEXT NOT NULL,
+            insight_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0.7,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            reinforcement_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_insights_type_confidence
+        ON shared_insights (insight_type, confidence DESC)
+    """,
+        commit=True,
+    )
+
+
+def _migration_030_add_test_results_and_ci_errors(db: Database) -> None:
+    """Add test_results and ci_errors tables for flaky test detection and error tracking."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS test_results (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            test_file TEXT NOT NULL,
+            test_name TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            duration_ms REAL DEFAULT 0.0,
+            error_message TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_test_results_name ON test_results(test_name, created_at)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_test_results_run ON test_results(run_id)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_test_results_outcome ON test_results(test_name, outcome)",
+        commit=True,
+    )
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ci_errors (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            gh_run_id INTEGER,
+            test_name TEXT NOT NULL DEFAULT '',
+            test_file TEXT NOT NULL DEFAULT '',
+            error_type TEXT NOT NULL DEFAULT 'unknown',
+            error_message TEXT NOT NULL DEFAULT '',
+            stack_trace TEXT DEFAULT '',
+            assertion_expected TEXT DEFAULT '',
+            assertion_actual TEXT DEFAULT '',
+            blame_author TEXT DEFAULT '',
+            blame_commit TEXT DEFAULT '',
+            related_commits TEXT DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ci_errors_run ON ci_errors(run_id)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ci_errors_test ON ci_errors(test_name, created_at)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -837,6 +925,8 @@ MIGRATIONS = {
     26: _migration_026_add_articles,
     27: _migration_027_add_webhooks,
     28: _migration_028_add_article_pub_recovery,
+    29: _migration_029_add_shared_insights,
+    30: _migration_030_add_test_results_and_ci_errors,
 }
 
 
@@ -945,6 +1035,11 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     "article_publications": ["id", "article_id", "failure_category", "retry_count"],
     # Migration 027
     "webhooks": ["id", "client_id"],
+    # Migration 029
+    "shared_insights": ["id", "source_agent", "insight_type", "content"],
+    # Migration 030
+    "test_results": ["id", "run_id", "test_file", "test_name", "outcome"],
+    "ci_errors": ["id", "run_id", "test_name", "error_type", "error_message"],
     # Internal
     "schema_version": ["version"],
 }

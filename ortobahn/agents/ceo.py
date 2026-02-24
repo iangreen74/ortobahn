@@ -105,6 +105,7 @@ class CEOAgent(BaseAgent):
         ops_report: OpsReport | None = None,
         security_report: SecurityReport | None = None,
         legal_report: LegalReport | None = None,
+        shared_insights: str = "",
         **kwargs,
     ) -> CEOReport:
         client_id = client.id if client else "default"
@@ -300,6 +301,10 @@ class CEOAgent(BaseAgent):
             parts.append(f"Pending: {ops_report.pending_clients}")
             if ops_report.actions_taken:
                 parts.append(f"Actions taken: {len(ops_report.actions_taken)}")
+
+        # Inject cross-agent shared insights
+        if shared_insights:
+            parts.append(f"\n{shared_insights}")
 
         # Inject memory context
         memory_context = self.get_memory_context(client_id)

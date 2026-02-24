@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("ortobahn.git_utils")
 
@@ -134,3 +136,155 @@ def read_source_file(rel_path: str, max_chars: int = 8000) -> str | None:
     except Exception as e:
         logger.warning("Could not read %s: %s", rel_path, e)
         return None
+
+
+# ---------------------------------------------------------------------------
+# Git blame and recent changes
+# ---------------------------------------------------------------------------
+
+
+def git_blame_file(file_path: str, line_start: int = 1, line_end: int | None = None) -> list[dict[str, Any]]:
+    """Get blame info for a file (or line range).
+
+    Returns list of dicts with: commit, author, date, line, content.
+    """
+    args = ["blame", "--porcelain"]
+    if line_end is not None:
+        args.extend(["-L", f"{line_start},{line_end}"])
+    elif line_start > 1:
+        args.extend(["-L", f"{line_start},"])
+    args.append(file_path)
+
+    try:
+        result = git_cmd(*args, check=False)
+        if result.returncode != 0:
+            logger.warning("git blame failed for %s: %s", file_path, result.stderr.strip())
+            return []
+    except (subprocess.TimeoutExpired, OSError) as e:
+        logger.warning("git blame error for %s: %s", file_path, e)
+        return []
+
+    return _parse_blame_porcelain(result.stdout)
+
+
+def _parse_blame_porcelain(output: str) -> list[dict[str, Any]]:
+    """Parse git blame --porcelain output into structured dicts."""
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+
+    for raw_line in output.splitlines():
+        # Header line: <sha> <orig_line> <final_line> [<num_lines>]
+        header_match = re.match(r"^([0-9a-f]{40})\s+(\d+)\s+(\d+)", raw_line)
+        if header_match:
+            if current.get("commit"):
+                entries.append(current)
+            current = {
+                "commit": header_match.group(1),
+                "line": int(header_match.group(3)),
+                "author": "",
+                "date": "",
+                "content": "",
+            }
+            continue
+
+        if raw_line.startswith("author "):
+            current["author"] = raw_line[7:]
+        elif raw_line.startswith("author-time "):
+            # Convert unix timestamp to ISO date
+            try:
+                from datetime import datetime, timezone
+
+                ts = int(raw_line.split()[1])
+                current["date"] = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            except (ValueError, IndexError):
+                pass
+        elif raw_line.startswith("\t"):
+            current["content"] = raw_line[1:]
+
+    if current.get("commit"):
+        entries.append(current)
+
+    return entries
+
+
+def get_recent_changes(file_path: str, days: int = 7, limit: int = 10) -> list[dict[str, str]]:
+    """Get recent commits that modified a file.
+
+    Returns list of dicts with: sha, author, date, message.
+    """
+    try:
+        result = git_cmd(
+            "log",
+            f"--since={days} days ago",
+            f"--max-count={limit}",
+            "--format=%H|%an|%ai|%s",
+            "--",
+            file_path,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+    except (subprocess.TimeoutExpired, OSError) as e:
+        logger.warning("git log error for %s: %s", file_path, e)
+        return []
+
+    commits: list[dict[str, str]] = []
+    for line in result.stdout.strip().splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("|", 3)
+        if len(parts) < 4:
+            continue
+        commits.append(
+            {
+                "sha": parts[0],
+                "author": parts[1],
+                "date": parts[2],
+                "message": parts[3],
+            }
+        )
+    return commits
+
+
+def get_changed_files_in_commit(sha: str) -> list[str]:
+    """Get list of files changed in a specific commit."""
+    try:
+        result = git_cmd(
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            sha,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+    except (subprocess.TimeoutExpired, OSError) as e:
+        logger.warning("git diff-tree error for %s: %s", sha, e)
+        return []
+
+    return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+
+
+def correlate_failures_with_changes(errors: list[Any], days: int = 7) -> dict[str, list[dict[str, str]]]:
+    """Given a list of CIError-like objects, find recent commits that changed the failing files.
+
+    Returns dict mapping file_path -> list of recent commits that touched it.
+    """
+    result: dict[str, list[dict[str, str]]] = {}
+    seen_files: set[str] = set()
+
+    for err in errors:
+        file_path = getattr(err, "file_path", "") if not isinstance(err, dict) else err.get("file_path", "")
+        if not file_path or file_path in seen_files:
+            continue
+        seen_files.add(file_path)
+
+        try:
+            changes = get_recent_changes(file_path, days=days)
+            if changes:
+                result[file_path] = changes
+        except Exception as e:
+            logger.warning("Failed to get recent changes for %s: %s", file_path, e)
+
+    return result

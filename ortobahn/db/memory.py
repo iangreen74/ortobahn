@@ -426,6 +426,103 @@ class MemoryMixin:
         query += " ORDER BY ap.created_at DESC"
         return self.fetchall(query, params)
 
+    # --- Test Results (Flaky Test Detection) ---
+
+    def save_test_result(self, data: dict) -> str:
+        """Save a single test result and return its ID."""
+        rid = data.get("id") or str(uuid.uuid4())
+        self.execute(
+            """INSERT INTO test_results
+               (id, run_id, test_file, test_name, outcome, duration_ms, error_message)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rid,
+                data["run_id"],
+                data["test_file"],
+                data["test_name"],
+                data["outcome"],
+                data.get("duration_ms", 0.0),
+                data.get("error_message", ""),
+            ),
+            commit=True,
+        )
+        return rid
+
+    def save_test_results_batch(self, run_id: str, results: list[dict]) -> int:
+        """Save a batch of test results for a run. Returns count saved."""
+        count = 0
+        for result in results:
+            result["run_id"] = run_id
+            try:
+                self.save_test_result(result)
+                count += 1
+            except Exception:
+                pass
+        return count
+
+    def get_test_history(self, test_name: str, limit: int = 20) -> list[dict]:
+        """Get recent results for a specific test, newest first."""
+        return self.fetchall(
+            "SELECT * FROM test_results WHERE test_name = ? ORDER BY created_at DESC LIMIT ?",
+            (test_name, limit),
+        )
+
+    def get_flaky_tests(self, window_days: int = 14, min_runs: int = 3) -> list[dict]:
+        """Find tests with both pass and fail outcomes within the window."""
+        return self.fetchall(
+            """SELECT
+                test_name,
+                test_file,
+                COUNT(*) as total_runs,
+                SUM(CASE WHEN outcome IN ('failed', 'error') THEN 1 ELSE 0 END) as failures,
+                SUM(CASE WHEN outcome = 'passed' THEN 1 ELSE 0 END) as passes
+            FROM test_results
+            WHERE created_at >= datetime('now', ? || ' days')
+            GROUP BY test_name
+            HAVING total_runs >= ?
+                AND failures > 0
+                AND passes > 0
+            ORDER BY CAST(failures AS REAL) / total_runs DESC""",
+            (str(-window_days), min_runs),
+        )
+
+    # --- CI Errors (Structured Error Tracking) ---
+
+    def save_ci_error(self, data: dict) -> str:
+        """Save a parsed CI error and return its ID."""
+        eid = data.get("id") or str(uuid.uuid4())
+        self.execute(
+            """INSERT INTO ci_errors
+               (id, run_id, gh_run_id, test_name, test_file, error_type,
+                error_message, stack_trace, assertion_expected, assertion_actual,
+                blame_author, blame_commit, related_commits)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                eid,
+                data["run_id"],
+                data.get("gh_run_id"),
+                data.get("test_name", ""),
+                data.get("test_file", ""),
+                data.get("error_type", "unknown"),
+                data.get("error_message", ""),
+                data.get("stack_trace", ""),
+                data.get("assertion_expected", ""),
+                data.get("assertion_actual", ""),
+                data.get("blame_author", ""),
+                data.get("blame_commit", ""),
+                json.dumps(data.get("related_commits", [])),
+            ),
+            commit=True,
+        )
+        return eid
+
+    def get_ci_errors_for_run(self, run_id: str) -> list[dict]:
+        """Get all parsed CI errors for a specific run."""
+        return self.fetchall(
+            "SELECT * FROM ci_errors WHERE run_id = ? ORDER BY created_at DESC",
+            (run_id,),
+        )
+
     # --- Executive Directives ---
 
     def save_directive(self, run_id: str, client_id: str, directive: dict) -> str:

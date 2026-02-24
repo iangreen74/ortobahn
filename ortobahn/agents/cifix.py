@@ -12,6 +12,7 @@ from ortobahn.agents.base import BaseAgent
 from ortobahn.git_utils import (
     PROJECT_ROOT,
     commit_all,
+    correlate_failures_with_changes,
     create_branch,
     current_branch,
     delete_branch,
@@ -33,6 +34,8 @@ from ortobahn.models import (
     MemoryCategory,
     MemoryType,
 )
+from ortobahn.test_parser import TestErrorParser
+from ortobahn.test_tracker import TestTracker
 
 logger = logging.getLogger("ortobahn.cifix")
 
@@ -115,6 +118,39 @@ class CIFixAgent(BaseAgent):
         # 4. Extract structured errors
         errors = self._extract_error_details(raw_logs, category)
 
+        # 4a. Track test results and detect flaky tests
+        flaky_skip = False
+        try:
+            tracker = TestTracker(self.db)
+            test_results = tracker.parse_pytest_output(raw_logs)
+            if test_results:
+                tracker.record_results(str(gh_run_id), test_results)
+
+            # Check if all failing tests are known flaky
+            if category == CIFailureCategory.TEST and test_results:
+                failing_tests = [r for r in test_results if r.outcome in ("failed", "error")]
+                if failing_tests:
+                    all_flaky = all(tracker.is_flaky(t.test_name) for t in failing_tests)
+                    if all_flaky:
+                        flaky_skip = True
+                        logger.info(
+                            "All %d failing tests are known flaky — skipping fix",
+                            len(failing_tests),
+                        )
+        except Exception as e:
+            logger.warning("Flaky test detection failed: %s", e)
+
+        if flaky_skip:
+            self.log_decision(
+                run_id=run_id,
+                input_summary=f"CI run #{gh_run_id} failed ({category.value}, {len(errors)} errors)",
+                output_summary="All failing tests are known flaky — skipped",
+            )
+            return CIFixResult(
+                status="flaky_skip",
+                summary="All failing tests are known flaky — no fix needed",
+            )
+
         # Build the CIFailure record
         failure = CIFailure(
             gh_run_id=gh_run_id,
@@ -160,7 +196,7 @@ class CIFixAgent(BaseAgent):
 
             # Tier 3: complex LLM fix
             elif category == CIFailureCategory.TEST:
-                fix_attempt = self._fix_tests(errors, fix_context=fix_context)
+                fix_attempt = self._fix_tests(errors, fix_context=fix_context, raw_logs=raw_logs)
 
             # Tier 4: deploy failures — map endpoints to source, LLM diagnosis
             elif category == CIFailureCategory.DEPLOY:
@@ -616,10 +652,28 @@ class CIFixAgent(BaseAgent):
                 error_lines = "\n".join(f"  Line {e.line}: {e.message} [{e.code}]" for e in file_errors)
                 context_parts.append(f"### {file_path}\nErrors:\n{error_lines}\n\n```python\n{content}\n```")
 
+            # Add blame context for complex errors
+            blame_context = ""
+            try:
+                all_complex_errors = [e for errs in complex_errors.values() for e in errs]
+                file_changes = correlate_failures_with_changes(all_complex_errors)
+                if file_changes:
+                    blame_lines = ["## Recent changes to failing files:"]
+                    for fpath, commits in file_changes.items():
+                        for c in commits[:3]:
+                            blame_lines.append(
+                                f"  - {fpath}: commit {c['sha'][:8]} by {c['author']} on {c['date']}: {c['message']}"
+                            )
+                    blame_context = "\n".join(blame_lines)
+            except Exception as e:
+                logger.warning("Git blame correlation failed: %s", e)
+
             if context_parts:
                 user_message = "Fix the following type errors. Return JSON with your changes.\n\n" + "\n\n".join(
                     context_parts
                 )
+                if blame_context:
+                    user_message += "\n\n" + blame_context
                 if fix_context:
                     user_message = f"{fix_context}\n\n{user_message}"
                 response = self.call_llm(user_message)
@@ -635,9 +689,48 @@ class CIFixAgent(BaseAgent):
             tokens_used=total_tokens,
         )
 
-    def _fix_tests(self, errors: list[CIError], fix_context: str = "") -> FixAttempt:
+    def _fix_tests(self, errors: list[CIError], fix_context: str = "", raw_logs: str = "") -> FixAttempt:
         """Tier 3: fix failing tests by reading test and source files, then calling LLM."""
         context_parts: list[str] = []
+
+        # Use structured error parsing for better LLM context
+        structured_error_context = ""
+        try:
+            parser = TestErrorParser()
+            if raw_logs:
+                parsed_errors = parser.parse(raw_logs)
+                if parsed_errors:
+                    structured_error_context = parser.format_for_llm(parsed_errors)
+        except Exception as e:
+            logger.warning("Test error parsing failed: %s", e)
+
+        # Add flakiness info
+        flakiness_notes: list[str] = []
+        try:
+            tracker = TestTracker(self.db)
+            for err in errors:
+                test_name = f"{err.file_path}::{err.code}" if err.file_path and err.code else ""
+                if test_name:
+                    score = tracker.get_flakiness_score(test_name)
+                    if score > 0:
+                        flakiness_notes.append(f"Note: {test_name} has {score:.0%} flakiness rate (likely flaky)")
+        except Exception as e:
+            logger.warning("Flakiness check failed: %s", e)
+
+        # Correlate with recent changes (git blame)
+        blame_context = ""
+        try:
+            file_changes = correlate_failures_with_changes(errors)
+            if file_changes:
+                blame_lines = ["## Recent changes to failing files:"]
+                for fpath, commits in file_changes.items():
+                    for c in commits[:3]:
+                        blame_lines.append(
+                            f"  - {fpath}: commit {c['sha'][:8]} by {c['author']} on {c['date']}: {c['message']}"
+                        )
+                blame_context = "\n".join(blame_lines)
+        except Exception as e:
+            logger.warning("Git blame correlation failed: %s", e)
 
         for err in errors:
             if not err.file_path:
@@ -656,11 +749,21 @@ class CIFixAgent(BaseAgent):
         if not context_parts:
             return FixAttempt(strategy="test fix (no context available)", files_changed=[], llm_used=False)
 
-        error_summary = "\n".join(f"- {e.file_path}: {e.message}" for e in errors if e.file_path)
-        user_message = (
-            f"Fix the following test failures:\n{error_summary}\n\n"
-            "Here are the relevant files:\n\n" + "\n\n".join(context_parts)
-        )
+        # Build user message with structured context
+        if structured_error_context:
+            error_summary = structured_error_context
+        else:
+            error_summary = "\n".join(f"- {e.file_path}: {e.message}" for e in errors if e.file_path)
+
+        user_message = f"Fix the following test failures:\n{error_summary}\n\n"
+
+        if flakiness_notes:
+            user_message += "\n".join(flakiness_notes) + "\n\n"
+        if blame_context:
+            user_message += blame_context + "\n\n"
+
+        user_message += "Here are the relevant files:\n\n" + "\n\n".join(context_parts)
+
         if fix_context:
             user_message = f"{fix_context}\n\n{user_message}"
 
@@ -1041,3 +1144,25 @@ class CIFixAgent(BaseAgent):
             )
         except Exception as e:
             logger.warning("Failed to record fix attempt: %s", e)
+
+        # Also save parsed CI errors to the ci_errors table
+        try:
+            parser = TestErrorParser()
+            parsed_errors = parser.parse(failure.raw_logs) if failure.raw_logs else []
+            for pe in parsed_errors:
+                ci_error_data: dict = {
+                    "run_id": run_id,
+                    "gh_run_id": failure.gh_run_id,
+                    "test_name": pe.test_name,
+                    "test_file": pe.test_file,
+                    "error_type": pe.error_type,
+                    "error_message": pe.error_message,
+                    "stack_trace": "\n".join(
+                        f"{f.file_path}:{f.line_number} in {f.function_name}" for f in pe.stack_frames
+                    ),
+                    "assertion_expected": pe.assertion_diff.expected if pe.assertion_diff else "",
+                    "assertion_actual": pe.assertion_diff.actual if pe.assertion_diff else "",
+                }
+                self.db.save_ci_error(ci_error_data)
+        except Exception as e:
+            logger.warning("Failed to save parsed CI errors: %s", e)

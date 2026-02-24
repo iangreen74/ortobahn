@@ -97,6 +97,7 @@ class Watchdog:
         findings.extend(self.probe_failure_rate_trend())
         findings.extend(self.probe_credential_expiry())
         findings.extend(self.probe_engagement_decline())
+        findings.extend(self.probe_deploy_metrics())
         if self.settings.watchdog_credential_check:
             findings.extend(self.probe_credential_health())
         if self.settings.auto_rollback_enabled:
@@ -427,6 +428,42 @@ class Watchdog:
                         client_id=cid,
                     )
                 )
+        return findings
+
+    def probe_deploy_metrics(self) -> list[Finding]:
+        """Check post-deploy CloudWatch metrics."""
+        findings: list[Finding] = []
+        try:
+            from ortobahn.deploy_metrics import validate_deploy
+
+            result = validate_deploy()
+            for check in result.checks:
+                if not check.passed:
+                    findings.append(
+                        Finding(
+                            probe="deploy_metrics",
+                            severity="critical" if "error_rate" in check.name else "warning",
+                            detail=check.detail,
+                            auto_fixable=False,
+                        )
+                    )
+            if not findings:
+                findings.append(
+                    Finding(
+                        probe="deploy_metrics",
+                        severity="ok",
+                        detail="All deploy metrics within thresholds",
+                    )
+                )
+        except Exception as e:
+            logger.warning("Deploy metrics probe failed: %s", e)
+            findings.append(
+                Finding(
+                    probe="deploy_metrics",
+                    severity="warning",
+                    detail=f"Deploy metrics unavailable: {e}",
+                )
+            )
         return findings
 
     def probe_deploy_health(self) -> list[Finding]:

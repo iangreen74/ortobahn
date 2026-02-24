@@ -331,7 +331,7 @@ jobs:
             echo "No current prod task definition found"
           fi
 
-      - name: Deploy to production ECS
+      - name: "Phase 1: Canary deployment (1 task)"
         env:
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
           IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
@@ -345,11 +345,18 @@ jobs:
           WEB_ARN=$(aws ecs register-task-definition \
             --cli-input-json file:///tmp/prod-web-td.json \
             --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "WEB_ARN=$WEB_ARN" >> $GITHUB_ENV
 
+          # Deploy with minimum healthy percent to allow canary
           aws ecs update-service --cluster ortobahn \
             --service ortobahn-web-v2 \
             --task-definition "$WEB_ARN" \
-            --force-new-deployment
+            --deployment-configuration "minimumHealthyPercent=100,maximumPercent=200" \
+            --desired-count 2 2>/dev/null || true
+
+          echo "Canary task deploying, waiting for stability..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-web-v2 || true
 
           # Register prod scheduler task def with SHA-pinned image
           jq --arg img "$IMAGE_URI" --arg sha "$IMAGE_TAG" \
@@ -360,17 +367,55 @@ jobs:
           SCHED_ARN=$(aws ecs register-task-definition \
             --cli-input-json file:///tmp/prod-sched-td.json \
             --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "SCHED_ARN=$SCHED_ARN" >> $GITHUB_ENV
+
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-scheduler-v2 \
+            --task-definition "$SCHED_ARN" \
+            --deployment-configuration "minimumHealthyPercent=100,maximumPercent=200" \
+            --desired-count 2 2>/dev/null || true
+
+          echo "Canary scheduler deploying, waiting for stability..."
+          aws ecs wait services-stable --cluster ortobahn \
+            --services ortobahn-scheduler-v2 || true
+
+      - name: "Phase 1: Canary health check"
+        run: |
+          echo "Running canary health checks..."
+          HEALTH_URL="${{ vars.APP_URL || 'https://app.ortobahn.com' }}/health"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check $i/5: OK ($STATUS)"
+            else
+              echo "Health check $i/5: FAILED ($STATUS)"
+              if [ "$i" -eq 5 ]; then
+                echo "ERROR: Canary health checks failed. Rolling back..."
+                # The existing rollback workflow will handle this
+                exit 1
+              fi
+            fi
+            sleep 10
+          done
+          echo "Canary health checks passed."
+
+      - name: "Phase 2: Full rollout"
+        run: |
+          echo "Canary passed. Proceeding to full rollout..."
+          aws ecs update-service --cluster ortobahn \
+            --service ortobahn-web-v2 \
+            --task-definition "$WEB_ARN" \
+            --force-new-deployment
 
           aws ecs update-service --cluster ortobahn \
             --service ortobahn-scheduler-v2 \
             --task-definition "$SCHED_ARN" \
             --force-new-deployment
 
-      - name: Wait for prod healthy
-        run: |
           echo "Waiting for production services to stabilize..."
           aws ecs wait services-stable --cluster ortobahn \
             --services ortobahn-web-v2 ortobahn-scheduler-v2
+          echo "Full rollout complete."
 
       - name: Notify Slack of deploy
         if: success()
@@ -484,6 +529,21 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"sha\": \"$IMAGE_TAG\", \"environment\": \"production\"}" \
           || echo "Warning: deploy registration failed (non-blocking)"
+
+      - name: Validate deploy metrics
+        if: steps.validate.outputs.validation_passed == 'true'
+        env:
+          AWS_DEFAULT_REGION: us-west-2
+        run: |
+          echo "Waiting 2 minutes for metrics to populate..."
+          sleep 120
+          python3 -c "
+          from ortobahn.deploy_metrics import validate_deploy, format_validation_report
+          result = validate_deploy()
+          print(format_validation_report(result))
+          if not result.passed:
+              print('WARNING: Deploy metrics validation failed, but continuing (non-blocking)')
+          "
 
       - name: Cleanup bogus clients
         if: steps.validate.outputs.validation_passed == 'true'

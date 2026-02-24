@@ -12,6 +12,12 @@ jobs:
     container: python:3.12-slim
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-3.12-
       - run: pip install -e ".[dev]"
       - run: ruff check ortobahn/ tests/
       - run: ruff format --check ortobahn/ tests/
@@ -21,6 +27,12 @@ jobs:
     container: python:3.12-slim
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-3.12-
       - run: pip install -e ".[dev,web]"
       - run: mypy ortobahn/
 
@@ -29,6 +41,12 @@ jobs:
     container: python:3.12-slim
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-3.12-
       - run: pip install --upgrade pip
       - run: pip install pip-audit
       - run: pip install "."
@@ -44,11 +62,40 @@ jobs:
     container: python:${{ matrix.python-version }}-slim
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ matrix.python-version }}-
       - run: pip install -e ".[dev,web]"
-      - name: Run tests with coverage
+      - name: Select tests based on changes
+        id: select
+        run: |
+          SELECTED=$(python3 -c "
+          from ortobahn.test_selector import select_tests, format_pytest_args
+          changed = []
+          import subprocess
+          result = subprocess.run(['git', 'diff', '--name-only', 'HEAD~1', 'HEAD'], capture_output=True, text=True)
+          if result.returncode == 0:
+              changed = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
+          tests = select_tests(changed)
+          print(format_pytest_args(tests))
+          ")
+          echo "selected=$SELECTED" >> $GITHUB_OUTPUT
+          if [ -n "$SELECTED" ]; then
+            echo "Running selected tests: $SELECTED"
+          else
+            echo "Running full test suite"
+          fi
+      - name: Run selected tests (fast feedback)
+        if: steps.select.outputs.selected != '' && matrix.python-version == '3.12'
+        run: pytest ${{ steps.select.outputs.selected }} -v --tb=short
+        continue-on-error: false
+      - name: Run full test suite with coverage
         if: matrix.python-version == '3.12'
         run: pytest --cov=ortobahn --cov-report=xml -v
-      - name: Run tests
+      - name: Run full test suite
         if: matrix.python-version != '3.12'
         run: pytest -v
       - name: Install git for Codecov
@@ -68,6 +115,12 @@ jobs:
     needs: [lint]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-3.12-
       - run: pip install -e ".[dev]"
       - name: Validate landing page links
         run: pytest tests/test_landing_links.py -v -m network

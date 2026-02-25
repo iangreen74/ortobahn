@@ -121,7 +121,7 @@
     {% if draft_count > 0 %}
     <p class="create-subtitle" style="margin-top: 0.5rem;">
         <strong>{{ draft_count }}</strong> draft{{ 's' if draft_count != 1 else '' }} awaiting review
-        &middot; <a href="/my/dashboard#activity-feed">View below</a>
+        &middot; <a href="/my/dashboard#draft-review-section">View below</a>
     </p>
     {% endif %}
     {% if article_count > 0 %}
@@ -137,6 +137,16 @@
      hx-trigger="load, every 5s"
      hx-swap="innerHTML">
 </div>
+
+{% if draft_count > 0 %}
+<!-- Drafts for Review -->
+<h2 id="draft-review-section">Drafts for Review</h2>
+<div hx-get="/my/api/partials/drafts"
+     hx-trigger="load, every 15s"
+     hx-swap="innerHTML">
+    <div class="skeleton skeleton-card"></div>
+</div>
+{% endif %}
 
 <!-- Activity Feed -->
 <h2>Activity</h2>

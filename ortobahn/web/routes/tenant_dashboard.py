@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -446,10 +447,20 @@ async def tenant_toggle_auto_publish(
         if form.get(f"platform_{p}"):
             platforms.append(p)
     target_platforms = ",".join(platforms) or "bluesky"
-    interval = max(3, min(24, int(form.get("posting_interval_hours", 6))))
+    # Build per-platform schedule JSON
+    schedule: dict[str, int] = {}
+    for p in platforms:
+        val = form.get(f"interval_{p}")
+        if val:
+            schedule[p] = max(3, min(24, int(val)))
+        else:
+            schedule[p] = 6  # default
+    schedule_json = json.dumps(schedule)
+    # Global fallback = minimum of all per-platform intervals
+    interval = min(schedule.values()) if schedule else 6
     db.execute(
-        "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=? WHERE id=?",
-        (enabled, target_platforms, interval, client["id"]),
+        "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=?, platform_schedule=? WHERE id=?",
+        (enabled, target_platforms, interval, schedule_json, client["id"]),
         commit=True,
     )
     return RedirectResponse("/my/settings?msg=saved", status_code=303)
@@ -478,6 +489,12 @@ async def tenant_settings(request: Request, client: AuthClient):
     if error_code == "bluesky_handle_format":
         credential_error = "Bluesky handle should be in the format 'you.bsky.social', not an email address."
 
+    # Parse per-platform schedule from JSON column
+    try:
+        platform_schedule = json.loads(client.get("platform_schedule") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        platform_schedule = {}
+
     return templates.TemplateResponse(
         "tenant_settings.html",
         {
@@ -486,6 +503,7 @@ async def tenant_settings(request: Request, client: AuthClient):
             "api_keys": api_keys,
             "connected_platforms": connected_platforms,
             "credential_error": credential_error,
+            "platform_schedule": platform_schedule,
         },
     )
 
@@ -856,7 +874,7 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
             html = (
                 '<div class="glass-status-card">'
                 '<span class="glass-pulse idle"></span>'
-                f" <strong>Pipeline idle</strong> &mdash; last run published {published} post(s)"
+                f" <strong>Content engine idle</strong> &mdash; last run published {published} post(s)"
                 f"{draft_note}"
                 "</div>"
             )
@@ -864,7 +882,7 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
             html = (
                 '<div class="glass-status-card">'
                 '<span class="glass-pulse idle"></span>'
-                " <strong>Pipeline idle</strong> &mdash; awaiting first run"
+                " <strong>Content engine idle</strong> &mdash; awaiting first run"
                 "</div>"
             )
 
@@ -1160,7 +1178,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-dot published"></div>'
                 f'<div class="activity-body">'
                 f'<div class="activity-header">'
-                f'<span class="badge completed">pipeline</span>'
+                f'<span class="badge completed">run</span>'
                 f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
                 f"</div>"
                 f'<p class="activity-text">Created and published {count} post{"s" if count != 1 else ""}</p>'
@@ -1172,10 +1190,10 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-dot failed"></div>'
                 f'<div class="activity-body">'
                 f'<div class="activity-header">'
-                f'<span class="badge failed">pipeline</span>'
+                f'<span class="badge failed">run</span>'
                 f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
                 f"</div>"
-                f'<p class="activity-text">Pipeline run encountered an issue</p>'
+                f'<p class="activity-text">Content engine encountered an issue</p>'
                 f"</div></div>"
             )
 

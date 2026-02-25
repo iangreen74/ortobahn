@@ -180,7 +180,8 @@ def cmd_schedule(args):
                 else:
                     # All active, non-paused clients
                     rows = pipeline.db.fetchall(
-                        "SELECT id, name, posting_interval_hours, timezone, preferred_posting_hours "
+                        "SELECT id, name, posting_interval_hours, timezone, preferred_posting_hours, "
+                        "target_platforms, platform_schedule "
                         "FROM clients WHERE active=1 AND status NOT IN ('paused', 'credential_issue') ORDER BY name"
                     )
                     clients_to_check = (
@@ -203,20 +204,67 @@ def cmd_schedule(args):
                     cid = client["id"]
                     interval = client.get("posting_interval_hours") or 6
 
-                    # Check if this client is due for a run
-                    last_run = pipeline.db.get_last_run_time(cid)
-                    if last_run is not None:
-                        try:
-                            from ortobahn.db import to_datetime
+                    # Per-platform scheduling: determine which platforms are due
+                    import json as _json
 
-                            last_dt = to_datetime(last_run)
-                            if last_dt.tzinfo is None:
-                                last_dt = last_dt.replace(tzinfo=_tz.utc)
-                            hours_since = (_dt.now(_tz.utc) - last_dt).total_seconds() / 3600
-                            if hours_since < interval:
-                                continue  # Not due yet
-                        except (ValueError, TypeError):
-                            pass  # Run if we can't parse the timestamp
+                    schedule_raw = client.get("platform_schedule") or "{}"
+                    try:
+                        platform_schedule = _json.loads(schedule_raw)
+                    except (ValueError, TypeError):
+                        platform_schedule = {}
+
+                    target_plats = [
+                        p.strip()
+                        for p in (client.get("target_platforms") or "bluesky").split(",")
+                        if p.strip()
+                    ]
+
+                    due_platforms = []
+                    now_utc = _dt.now(_tz.utc)
+
+                    if platform_schedule:
+                        # Check each platform's last publish time independently
+                        for plat in target_plats:
+                            plat_interval = platform_schedule.get(plat, interval)
+                            last_pub_row = pipeline.db.fetchone(
+                                "SELECT MAX(published_at) as last_pub FROM posts "
+                                "WHERE client_id=? AND platform=? AND status='published'",
+                                (cid, plat),
+                            )
+                            last_pub = last_pub_row["last_pub"] if last_pub_row else None
+                            if last_pub is not None:
+                                try:
+                                    from ortobahn.db import to_datetime
+
+                                    last_pub_dt = to_datetime(last_pub)
+                                    if last_pub_dt.tzinfo is None:
+                                        last_pub_dt = last_pub_dt.replace(tzinfo=_tz.utc)
+                                    hours_since_pub = (now_utc - last_pub_dt).total_seconds() / 3600
+                                    if hours_since_pub >= plat_interval:
+                                        due_platforms.append(plat)
+                                except (ValueError, TypeError):
+                                    due_platforms.append(plat)  # Can't parse — assume due
+                            else:
+                                due_platforms.append(plat)  # Never published — due
+                    else:
+                        # Legacy: use global interval based on last pipeline run
+                        last_run = pipeline.db.get_last_run_time(cid)
+                        if last_run is not None:
+                            try:
+                                from ortobahn.db import to_datetime
+
+                                last_dt = to_datetime(last_run)
+                                if last_dt.tzinfo is None:
+                                    last_dt = last_dt.replace(tzinfo=_tz.utc)
+                                hours_since = (now_utc - last_dt).total_seconds() / 3600
+                                if hours_since < interval:
+                                    continue  # Not due yet
+                            except (ValueError, TypeError):
+                                pass  # Run if we can't parse the timestamp
+                        due_platforms = target_plats  # All platforms due
+
+                    if not due_platforms:
+                        continue  # No platforms due for this client
 
                     # Adaptive scheduling: check if current hour is within posting hours
                     try:
@@ -250,9 +298,17 @@ def cmd_schedule(args):
                     except ImportError:
                         pass  # zoneinfo not available — skip the check
 
-                    console.print(f"  [dim]Running for client: {client.get('name', cid)} (interval: {interval}h)[/dim]")
+                    console.print(
+                        f"  [dim]Running for client: {client.get('name', cid)} "
+                        f"(platforms due: {','.join(due_platforms)})[/dim]"
+                    )
                     try:
-                        result = pipeline.run_cycle(client_id=cid, target_platforms=platforms)
+                        override = [Platform(p) for p in due_platforms]
+                        result = pipeline.run_cycle(
+                            client_id=cid,
+                            target_platforms=override if platform_schedule else platforms,
+                            platforms_override=override if platform_schedule else None,
+                        )
                         total_published += result["posts_published"]
                         console.print(f"    Published {result['posts_published']} posts for {client.get('name', cid)}")
                     except Exception as e:

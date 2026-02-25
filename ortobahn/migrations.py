@@ -896,6 +896,11 @@ def _migration_030_add_test_results_and_ci_errors(db: Database) -> None:
     )
 
 
+def _migration_031_add_platform_schedule(db: Database) -> None:
+    """Add per-platform posting schedule JSON to clients."""
+    _safe_add_column(db, "clients", "platform_schedule TEXT NOT NULL DEFAULT '{}'")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -927,6 +932,7 @@ MIGRATIONS = {
     28: _migration_028_add_article_pub_recovery,
     29: _migration_029_add_shared_insights,
     30: _migration_030_add_test_results_and_ci_errors,
+    31: _migration_031_add_platform_schedule,
 }
 
 
@@ -997,6 +1003,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "news_category",
         "preferred_posting_hours",
         "article_enabled",
+        "platform_schedule",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],

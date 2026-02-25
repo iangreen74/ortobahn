@@ -374,6 +374,7 @@ class Pipeline:
         client_id: str = "default",
         target_platforms: list[Platform] | None = None,
         generate_only: bool | None = None,
+        platforms_override: list[Platform] | None = None,
     ) -> dict:
         """Execute one complete pipeline cycle.
 
@@ -396,6 +397,9 @@ class Pipeline:
         client_data = self.db.get_client(client_id)
         client = Client(**client_data) if client_data else None
         platforms = target_platforms or [Platform.GENERIC]
+
+        # Per-platform scheduling: only publish to platforms that are due
+        publish_platforms = platforms_override if platforms_override else platforms
 
         # Budget guard: skip paused or credential_issue clients (no run recorded)
         if client_data and client_data.get("status") in ("paused", "credential_issue"):
@@ -702,7 +706,7 @@ class Pipeline:
                 content_plan=content_plan,
                 strategy=strategy,
                 client=client,
-                target_platforms=platforms,
+                target_platforms=publish_platforms,
                 enable_self_critique=self.settings.enable_self_critique,
                 critique_threshold=self.settings.creator_critique_threshold,
                 style_context=(style_context + "\n" + calibration_context).strip()

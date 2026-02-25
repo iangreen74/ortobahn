@@ -164,7 +164,7 @@ class TestPipelineRoutes:
         client = TestClient(app)
         resp = client.get("/pipeline/", headers=_admin_headers(app))
         assert resp.status_code == 200
-        assert "Pipeline" in resp.text
+        assert "Content Engine" in resp.text
 
     def test_pipeline_shows_runs(self, tmp_path):
         app = _create_test_app(tmp_path)

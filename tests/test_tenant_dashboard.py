@@ -296,17 +296,23 @@ class TestTenantAutoPublish:
                 "auto_publish": "on",
                 "platform_bluesky": "bluesky",
                 "platform_twitter": "twitter",
-                "posting_interval_hours": "8",
+                "interval_bluesky": "8",
+                "interval_twitter": "12",
             },
             follow_redirects=False,
         )
         assert resp.status_code == 303
+
+        import json
 
         db = app.state.db
         client_id = tenant_client._test_client_id
         client = db.get_client(client_id)
         assert client["auto_publish"] == 1
         assert client["target_platforms"] == "bluesky,twitter"
+        schedule = json.loads(client["platform_schedule"])
+        assert schedule == {"bluesky": 8, "twitter": 12}
+        # Global interval = min of per-platform intervals
         assert client["posting_interval_hours"] == 8
 
     @pytest.mark.asyncio
@@ -316,7 +322,7 @@ class TestTenantAutoPublish:
             data={
                 "auto_publish": "",
                 "platform_bluesky": "bluesky",
-                "posting_interval_hours": "6",
+                "interval_bluesky": "6",
             },
             follow_redirects=False,
         )
@@ -329,40 +335,48 @@ class TestTenantAutoPublish:
 
     @pytest.mark.asyncio
     async def test_posting_interval_clamped(self, app, tenant_client):
-        """posting_interval_hours should be clamped between 3 and 24."""
+        """Per-platform interval should be clamped between 3 and 24."""
         resp = await tenant_client.post(
             "/my/auto-publish",
             data={
                 "auto_publish": "on",
                 "platform_bluesky": "bluesky",
-                "posting_interval_hours": "1",  # below min of 3
+                "interval_bluesky": "1",  # below min of 3
             },
             follow_redirects=False,
         )
         assert resp.status_code == 303
 
+        import json
+
         db = app.state.db
         client_id = tenant_client._test_client_id
         client = db.get_client(client_id)
+        schedule = json.loads(client["platform_schedule"])
+        assert schedule["bluesky"] == 3
         assert client["posting_interval_hours"] == 3
 
     @pytest.mark.asyncio
     async def test_posting_interval_clamped_high(self, app, tenant_client):
-        """posting_interval_hours above 24 should clamp to 24."""
+        """Per-platform interval above 24 should clamp to 24."""
         resp = await tenant_client.post(
             "/my/auto-publish",
             data={
                 "auto_publish": "on",
                 "platform_bluesky": "bluesky",
-                "posting_interval_hours": "48",
+                "interval_bluesky": "48",
             },
             follow_redirects=False,
         )
         assert resp.status_code == 303
 
+        import json
+
         db = app.state.db
         client_id = tenant_client._test_client_id
         client = db.get_client(client_id)
+        schedule = json.loads(client["platform_schedule"])
+        assert schedule["bluesky"] == 24
         assert client["posting_interval_hours"] == 24
 
 

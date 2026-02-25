@@ -81,6 +81,7 @@ class Settings:
     post_delay_seconds: int = 30
     rate_limit_enabled: bool = True
     rate_limit_default: int = 60
+    rate_limit_window_seconds: int = 60
 
     # Slack alerting
     slack_webhook_url: str = ""
@@ -246,6 +247,8 @@ class Settings:
         # Rate limits
         if self.rate_limit_default < 1:
             errors.append(f"rate_limit_default must be >= 1, got {self.rate_limit_default}")
+        if self.rate_limit_window_seconds < 1:
+            errors.append(f"rate_limit_window_seconds must be >= 1, got {self.rate_limit_window_seconds}")
 
         # Budget
         if self.default_monthly_budget < 0:
@@ -319,6 +322,7 @@ def load_settings() -> Settings:
         post_delay_seconds=int(os.environ.get("POST_DELAY_SECONDS", "30")),
         rate_limit_enabled=os.environ.get("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"),
         rate_limit_default=int(os.environ.get("RATE_LIMIT_DEFAULT", "60")),
+        rate_limit_window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60")),
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
         slack_signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
         backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),

@@ -263,19 +263,3 @@ class TestGlassPosts:
         resp = client.get("/glass/api/posts")
         assert "confidence-bar" in resp.text
         assert "42%" in resp.text
-
-
-class TestGlassRateLimit:
-    def test_glass_in_public_tier(self):
-        from ortobahn.web.rate_limit import DEFAULT_TIERS, _match_tier
-
-        tier = _match_tier("/glass", DEFAULT_TIERS)
-        assert tier is not None
-        assert tier.name == "public"
-
-    def test_glass_api_in_public_tier(self):
-        from ortobahn.web.rate_limit import DEFAULT_TIERS, _match_tier
-
-        tier = _match_tier("/glass/api/status", DEFAULT_TIERS)
-        assert tier is not None
-        assert tier.name == "public"

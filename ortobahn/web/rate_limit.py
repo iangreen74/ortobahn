@@ -1,205 +1,182 @@
-"""Sliding-window rate limiter implemented as ASGI middleware.
-
-Uses in-memory storage with automatic TTL cleanup — no external
-dependencies required.  Endpoints are grouped into tiers with different
-request-per-minute limits.
-"""
+"""Rate limiting middleware for FastAPI using sliding window algorithm."""
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from threading import Lock
 
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-# ---------------------------------------------------------------------------
-# Tier configuration
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RateTier:
-    """A named rate-limit tier with a requests-per-minute cap."""
-
-    name: str
-    requests_per_minute: int
-    prefixes: tuple[str, ...]
+logger = logging.getLogger(__name__)
 
 
-# Default tiers — evaluated top-to-bottom; first match wins.
-DEFAULT_TIERS: tuple[RateTier, ...] = (
-    RateTier(name="static", requests_per_minute=600, prefixes=("/static/", "/favicon")),
-    RateTier(name="web", requests_per_minute=300, prefixes=("/my/", "/sre/", "/clients/", "/content/", "/pipeline/")),
-    RateTier(name="public", requests_per_minute=300, prefixes=("/health", "/api/public/", "/glass", "/api/toasts")),
-    RateTier(name="auth", requests_per_minute=10, prefixes=("/api/auth/login", "/api/auth/register")),
-    RateTier(name="onboard", requests_per_minute=5, prefixes=("/api/onboard",)),
-)
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Sliding-window rate limiter tracking requests per IP address.
 
-# Anything that doesn't match an explicit tier uses the general limit.
-GENERAL_TIER_NAME = "general"
-
-
-# ---------------------------------------------------------------------------
-# Sliding-window bucket
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _Bucket:
-    """Sliding-window counter for a single (ip, tier) pair."""
-
-    timestamps: list[float] = field(default_factory=list)
-
-    def hit(self, now: float, window: float) -> int:
-        """Record a request and return the count within *window* seconds."""
-        # Prune expired entries first
-        cutoff = now - window
-        self.timestamps = [ts for ts in self.timestamps if ts > cutoff]
-        self.timestamps.append(now)
-        return len(self.timestamps)
-
-    def oldest_in_window(self, now: float, window: float) -> float:
-        """Return the oldest timestamp still within the window."""
-        cutoff = now - window
-        self.timestamps = [ts for ts in self.timestamps if ts > cutoff]
-        if self.timestamps:
-            return self.timestamps[0]
-        return now
-
-
-# ---------------------------------------------------------------------------
-# In-memory store with periodic cleanup
-# ---------------------------------------------------------------------------
-
-
-class RateLimitStore:
-    """Thread-safe-ish in-memory store keyed by ``(client_ip, tier_name)``."""
-
-    def __init__(self, cleanup_interval: float = 60.0) -> None:
-        self._buckets: dict[str, _Bucket] = defaultdict(_Bucket)
-        self._cleanup_interval = cleanup_interval
-        self._last_cleanup: float = 0.0
-
-    def check(self, key: str, limit: int, window: float = 60.0) -> tuple[bool, int, float]:
-        """Check whether *key* is within its rate limit.
-
-        Returns ``(allowed, current_count, retry_after_seconds)``.
-        """
-        now = time.monotonic()
-        self._maybe_cleanup(now, window)
-
-        bucket = self._buckets[key]
-        count = bucket.hit(now, window)
-        if count > limit:
-            oldest = bucket.oldest_in_window(now, window)
-            retry_after = max(0.0, window - (now - oldest))
-            return False, count, retry_after
-        return True, count, 0.0
-
-    def _maybe_cleanup(self, now: float, window: float) -> None:
-        """Periodically drop buckets with no recent activity."""
-        if now - self._last_cleanup < self._cleanup_interval:
-            return
-        self._last_cleanup = now
-        cutoff = now - window
-        empty_keys = [k for k, b in self._buckets.items() if not b.timestamps or b.timestamps[-1] <= cutoff]
-        for k in empty_keys:
-            del self._buckets[k]
-
-    @property
-    def buckets(self) -> dict[str, _Bucket]:
-        """Expose buckets for testing/introspection."""
-        return self._buckets
-
-
-# ---------------------------------------------------------------------------
-# ASGI Middleware
-# ---------------------------------------------------------------------------
-
-
-def _client_ip(scope: Scope) -> str:
-    """Extract the real client IP, respecting X-Forwarded-For behind a proxy/ALB."""
-    headers = dict(scope.get("headers") or [])
-    # X-Forwarded-For set by ALB/proxy: "client, proxy1, proxy2"
-    xff = headers.get(b"x-forwarded-for", b"").decode("latin-1")
-    if xff:
-        return xff.split(",")[0].strip()
-    client = scope.get("client")
-    if client:
-        return client[0]
-    return "unknown"
-
-
-def _match_tier(path: str, tiers: Sequence[RateTier]) -> RateTier | None:
-    """Return the first tier whose prefix matches *path*, or ``None``."""
-    for tier in tiers:
-        for prefix in tier.prefixes:
-            if path == prefix or path.startswith(prefix):
-                return tier
-    return None
-
-
-class RateLimitMiddleware:
-    """ASGI middleware that enforces per-IP sliding-window rate limits.
-
-    Parameters
-    ----------
-    app:
-        The wrapped ASGI application.
-    enabled:
-        Kill-switch — when *False* the middleware is a no-op passthrough.
-    default_rpm:
-        Requests-per-minute for the general (unmatched) tier.
-    tiers:
-        Sequence of ``RateTier`` objects evaluated in order.
-    store:
-        Optional external ``RateLimitStore`` (useful for testing).
+    Stores request timestamps in memory and enforces configurable limits.
+    Automatically cleans up old entries to prevent memory bloat.
     """
 
     def __init__(
         self,
-        app: ASGIApp,
-        *,
+        app,
         enabled: bool = True,
         default_rpm: int = 60,
-        tiers: Sequence[RateTier] | None = None,
-        store: RateLimitStore | None = None,
-    ) -> None:
-        self.app = app
+        window_seconds: int = 60,
+    ):
+        """Initialize rate limiter.
+
+        Args:
+            app: FastAPI application instance
+            enabled: Whether rate limiting is active
+            default_rpm: Default requests per minute (per IP)
+            window_seconds: Time window in seconds for rate calculation
+        """
+        super().__init__(app)
         self.enabled = enabled
         self.default_rpm = default_rpm
-        self.tiers = tiers if tiers is not None else DEFAULT_TIERS
-        self.store = store or RateLimitStore()
+        self.window_seconds = window_seconds
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not self.enabled:
-            await self.app(scope, receive, send)
+        # Store list of request timestamps per IP
+        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._lock = Lock()
+
+        # Track last cleanup to prevent excessive lock contention
+        self._last_cleanup = time.time()
+        self._cleanup_interval = 60  # Clean up every 60 seconds
+
+    def _get_client_ip(self, request: Request) -> str:
+        """Extract client IP from request, checking proxy headers."""
+        # Check X-Forwarded-For (set by load balancers/proxies)
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            # X-Forwarded-For can be a comma-separated list; take first IP
+            return forwarded.split(",")[0].strip()
+
+        # Check X-Real-IP (set by some proxies)
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+
+        # Fall back to direct client IP
+        if request.client:
+            return request.client.host
+
+        return "unknown"
+
+    def _cleanup_old_entries(self, current_time: float) -> None:
+        """Remove old timestamps beyond the window to free memory.
+
+        Only runs periodically to avoid excessive lock contention.
+        """
+        if current_time - self._last_cleanup < self._cleanup_interval:
             return
 
-        path: str = scope.get("path", "/")
-        ip = _client_ip(scope)
+        cutoff = current_time - self.window_seconds
+        with self._lock:
+            for ip in list(self._requests.keys()):
+                # Filter out old timestamps
+                self._requests[ip] = [ts for ts in self._requests[ip] if ts > cutoff]
+                # Remove IP entirely if no recent requests
+                if not self._requests[ip]:
+                    del self._requests[ip]
 
-        tier = _match_tier(path, self.tiers)
-        if tier is not None:
-            tier_name = tier.name
-            limit = tier.requests_per_minute
+            self._last_cleanup = current_time
+
+    def _should_allow_request(self, ip: str, current_time: float, limit: int) -> tuple[bool, int, float]:
+        """Check if request should be allowed under rate limit.
+
+        Returns:
+            (allowed, remaining, reset_time) tuple
+        """
+        cutoff = current_time - self.window_seconds
+
+        with self._lock:
+            # Filter to only recent requests within the window
+            recent_requests = [ts for ts in self._requests[ip] if ts > cutoff]
+            self._requests[ip] = recent_requests
+
+            count = len(recent_requests)
+            allowed = count < limit
+            remaining = max(0, limit - count - 1) if allowed else 0
+
+            # Calculate reset time (when oldest request will expire)
+            if recent_requests:
+                oldest_ts = min(recent_requests)
+                reset_time = oldest_ts + self.window_seconds
+            else:
+                reset_time = current_time + self.window_seconds
+
+            # Record this request if allowed
+            if allowed:
+                self._requests[ip].append(current_time)
+
+            return allowed, remaining, reset_time
+
+    def _get_rate_limit(self, request: Request) -> int:
+        """Get rate limit for this request.
+
+        Can be extended to support per-endpoint or per-user limits.
+        """
+        # Future enhancement: check user authentication and return custom limits
+        # For now, use default for all requests
+        return self.default_rpm
+
+    def _should_skip_rate_limit(self, request: Request) -> bool:
+        """Determine if rate limiting should be skipped for this request."""
+        path = request.url.path
+
+        # Always allow health checks
+        if path == "/health":
+            return True
+
+        # Skip static files
+        if path.startswith("/static/"):
+            return True
+
+        return False
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request through rate limiter."""
+        # Skip if disabled or not applicable
+        if not self.enabled or self._should_skip_rate_limit(request):
+            return await call_next(request)
+
+        current_time = time.time()
+        ip = self._get_client_ip(request)
+        limit = self._get_rate_limit(request)
+
+        # Periodic cleanup of old entries
+        self._cleanup_old_entries(current_time)
+
+        # Check rate limit
+        allowed, remaining, reset_time = self._should_allow_request(ip, current_time, limit)
+
+        # Build response
+        if allowed:
+            response = await call_next(request)
         else:
-            tier_name = GENERAL_TIER_NAME
-            limit = self.default_rpm
-
-        key = f"{ip}:{tier_name}"
-        allowed, count, retry_after = self.store.check(key, limit)
-
-        if not allowed:
+            # Rate limit exceeded - return 429
+            retry_after = int(reset_time - current_time)
+            logger.warning(f"Rate limit exceeded for IP {ip}: {limit} req/{self.window_seconds}s")
             response = JSONResponse(
-                {"detail": "Rate limit exceeded. Try again later."},
                 status_code=429,
-                headers={"Retry-After": str(int(retry_after) + 1)},
+                content={
+                    "error": "rate_limit_exceeded",
+                    "message": f"Rate limit of {limit} requests per {self.window_seconds} seconds exceeded",
+                    "retry_after": retry_after,
+                },
             )
-            await response(scope, receive, send)
-            return
+            response.headers["Retry-After"] = str(retry_after)
 
-        await self.app(scope, receive, send)
+        # Add rate limit headers to all responses
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(reset_time))
+
+        return response

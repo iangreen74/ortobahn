@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
         RateLimitMiddleware,
         enabled=settings.rate_limit_enabled,
         default_rpm=settings.rate_limit_default,
+        window_seconds=settings.rate_limit_window_seconds,
     )
 
     @app.get("/health")

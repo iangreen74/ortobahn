@@ -84,9 +84,7 @@ async def tenant_approve_article(request: Request, article_id: str, client: Auth
 
 
 @router.post("/articles/{article_id}/reject")
-async def tenant_reject_article(
-    request: Request, article_id: str, client: AuthClient, reason: str = Form("")
-):
+async def tenant_reject_article(request: Request, article_id: str, client: AuthClient, reason: str = Form("")):
     db = request.app.state.db
     article = db.get_article(article_id)
     if not article or article.get("client_id") != client["id"]:

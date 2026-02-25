@@ -932,8 +932,7 @@ def _migration_033_add_voice_learning(db: Database) -> None:
         commit=True,
     )
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_content_reviews_content "
-        "ON content_reviews(content_id)",
+        "CREATE INDEX IF NOT EXISTS idx_content_reviews_content ON content_reviews(content_id)",
         commit=True,
     )
     _safe_add_column(db, "clients", "auto_publish_articles INTEGER NOT NULL DEFAULT 0")

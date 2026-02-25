@@ -138,9 +138,7 @@ async def tenant_approve_draft(request: Request, post_id: str, client: AuthClien
 
 
 @router.post("/drafts/{post_id}/reject")
-async def tenant_reject_draft(
-    request: Request, post_id: str, client: AuthClient, reason: str = Form("")
-):
+async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient, reason: str = Form("")):
     db = request.app.state.db
     post = db.get_post(post_id)
     if not post or post.get("client_id") != client["id"]:

@@ -1013,9 +1013,7 @@ class Pipeline:
                 from ortobahn.voice_learning import VoiceLearner
 
                 voice_learner = VoiceLearner(self.db, self.memory_store)
-                voice_results = voice_learner.analyze_review_batch(
-                    client_id, settings=self.settings, run_id=run_id
-                )
+                voice_results = voice_learner.analyze_review_batch(client_id, settings=self.settings, run_id=run_id)
                 if voice_results.get("preferences_stored"):
                     logger.info(f"  Voice learning: stored {voice_results['preferences_stored']} preferences")
             except Exception as e:

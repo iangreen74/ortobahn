@@ -102,5 +102,5 @@ jobs:
           CIFIX_WORKFLOW_NAME: ${{ inputs.workflow_name }}
         run: |
           echo "Running LLM-powered CI Fix Agent for ${{ inputs.workflow_name }} run #${{ inputs.run_id }}..."
-          python -m ortobahn ci-fix
+          python3 -m ortobahn ci-fix
         timeout-minutes: 10

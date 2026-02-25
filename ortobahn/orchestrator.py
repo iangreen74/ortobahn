@@ -1008,6 +1008,19 @@ class Pipeline:
                 min_confidence=0.2,
             )
 
+            # Voice learning batch analysis (non-fatal)
+            try:
+                from ortobahn.voice_learning import VoiceLearner
+
+                voice_learner = VoiceLearner(self.db, self.memory_store)
+                voice_results = voice_learner.analyze_review_batch(
+                    client_id, settings=self.settings, run_id=run_id
+                )
+                if voice_results.get("preferences_stored"):
+                    logger.info(f"  Voice learning: stored {voice_results['preferences_stored']} preferences")
+            except Exception as e:
+                logger.warning(f"Voice learning batch analysis failed (non-fatal): {e}")
+
             # Clean up old topic velocity data
             if self.topic_tracker:
                 self.topic_tracker.cleanup_old_topics(max_age_days=30)
@@ -1296,9 +1309,9 @@ class Pipeline:
                 f"  Article saved: '{article.title}' ({article.word_count}w, confidence={article.confidence:.2f})"
             )
 
-            # Auto-publish if enabled and confidence is high enough
+            # Auto-publish if article auto-publish enabled and confidence is high enough
             if (
-                client_data.get("auto_publish")
+                client_data.get("auto_publish_articles")
                 and article.confidence >= self.settings.article_confidence_threshold
                 and not self.dry_run
             ):

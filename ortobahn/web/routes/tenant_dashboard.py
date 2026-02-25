@@ -135,6 +135,14 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     )
     article_count = article_row["c"] if article_row else 0
 
+    # Voice confidence
+    voice_confidence = client.get("voice_confidence") or 0.0
+    review_count_row = db.fetchone(
+        "SELECT COUNT(*) as c FROM content_reviews WHERE client_id=?",
+        (client["id"],),
+    )
+    total_reviews = review_count_row["c"] if review_count_row else 0
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -153,6 +161,8 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "engagement_trend_pct": engagement_trend_pct,
             "draft_count": draft_count,
             "article_count": article_count,
+            "voice_confidence": voice_confidence,
+            "total_reviews": total_reviews,
         },
     )
 

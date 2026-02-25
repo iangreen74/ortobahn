@@ -106,6 +106,17 @@ class CreatorAgent(BaseAgent):
         if memory_context:
             parts.append(f"\n## Agent Memory\n{memory_context}")
 
+        # Inject voice preferences from review history
+        try:
+            from ortobahn.memory import MemoryStore
+            from ortobahn.voice_learning import VoiceLearner
+
+            voice_context = VoiceLearner(self.db, MemoryStore(self.db)).get_voice_context(client_id)
+            if voice_context:
+                parts.append(f"\n{voice_context}")
+        except Exception:
+            pass  # Non-fatal — voice learning is additive
+
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)
         drafts = parse_json_response(response.text, DraftPosts)

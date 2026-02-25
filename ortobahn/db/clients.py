@@ -46,7 +46,7 @@ class ClientsMixin:
                 client_data.get("company_story", ""),
                 sub_status,
                 trial_ends_at,
-                1,
+                client_data.get("auto_publish", 0),
             ),
             commit=True,
         )
@@ -107,6 +107,8 @@ class ClientsMixin:
             "article_topics",
             "article_length",
             "last_article_at",
+            "auto_publish_articles",
+            "voice_confidence",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:

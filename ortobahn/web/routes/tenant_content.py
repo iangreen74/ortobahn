@@ -93,7 +93,9 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
             f'<form method="post" action="/my/drafts/{pid}/approve" style="margin:0;">'
             f'<button type="submit" style="padding:4px 12px;font-size:0.8em;">Approve</button>'
             f"</form>"
-            f'<form method="post" action="/my/drafts/{pid}/reject" style="margin:0;">'
+            f'<form method="post" action="/my/drafts/{pid}/reject" style="margin:0;display:flex;gap:0.25rem;align-items:center;">'
+            f'<input type="text" name="reason" placeholder="Why? (optional)" '
+            f'style="font-size:0.75em;padding:2px 6px;width:140px;">'
             f'<button type="submit" class="secondary" style="padding:4px 12px;font-size:0.8em;">Reject</button>'
             f"</form>"
             f"</div>"
@@ -111,14 +113,59 @@ async def tenant_approve_draft(request: Request, post_id: str, client: AuthClien
     if not post or post.get("client_id") != client["id"]:
         raise HTTPException(status_code=404)
     db.approve_post(post_id)
+
+    # Record review for voice learning
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="post",
+            content_id=post_id,
+            action="approved",
+            content_snapshot={
+                "text": post.get("text", ""),
+                "confidence": post.get("confidence"),
+                "platform": post.get("platform"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on approve (non-fatal)", exc_info=True)
+
     return RedirectResponse("/my/dashboard", status_code=303)
 
 
 @router.post("/drafts/{post_id}/reject")
-async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient):
+async def tenant_reject_draft(
+    request: Request, post_id: str, client: AuthClient, reason: str = Form("")
+):
     db = request.app.state.db
     post = db.get_post(post_id)
     if not post or post.get("client_id") != client["id"]:
         raise HTTPException(status_code=404)
     db.reject_post(post_id)
+
+    # Record review for voice learning
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="post",
+            content_id=post_id,
+            action="rejected",
+            rejection_reason=reason,
+            content_snapshot={
+                "text": post.get("text", ""),
+                "confidence": post.get("confidence"),
+                "platform": post.get("platform"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on reject (non-fatal)", exc_info=True)
+
     return RedirectResponse("/my/dashboard", status_code=303)

@@ -120,6 +120,7 @@ async def tenant_settings_update(request: Request, client: AuthClient):
             client["id"],
             {
                 "article_enabled": 1 if form.get("article_enabled") == "on" else 0,
+                "auto_publish_articles": 1 if form.get("auto_publish_articles") == "on" else 0,
                 "article_frequency": form.get("article_frequency", "weekly"),
                 "article_voice": form.get("article_voice", ""),
                 "article_platforms": ",".join(platforms),

@@ -22,7 +22,7 @@ Critical system behaviors that must not regress. Each invariant maps to an autom
 | ID | Invariant | Verification |
 |----|-----------|-------------|
 | INV-006 | No phantom pipeline runs for ineligible clients | `ortobahn/orchestrator.py` — paused clients and expired trials return before `start_pipeline_run()`. No pipeline_run record is created for skipped clients. |
-| INV-007 | Auto-publish defaults to enabled for new clients | `ortobahn/db.py` `create_client()` passes `auto_publish=1`. Migration 019 backfilled existing clients. |
+| INV-007 | Auto-publish defaults to disabled for new non-internal clients (review-first flow) | `ortobahn/db/clients.py` `create_client()` defaults `auto_publish=0`. Internal clients set `auto_publish=1` via seed. Users enable auto-publish after voice confidence builds. |
 | INV-008 | Publisher verifies posts with delay before marking published | `ortobahn/agents/publisher.py` — 2s `time.sleep()` before `verify_post_exists()`. Failed verification marks post as `failed`, not `published`. |
 
 ## Data Integrity

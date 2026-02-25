@@ -163,6 +163,10 @@
             <input type="checkbox" name="article_enabled" value="on" {% if client.article_enabled %}checked{% endif %}>
             Enable long-form article generation
         </label>
+        <label>
+            <input type="checkbox" name="auto_publish_articles" value="on" {% if client.auto_publish_articles %}checked{% endif %}>
+            Auto-publish articles (when off, articles go to review before publishing)
+        </label>
         <label for="article_frequency">Frequency</label>
         <select id="article_frequency" name="article_frequency">
             <option value="weekly" {% if (client.article_frequency or 'weekly') == 'weekly' %}selected{% endif %}>Weekly</option>

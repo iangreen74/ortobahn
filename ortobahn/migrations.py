@@ -909,6 +909,37 @@ def _migration_032_add_pipeline_phases(db: Database) -> None:
     _safe_add_column(db, "pipeline_runs", "phase_data TEXT DEFAULT '{}'")
 
 
+def _migration_033_add_voice_learning(db: Database) -> None:
+    """Add content reviews table and voice learning columns for review-to-auto-publish flow."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS content_reviews (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            content_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            rejection_reason TEXT DEFAULT '',
+            content_snapshot TEXT DEFAULT '{}',
+            reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_content_reviews_client "
+        "ON content_reviews(client_id, content_type, action, reviewed_at)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_content_reviews_content "
+        "ON content_reviews(content_id)",
+        commit=True,
+    )
+    _safe_add_column(db, "clients", "auto_publish_articles INTEGER NOT NULL DEFAULT 0")
+    _safe_add_column(db, "clients", "voice_confidence REAL NOT NULL DEFAULT 0.0")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -942,6 +973,7 @@ MIGRATIONS = {
     30: _migration_030_add_test_results_and_ci_errors,
     31: _migration_031_add_platform_schedule,
     32: _migration_032_add_pipeline_phases,
+    33: _migration_033_add_voice_learning,
 }
 
 
@@ -1017,6 +1049,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "preferred_posting_hours",
         "article_enabled",
         "platform_schedule",
+        "auto_publish_articles",
+        "voice_confidence",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],
@@ -1060,6 +1094,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     # Migration 030
     "test_results": ["id", "run_id", "test_file", "test_name", "outcome"],
     "ci_errors": ["id", "run_id", "test_name", "error_type", "error_message"],
+    # Migration 033
+    "content_reviews": ["id", "client_id", "content_type", "content_id", "action"],
     # Internal
     "schema_version": ["version"],
 }

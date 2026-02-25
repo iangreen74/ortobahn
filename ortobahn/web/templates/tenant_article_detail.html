@@ -59,7 +59,8 @@
     <form method="post" action="/my/articles/{{ article.id }}/approve" style="margin:0;display:contents">
         <button type="submit">Approve</button>
     </form>
-    <form method="post" action="/my/articles/{{ article.id }}/reject" style="margin:0;display:contents">
+    <form method="post" action="/my/articles/{{ article.id }}/reject" style="margin:0;display:flex;gap:0.5rem;align-items:center;">
+        <input type="text" name="reason" placeholder="Why? (optional)" style="font-size:0.85em;padding:4px 8px;width:200px;">
         <button type="submit" class="secondary">Reject</button>
     </form>
     <form method="post" action="/my/articles/{{ article.id }}/publish" style="margin:0;display:contents">

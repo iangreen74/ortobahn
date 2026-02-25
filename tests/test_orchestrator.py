@@ -916,7 +916,7 @@ class TestArticleCycle:
         pipeline.close()
 
     def test_article_cycle_auto_publishes_high_confidence(self, tmp_path):
-        """When auto_publish=1 and confidence >= threshold, article is published."""
+        """When auto_publish_articles=1 and confidence >= threshold, article is published."""
         settings = _make_settings(
             tmp_path,
             article_confidence_threshold=0.8,
@@ -940,7 +940,7 @@ class TestArticleCycle:
             }
             pipeline = Pipeline(settings, dry_run=False)
             pipeline.db.execute(
-                "UPDATE clients SET article_enabled=1, auto_publish=1, article_platforms='medium' WHERE id='default'",
+                "UPDATE clients SET article_enabled=1, auto_publish=1, auto_publish_articles=1, article_platforms='medium' WHERE id='default'",
                 commit=True,
             )
             result = pipeline.run_article_cycle(client_id="default")

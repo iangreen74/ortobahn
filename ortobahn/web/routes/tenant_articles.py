@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from ortobahn.auth import AuthClient
@@ -60,16 +60,59 @@ async def tenant_approve_article(request: Request, article_id: str, client: Auth
     if not article or article.get("client_id") != client["id"]:
         raise HTTPException(status_code=404, detail="Article not found")
     db.approve_article(article_id)
+
+    # Record review for voice learning
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="article",
+            content_id=article_id,
+            action="approved",
+            content_snapshot={
+                "title": article.get("title", ""),
+                "confidence": article.get("confidence"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on article approve (non-fatal)", exc_info=True)
+
     return RedirectResponse("/my/articles", status_code=303)
 
 
 @router.post("/articles/{article_id}/reject")
-async def tenant_reject_article(request: Request, article_id: str, client: AuthClient):
+async def tenant_reject_article(
+    request: Request, article_id: str, client: AuthClient, reason: str = Form("")
+):
     db = request.app.state.db
     article = db.get_article(article_id)
     if not article or article.get("client_id") != client["id"]:
         raise HTTPException(status_code=404, detail="Article not found")
     db.reject_article(article_id)
+
+    # Record review for voice learning
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="article",
+            content_id=article_id,
+            action="rejected",
+            rejection_reason=reason,
+            content_snapshot={
+                "title": article.get("title", ""),
+                "confidence": article.get("confidence"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on article reject (non-fatal)", exc_info=True)
+
     return RedirectResponse("/my/articles", status_code=303)
 
 
@@ -80,6 +123,26 @@ async def tenant_edit_article(request: Request, article_id: str, client: AuthCli
     if not article or article.get("client_id") != client["id"]:
         raise HTTPException(status_code=404, detail="Article not found")
     form = await request.form()
+
+    # Record edit for voice learning (edits are strong voice signals)
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="article",
+            content_id=article_id,
+            action="edited",
+            content_snapshot={
+                "title": article.get("title", ""),
+                "confidence": article.get("confidence"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on article edit (non-fatal)", exc_info=True)
+
     db.update_article_body(
         article_id,
         title=form.get("title", article["title"]),

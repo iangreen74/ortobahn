@@ -1233,3 +1233,19 @@ footer p {
     nav ul { gap: 0.125rem; }
     nav ul li a { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
 }
+
+/* Voice confidence meter */
+.voice-meter {
+    height: 10px;
+    background: rgba(99, 102, 241, 0.15);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 0.35rem;
+}
+.voice-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #00d4aa);
+    border-radius: 5px;
+    transition: width 0.4s ease;
+    min-width: 2px;
+}

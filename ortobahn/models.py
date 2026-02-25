@@ -323,6 +323,7 @@ class MemoryCategory(str, Enum):
     THEME_PERFORMANCE = "theme_performance"
     CALIBRATION = "calibration"
     PLATFORM_SPECIFIC = "platform_specific"
+    VOICE_PREFERENCE = "voice_preference"
 
 
 class AgentMemory(BaseModel):

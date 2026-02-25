@@ -24,12 +24,14 @@ class PostFeedbackLoop:
         bluesky_client=None,
         twitter_client=None,
         linkedin_client=None,
+        reddit_client=None,
     ):
         self.db = db
         self.memory = memory_store
         self.bluesky = bluesky_client
         self.twitter = twitter_client
         self.linkedin = linkedin_client
+        self.reddit = reddit_client
 
     def check_recent_posts(self, run_id: str, client_id: str = "default") -> dict:
         """Check posts published in this run for early engagement.
@@ -166,6 +168,19 @@ class PostFeedbackLoop:
                 }
             except Exception:
                 return None
+
+        if platform == "reddit" and self.reddit:
+            pid = post.get("platform_id", "")
+            if pid:
+                try:
+                    metrics = self.reddit.get_post_metrics(pid)
+                    return {
+                        "likes": metrics.score,
+                        "reposts": 0,
+                        "replies": metrics.num_comments,
+                    }
+                except Exception:
+                    return None
 
         return None
 

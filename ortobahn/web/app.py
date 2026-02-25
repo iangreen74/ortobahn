@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from ortobahn.auth import _LoginRedirect
 from ortobahn.cognito import CognitoClient
 from ortobahn.config import load_settings
+from ortobahn.constants import PROTECTED_CLIENT_IDS
 from ortobahn.db import Database, create_database
 from ortobahn.web.rate_limit import RateLimitMiddleware
 
@@ -119,7 +120,7 @@ def create_app() -> FastAPI:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 
         db = app.state.db
-        keep = {"vaultscaler", "default"}
+        keep = PROTECTED_CLIENT_IDS
         all_clients = db.fetchall("SELECT id, name, active FROM clients ORDER BY name")
 
         deactivated = []
@@ -391,8 +392,15 @@ def create_app() -> FastAPI:
         onboard,
         payments,
         pipeline,
+        slack_events,
         sre,
+        tenant_articles,
+        tenant_billing,
+        tenant_content,
         tenant_dashboard,
+        tenant_insights,
+        tenant_polling,
+        tenant_settings,
         webhooks,
     )
 
@@ -402,9 +410,16 @@ def create_app() -> FastAPI:
     app.include_router(payments.router, prefix="/api/payments")
     app.include_router(glass.router)
     app.include_router(legal.router)
+    app.include_router(slack_events.router)
 
     # Tenant self-service routes (per-client auth)
     app.include_router(tenant_dashboard.router)
+    app.include_router(tenant_content.router)
+    app.include_router(tenant_settings.router)
+    app.include_router(tenant_articles.router)
+    app.include_router(tenant_billing.router)
+    app.include_router(tenant_polling.router)
+    app.include_router(tenant_insights.router)
     app.include_router(chat.router)
     app.include_router(webhooks.router)
 

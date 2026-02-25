@@ -974,12 +974,13 @@ def cmd_article(args):
 def cmd_cleanup_clients(args):
     """Deactivate all clients except vaultscaler and default."""
     from ortobahn.config import load_settings
+    from ortobahn.constants import PROTECTED_CLIENT_IDS
     from ortobahn.db import create_database
 
     settings = load_settings()
     db = create_database(settings)
 
-    keep = {"vaultscaler", "default"}
+    keep = PROTECTED_CLIENT_IDS
     # Raw query to get ALL clients including inactive
     all_clients = db.fetchall("SELECT id, name, active FROM clients ORDER BY name")
 

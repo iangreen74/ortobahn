@@ -8,6 +8,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from ortobahn.constants import DEFAULT_CLIENT_ID
+
 
 @dataclass
 class Settings:
@@ -63,7 +65,7 @@ class Settings:
     max_posts_per_cycle: int = 4
 
     # Default client
-    default_client_id: str = "default"
+    default_client_id: str = DEFAULT_CLIENT_ID
 
     # Web dashboard
     web_host: str = "127.0.0.1"
@@ -82,6 +84,7 @@ class Settings:
 
     # Slack alerting
     slack_webhook_url: str = ""
+    slack_signing_secret: str = ""
 
     # Backups
     backup_enabled: bool = True
@@ -209,6 +212,49 @@ class Settings:
         if self.max_posts_per_cycle < 1:
             errors.append(f"MAX_POSTS_PER_CYCLE must be >= 1, got {self.max_posts_per_cycle}")
 
+
+        # Thinking budgets
+        for name in (
+            "thinking_budget_reflection", "thinking_budget_ceo", "thinking_budget_strategist",
+            "thinking_budget_creator", "thinking_budget_legal", "thinking_budget_security",
+            "thinking_budget_cto", "thinking_budget_article_writer",
+        ):
+            val = getattr(self, name)
+            if not (1024 <= val <= 128_000):
+                errors.append(f"{name} must be 1024-128000, got {val}")
+
+        # Pool sizes
+        if self.db_pool_min < 1:
+            errors.append(f"db_pool_min must be >= 1, got {self.db_pool_min}")
+        if self.db_pool_max < self.db_pool_min:
+            errors.append(f"db_pool_max ({self.db_pool_max}) must be >= db_pool_min ({self.db_pool_min})")
+
+        # Retry counts
+        if not (0 <= self.publish_max_retries <= 10):
+            errors.append(f"publish_max_retries must be 0-10, got {self.publish_max_retries}")
+        if not (0 <= self.cifix_max_llm_attempts <= 10):
+            errors.append(f"cifix_max_llm_attempts must be 0-10, got {self.cifix_max_llm_attempts}")
+
+        # Token limits
+        if self.claude_max_tokens < 1024:
+            errors.append(f"claude_max_tokens must be >= 1024, got {self.claude_max_tokens}")
+
+        # Rate limits
+        if self.rate_limit_default < 1:
+            errors.append(f"rate_limit_default must be >= 1, got {self.rate_limit_default}")
+
+        # Budget
+        if self.default_monthly_budget < 0:
+            errors.append(f"default_monthly_budget must be >= 0, got {self.default_monthly_budget}")
+
+        # Engagement/article thresholds (0-1)
+        if not (0.0 <= self.engagement_confidence_threshold <= 1.0):
+            errors.append(f"engagement_confidence_threshold must be 0-1, got {self.engagement_confidence_threshold}")
+        if not (0.0 <= self.creator_critique_threshold <= 1.0):
+            errors.append(f"creator_critique_threshold must be 0-1, got {self.creator_critique_threshold}")
+        if not (0.0 <= self.article_confidence_threshold <= 1.0):
+            errors.append(f"article_confidence_threshold must be 0-1, got {self.article_confidence_threshold}")
+
         return errors
 
     def has_twitter(self) -> bool:
@@ -261,7 +307,7 @@ def load_settings() -> Settings:
         post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),
         pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "8")),
         max_posts_per_cycle=int(os.environ.get("MAX_POSTS_PER_CYCLE", "4")),
-        default_client_id=os.environ.get("DEFAULT_CLIENT_ID", "default"),
+        default_client_id=os.environ.get("DEFAULT_CLIENT_ID", DEFAULT_CLIENT_ID),
         web_host=os.environ.get("WEB_HOST", "127.0.0.1"),
         web_port=int(os.environ.get("WEB_PORT", "8000")),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -270,6 +316,7 @@ def load_settings() -> Settings:
         rate_limit_enabled=os.environ.get("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"),
         rate_limit_default=int(os.environ.get("RATE_LIMIT_DEFAULT", "60")),
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
+        slack_signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
         backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
         backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),
         backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),

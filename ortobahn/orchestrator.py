@@ -29,6 +29,7 @@ from ortobahn.db import create_database
 from ortobahn.integrations.bluesky import BlueskyClient
 from ortobahn.integrations.linkedin import LinkedInClient
 from ortobahn.integrations.newsapi_client import get_trending_headlines
+from ortobahn.integrations.reddit import RedditClient
 from ortobahn.integrations.rss import fetch_feeds
 from ortobahn.integrations.trends import get_trending_searches
 from ortobahn.integrations.twitter import TwitterClient
@@ -85,6 +86,16 @@ class Pipeline:
                 person_urn=settings.linkedin_person_urn,
             )
 
+
+        self.reddit = None
+        if settings.has_reddit():
+            self.reddit = RedditClient(
+                client_id=settings.reddit_client_id,
+                client_secret=settings.reddit_client_secret,
+                username=settings.reddit_username,
+                password=settings.reddit_password,
+            )
+
         # Common agent kwargs (includes Bedrock settings when enabled)
         _api_key = settings.anthropic_api_key
         _model = settings.claude_model
@@ -99,6 +110,7 @@ class Pipeline:
             bluesky_client=self.bluesky,
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
+            reddit_client=self.reddit,
             use_bedrock=_bedrock,
             bedrock_region=_region,
         )
@@ -113,6 +125,7 @@ class Pipeline:
             bluesky_client=self.bluesky,
             twitter_client=self.twitter,
             linkedin_client=self.linkedin,
+            reddit_client=self.reddit,
             confidence_threshold=settings.post_confidence_threshold,
             post_delay_seconds=settings.post_delay_seconds,
         )
@@ -174,6 +187,7 @@ class Pipeline:
                 bluesky_client=self.bluesky,
                 twitter_client=self.twitter,
                 linkedin_client=self.linkedin,
+                reddit_client=self.reddit,
             )
             if settings.post_feedback_enabled
             else None
@@ -375,6 +389,8 @@ class Pipeline:
         target_platforms: list[Platform] | None = None,
         generate_only: bool | None = None,
         platforms_override: list[Platform] | None = None,
+        _resume_run_id: str | None = None,
+        _skip_phases: set[str] | None = None,
     ) -> dict:
         """Execute one complete pipeline cycle.
 
@@ -442,7 +458,15 @@ class Pipeline:
             }
 
         # Guards passed — record the pipeline run
-        self.db.start_pipeline_run(run_id, mode="single", client_id=client_id)
+        if _resume_run_id:
+            run_id = _resume_run_id
+            self.db.execute(
+                "UPDATE pipeline_runs SET status = 'running', failed_phase = NULL WHERE id = ?",
+                (run_id,),
+                commit=True,
+            )
+        else:
+            self.db.start_pipeline_run(run_id, mode="single", client_id=client_id)
 
         # Per-tenant credentials: resolve platform clients for this client
         if self.settings.secret_key:
@@ -455,6 +479,8 @@ class Pipeline:
             self.analytics.bluesky = tenant_clients["bluesky"] or self.bluesky
             self.analytics.twitter = tenant_clients["twitter"] or self.twitter
             self.analytics.linkedin = tenant_clients["linkedin"] or self.linkedin
+            self.publisher.reddit = tenant_clients.get("reddit") or self.reddit
+            self.analytics.reddit = tenant_clients.get("reddit") or self.reddit
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} started (client={client_id}) ===")
 
@@ -526,6 +552,11 @@ class Pipeline:
             # ═══════════════════════════════════════════════════════════════
             # PHASE 1: Intelligence Gathering
             # ═══════════════════════════════════════════════════════════════
+            _skip_intelligence = bool(_skip_phases and "intelligence" in _skip_phases)
+            if _skip_intelligence:
+                logger.info("Skipping intelligence phase (resumed)")
+            else:
+                self.db.update_pipeline_phase(run_id, "intelligence")
 
             # 1.0 SRE Agent (system health check)
             logger.info("[1/14] SRE Agent checking system health...")
@@ -631,9 +662,17 @@ class Pipeline:
                 logger.warning(f"  -> Legal agent error (non-fatal): {e}")
                 legal_report = None
 
+            if not _skip_intelligence:
+                self.db.complete_pipeline_phase(run_id, "intelligence")
+
             # ═══════════════════════════════════════════════════════════════
             # PHASE 2: Executive Decision-Making
             # ═══════════════════════════════════════════════════════════════
+            _skip_decision = bool(_skip_phases and "decision" in _skip_phases)
+            if _skip_decision:
+                logger.info("Skipping decision phase (resumed)")
+            else:
+                self.db.update_pipeline_phase(run_id, "decision")
 
             # Gather cross-agent insights for CEO
             shared_insights_summary = self.insight_bus.summarize()
@@ -669,9 +708,17 @@ class Pipeline:
                 except Exception as e:
                     logger.warning(f"  -> Cadence optimizer error (non-fatal): {e}")
 
+            if not _skip_decision:
+                self.db.complete_pipeline_phase(run_id, "decision")
+
             # ═══════════════════════════════════════════════════════════════
             # PHASE 3: Content Execution
             # ═══════════════════════════════════════════════════════════════
+            _skip_execution = bool(_skip_phases and "execution" in _skip_phases)
+            if _skip_execution:
+                logger.info("Skipping execution phase (resumed)")
+            else:
+                self.db.update_pipeline_phase(run_id, "execution")
 
             # 3.1 Strategist
             logger.info("[9/14] Strategist Agent planning content...")
@@ -821,6 +868,7 @@ class Pipeline:
                     self.post_feedback.bluesky = self.publisher.bluesky
                     self.post_feedback.twitter = self.publisher.twitter
                     self.post_feedback.linkedin = self.publisher.linkedin
+                    self.post_feedback.reddit = self.publisher.reddit
                     fb = self.post_feedback.check_recent_posts(run_id, client_id)
                     logger.info(
                         f"  -> Checked {fb['posts_checked']} posts: "
@@ -870,9 +918,17 @@ class Pipeline:
                 except Exception as e:
                     logger.warning(f"  -> Article generation error (non-fatal): {e}")
 
+            if not _skip_execution:
+                self.db.complete_pipeline_phase(run_id, "execution")
+
             # ═══════════════════════════════════════════════════════════════
             # PHASE 4: Operations & Learning
             # ═══════════════════════════════════════════════════════════════
+            _skip_operations = bool(_skip_phases and "operations" in _skip_phases)
+            if _skip_operations:
+                logger.info("Skipping operations phase (resumed)")
+            else:
+                self.db.update_pipeline_phase(run_id, "operations")
 
             # 4.1 CFO Agent
             logger.info("[12/14] CFO Agent analyzing costs...")
@@ -978,8 +1034,18 @@ class Pipeline:
                 else:
                     logger.info("[14.5/14] CTO Agent: no backlog tasks")
 
+            if not _skip_operations:
+                self.db.complete_pipeline_phase(run_id, "operations")
+
         except Exception as e:
             import traceback
+
+            # Record which phase failed
+            phase_row = self.db.fetchone(
+                "SELECT current_phase FROM pipeline_runs WHERE id = ?", (run_id,)
+            )
+            failed_phase = (phase_row["current_phase"] if phase_row and phase_row["current_phase"] else "unknown")
+            self.db.fail_pipeline_phase(run_id, failed_phase, [str(e)])
 
             logger.error(f"Pipeline error: {e}\n{traceback.format_exc()}")
             errors.append(str(e))
@@ -1071,6 +1137,35 @@ class Pipeline:
             "output_tokens": total_output_tokens,
             "errors": errors,
         }
+
+    def resume_cycle(self, client_id: str = "default") -> dict | None:
+        """Resume a previously failed pipeline run, skipping completed phases."""
+        import json
+
+        resumable = self.db.get_resumable_run(client_id)
+        if not resumable:
+            return None
+
+        run_id = resumable["id"]
+        completed = json.loads(resumable["completed_phases"] or "[]")
+
+        logger.info(
+            f"Resuming pipeline run {run_id[:8]} from after phase: "
+            f"{completed[-1] if completed else 'start'}"
+        )
+
+        # Reset status to running
+        self.db.execute(
+            "UPDATE pipeline_runs SET status = 'running', failed_phase = NULL WHERE id = ?",
+            (run_id,),
+            commit=True,
+        )
+
+        return self.run_cycle(
+            client_id=client_id,
+            _resume_run_id=run_id,
+            _skip_phases=set(completed),
+        )
 
     def _process_directives(self, run_id: str, directives: list, client_id: str) -> None:
         """Process CEO executive directives into actionable tasks."""

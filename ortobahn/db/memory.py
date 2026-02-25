@@ -299,15 +299,23 @@ class MemoryMixin:
             row["tags"] = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
         return row
 
-    def get_recent_articles(self, client_id: str, limit: int = 10) -> list[dict]:
+    def get_recent_articles(self, client_id: str, limit: int = 10, offset: int = 0) -> list[dict]:
         rows = self.fetchall(
-            "SELECT * FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT ?",
-            (client_id, limit),
+            "SELECT * FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (client_id, limit, offset),
         )
         for r in rows:
             if r.get("tags") and isinstance(r["tags"], str):
                 r["tags"] = json.loads(r["tags"])
         return rows
+
+    def count_articles(self, client_id: str) -> int:
+        """Count articles for a client."""
+        row = self.fetchone(
+            "SELECT COUNT(*) as cnt FROM articles WHERE client_id=?",
+            (client_id,),
+        )
+        return row["cnt"] if row else 0
 
     def get_draft_articles(self, client_id: str | None = None) -> list[dict]:
         query = "SELECT * FROM articles WHERE status='draft'"

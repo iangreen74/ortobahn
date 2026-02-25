@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import tweepy
 
+from ortobahn.circuit_breaker import CircuitOpenError, CircuitState, get_breaker
+
 logger = logging.getLogger("ortobahn.twitter")
 
 
@@ -32,6 +34,7 @@ class TwitterClient:
         self.access_token = access_token
         self.access_token_secret = access_token_secret
         self._client: tweepy.Client | None = None
+        self._breaker = get_breaker("twitter", failure_threshold=5, reset_timeout_seconds=120)
 
     def _get_client(self) -> tweepy.Client:
         if self._client is None:
@@ -44,6 +47,10 @@ class TwitterClient:
             logger.info("Authenticated with Twitter API v2")
         return self._client
 
+    def _is_auth_error(self, exc: Exception) -> bool:
+        """Return True if the exception is an authentication/authorization error."""
+        return isinstance(exc, (tweepy.Unauthorized, tweepy.Forbidden))
+
     def _call_with_retry(self, fn, *args, **kwargs):
         """Call a Twitter API function, retrying once on auth failure."""
         self._get_client()
@@ -55,10 +62,29 @@ class TwitterClient:
             self._get_client()
             return fn(*args, **kwargs)
 
+    def _call_with_breaker(self, fn, *args, **kwargs):
+        """Wrap _call_with_retry with circuit breaker logic."""
+        state = self._breaker.state
+        if state == CircuitState.OPEN:
+            raise CircuitOpenError(
+                self._breaker.name,
+                self._breaker._last_failure_time + self._breaker.reset_timeout,
+            )
+        try:
+            result = self._call_with_retry(fn, *args, **kwargs)
+            self._breaker.record_success()
+            return result
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not self._is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+
     def post(self, text: str) -> tuple[str, str]:
         """Post a tweet. Returns (tweet_url, tweet_id)."""
         client = self._get_client()
-        response = self._call_with_retry(client.create_tweet, text=text)
+        response = self._call_with_breaker(client.create_tweet, text=text)
         tweet_id = str(response.data["id"])
         tweet_url = f"https://x.com/i/status/{tweet_id}"
         logger.info(f"Posted to Twitter: {text[:50]}...")
@@ -68,7 +94,7 @@ class TwitterClient:
         """Get engagement metrics for a tweet."""
         client = self._get_client()
         try:
-            response = self._call_with_retry(
+            response = self._call_with_breaker(
                 client.get_tweet,
                 tweet_id,
                 tweet_fields=["public_metrics"],
@@ -82,6 +108,8 @@ class TwitterClient:
                     reply_count=m.get("reply_count", 0),
                     impression_count=m.get("impression_count", 0),
                 )
+        except CircuitOpenError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to get Twitter metrics for {tweet_id}: {e}")
         return TweetMetrics(tweet_id=tweet_id)
@@ -94,12 +122,14 @@ class TwitterClient:
         """
         client = self._get_client()
         try:
-            response = self._call_with_retry(
+            response = self._call_with_breaker(
                 client.get_tweet,
                 tweet_id,
                 tweet_fields=["id"],
             )
             return bool(response.data)
+        except CircuitOpenError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to verify tweet {tweet_id}: {e}")
             return None
@@ -108,7 +138,7 @@ class TwitterClient:
         """Get our profile info (follower count, etc)."""
         client = self._get_client()
         try:
-            response = self._call_with_retry(
+            response = self._call_with_breaker(
                 client.get_me,
                 user_fields=["public_metrics"],
             )
@@ -120,6 +150,8 @@ class TwitterClient:
                     "following_count": m.get("following_count", 0),
                     "tweet_count": m.get("tweet_count", 0),
                 }
+        except CircuitOpenError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to get Twitter profile: {e}")
         return {}

@@ -11,6 +11,15 @@ from ortobahn.db import Database
 from ortobahn.llm import LLMResponse
 
 
+@pytest.fixture(autouse=True)
+def _clear_circuit_breakers():
+    """Reset circuit breaker registry between tests to prevent state leakage."""
+    from ortobahn.circuit_breaker import clear_registry
+    clear_registry()
+    yield
+    clear_registry()
+
+
 @pytest.fixture
 def test_settings():
     """Settings with test values - no real API keys."""

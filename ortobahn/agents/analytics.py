@@ -25,19 +25,21 @@ class AnalyticsAgent(BaseAgent):
         bluesky_client: BlueskyClient | None = None,
         twitter_client=None,
         linkedin_client=None,
+        reddit_client=None,
         **kwargs,
     ):
         super().__init__(db, api_key, model, max_tokens, **kwargs)
         self.bluesky = bluesky_client
         self.twitter = twitter_client
         self.linkedin = linkedin_client
+        self.reddit = reddit_client
 
     def run(self, run_id: str) -> AnalyticsReport:
         # Build report from DB
         report = self.db.build_analytics_report()
 
         # If we have posts, refresh metrics from all platforms
-        if report.total_posts > 0 and (self.bluesky or self.twitter or self.linkedin):
+        if report.total_posts > 0 and (self.bluesky or self.twitter or self.linkedin or self.reddit):
             self._refresh_metrics()
 
             # Rebuild report with fresh metrics
@@ -119,6 +121,14 @@ Avg engagement per post: {report.avg_engagement_per_post}
                         post_id=post["id"],
                         like_count=metrics.like_count,
                         reply_count=metrics.comment_count,
+                    )
+                elif platform == "reddit" and self.reddit and platform_id:
+                    metrics = self.reddit.get_post_metrics(platform_id)
+                    self.db.save_metrics(
+                        post_id=post["id"],
+                        like_count=metrics.score,
+                        repost_count=0,
+                        reply_count=metrics.num_comments,
                     )
             except Exception as exc:
                 logger.warning("Failed to refresh metrics for post %s on %s: %s", post["id"][:8], platform, exc)

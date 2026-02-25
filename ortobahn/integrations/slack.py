@@ -147,3 +147,46 @@ def format_deploy_alert(sha: str, environment: str, status: str, detail: str = "
     if detail:
         lines.append(f"  {detail}")
     return "\n".join(lines)
+
+
+def send_draft_approval_message(
+    webhook_url: str, post_id: str, text_preview: str, platform: str
+) -> bool:
+    """Send a Slack message with approve/reject buttons for a draft post."""
+    import httpx
+
+    payload = {
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f":memo: *New draft for {platform}*\n>{text_preview[:200]}",
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Approve"},
+                        "style": "primary",
+                        "action_id": "approve_post",
+                        "value": post_id,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Reject"},
+                        "style": "danger",
+                        "action_id": "reject_post",
+                        "value": post_id,
+                    },
+                ],
+            },
+        ],
+    }
+    try:
+        resp = httpx.post(webhook_url, json=payload, timeout=10)
+        return resp.status_code == 200
+    except Exception:
+        return False

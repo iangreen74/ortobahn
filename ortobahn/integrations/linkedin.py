@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from ortobahn.circuit_breaker import CircuitOpenError, CircuitState, get_breaker
+
 logger = logging.getLogger("ortobahn.linkedin")
 
 LINKEDIN_API_BASE = "https://api.linkedin.com/v2"
@@ -45,6 +47,13 @@ def _handle_auth_error(fn):
     return wrapper
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    """Return True if the exception is an HTTP 401 or 403 (auth/authz)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (401, 403)
+    return False
+
+
 class LinkedInClient:
     def __init__(self, access_token: str, person_urn: str):
         """
@@ -59,10 +68,21 @@ class LinkedInClient:
             "Content-Type": "application/json",
             "X-Restli-Protocol-Version": "2.0.0",
         }
+        self._breaker = get_breaker("linkedin", failure_threshold=5, reset_timeout_seconds=120)
+
+    def _check_breaker(self) -> None:
+        """Raise CircuitOpenError if the breaker is OPEN."""
+        state = self._breaker.state
+        if state == CircuitState.OPEN:
+            raise CircuitOpenError(
+                self._breaker.name,
+                self._breaker._last_failure_time + self._breaker.reset_timeout,
+            )
 
     @_handle_auth_error
     def post(self, text: str) -> tuple[str, str]:
         """Create a text post on LinkedIn. Returns (post_url, post_urn)."""
+        self._check_breaker()
         payload = {
             "author": self.person_urn,
             "lifecycleState": "PUBLISHED",
@@ -74,21 +94,30 @@ class LinkedInClient:
             },
             "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
         }
-        resp = httpx.post(
-            f"{LINKEDIN_API_BASE}/ugcPosts",
-            headers=self._headers,
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        post_urn = resp.headers.get("X-RestLi-Id", resp.json().get("id", ""))
-        post_url = f"https://www.linkedin.com/feed/update/{post_urn}"
-        logger.info(f"Posted to LinkedIn: {text[:50]}...")
-        return post_url, post_urn
+        try:
+            resp = httpx.post(
+                f"{LINKEDIN_API_BASE}/ugcPosts",
+                headers=self._headers,
+                json=payload,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            post_urn = resp.headers.get("X-RestLi-Id", resp.json().get("id", ""))
+            post_url = f"https://www.linkedin.com/feed/update/{post_urn}"
+            logger.info(f"Posted to LinkedIn: {text[:50]}...")
+            self._breaker.record_success()
+            return post_url, post_urn
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
 
     @_handle_auth_error
     def get_post_metrics(self, post_urn: str) -> LinkedInPostMetrics:
         """Get metrics for a LinkedIn post."""
+        self._check_breaker()
         try:
             resp = httpx.get(
                 f"{LINKEDIN_API_BASE}/socialActions/{post_urn}",
@@ -97,14 +126,20 @@ class LinkedInClient:
             )
             resp.raise_for_status()
             data = resp.json()
+            self._breaker.record_success()
             return LinkedInPostMetrics(
                 post_urn=post_urn,
                 like_count=data.get("likesSummary", {}).get("totalLikes", 0),
                 comment_count=data.get("commentsSummary", {}).get("totalFirstLevelComments", 0),
             )
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+        except CircuitOpenError:
             raise
         except Exception as e:
+            self._breaker.record_failure()
             logger.warning(f"Failed to get LinkedIn metrics for {post_urn}: {e}")
         return LinkedInPostMetrics(post_urn=post_urn)
 
@@ -116,6 +151,7 @@ class LinkedInClient:
         Returns True if found (200), False if definitively not found (404),
         None if verification was inconclusive (e.g. network error).
         """
+        self._check_breaker()
         try:
             resp = httpx.get(
                 f"{LINKEDIN_API_BASE}/ugcPosts/{post_urn}",
@@ -123,14 +159,21 @@ class LinkedInClient:
                 timeout=30,
             )
             if resp.status_code == 200:
+                self._breaker.record_success()
                 return True
             if resp.status_code == 404:
+                self._breaker.record_success()
                 return False
             resp.raise_for_status()
             return None
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+        except CircuitOpenError:
             raise
         except Exception as e:
+            self._breaker.record_failure()
             logger.warning(f"Failed to verify LinkedIn post {post_urn}: {e}")
             return None
 
@@ -141,6 +184,7 @@ class LinkedInClient:
         Returns a dict with first_name, last_name, and vanity_name.
         Used by SRE agent for platform health checks.
         """
+        self._check_breaker()
         try:
             resp = httpx.get(
                 f"{LINKEDIN_API_BASE}/me",
@@ -149,13 +193,19 @@ class LinkedInClient:
             )
             resp.raise_for_status()
             data = resp.json()
+            self._breaker.record_success()
             return {
                 "first_name": data.get("localizedFirstName", ""),
                 "last_name": data.get("localizedLastName", ""),
                 "vanity_name": data.get("vanityName", ""),
             }
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+        except CircuitOpenError:
             raise
         except Exception as e:
+            self._breaker.record_failure()
             logger.warning(f"Failed to get LinkedIn profile: {e}")
             return {}

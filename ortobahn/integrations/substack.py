@@ -7,7 +7,16 @@ from typing import Any
 
 import httpx
 
+from ortobahn.circuit_breaker import CircuitOpenError, CircuitState, get_breaker
+
 logger = logging.getLogger("ortobahn.integrations.substack")
+
+
+def _is_auth_error(exc: Exception) -> bool:
+    """Return True if the exception is an HTTP 401 or 403 (auth/authz)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (401, 403)
+    return False
 
 
 class SubstackClient:
@@ -30,6 +39,16 @@ class SubstackClient:
         self._password = password
         self._session_cookie = session_cookie
         self._authenticated = False
+        self._breaker = get_breaker("substack", failure_threshold=5, reset_timeout_seconds=120)
+
+    def _check_breaker(self) -> None:
+        """Raise CircuitOpenError if the breaker is OPEN."""
+        state = self._breaker.state
+        if state == CircuitState.OPEN:
+            raise CircuitOpenError(
+                self._breaker.name,
+                self._breaker._last_failure_time + self._breaker.reset_timeout,
+            )
 
     def _authenticate(self) -> None:
         """Authenticate via email/password or use existing session cookie."""
@@ -40,18 +59,27 @@ class SubstackClient:
         if not self._email or not self._password:
             raise RuntimeError("Substack requires either session_cookie or email+password")
 
-        resp = httpx.post(
-            f"{self.base_url}/api/v1/login",
-            json={"email": self._email, "password": self._password},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        # Extract session cookie from response
-        for cookie in resp.cookies.jar:
-            if cookie.name == "substack.sid":
-                self._session_cookie = cookie.value or ""
-                break
-        self._authenticated = True
+        self._check_breaker()
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/api/v1/login",
+                json={"email": self._email, "password": self._password},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            # Extract session cookie from response
+            for cookie in resp.cookies.jar:
+                if cookie.name == "substack.sid":
+                    self._session_cookie = cookie.value or ""
+                    break
+            self._authenticated = True
+            self._breaker.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
 
     def _cookies(self) -> dict:
         if not self._authenticated:
@@ -66,39 +94,48 @@ class SubstackClient:
         publish: bool = False,
     ) -> tuple[str, str]:
         """Create a draft (or published post) on Substack. Returns (url, draft_id)."""
-        # Convert markdown to Substack's expected format (HTML-like body)
-        import markdown as md_lib
+        self._check_breaker()
+        try:
+            # Convert markdown to Substack's expected format (HTML-like body)
+            import markdown as md_lib
 
-        html_body = md_lib.markdown(body_markdown, extensions=["extra"])
+            html_body = md_lib.markdown(body_markdown, extensions=["extra"])
 
-        payload: dict[str, Any] = {
-            "draft_title": title,
-            "draft_body": html_body,
-            "draft_bylines": [],
-            "type": "newsletter",
-        }
-        if tags:
-            payload["draft_section_id"] = None  # Tags mapped to sections in Substack
+            payload: dict[str, Any] = {
+                "draft_title": title,
+                "draft_body": html_body,
+                "draft_bylines": [],
+                "type": "newsletter",
+            }
+            if tags:
+                payload["draft_section_id"] = None  # Tags mapped to sections in Substack
 
-        resp = httpx.post(
-            f"{self.base_url}/api/v1/drafts",
-            json=payload,
-            cookies=self._cookies(),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        draft_id = str(data.get("id", ""))
-        slug = data.get("slug", draft_id)
-
-        if publish and draft_id:
-            pub_resp = httpx.post(
-                f"{self.base_url}/api/v1/drafts/{draft_id}/publish",
-                json={"send": True},
+            resp = httpx.post(
+                f"{self.base_url}/api/v1/drafts",
+                json=payload,
                 cookies=self._cookies(),
                 timeout=30,
             )
-            pub_resp.raise_for_status()
+            resp.raise_for_status()
+            data = resp.json()
+            draft_id = str(data.get("id", ""))
+            slug = data.get("slug", draft_id)
 
-        url = f"{self.base_url}/p/{slug}" if slug else ""
-        return url, draft_id
+            if publish and draft_id:
+                pub_resp = httpx.post(
+                    f"{self.base_url}/api/v1/drafts/{draft_id}/publish",
+                    json={"send": True},
+                    cookies=self._cookies(),
+                    timeout=30,
+                )
+                pub_resp.raise_for_status()
+
+            url = f"{self.base_url}/p/{slug}" if slug else ""
+            self._breaker.record_success()
+            return url, draft_id
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise

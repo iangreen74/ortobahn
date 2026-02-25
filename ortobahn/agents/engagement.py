@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 
 from ortobahn.agents.base import BaseAgent
+from ortobahn.circuit_breaker import CircuitOpenError, get_breaker
 from ortobahn.llm import parse_json_response
+from ortobahn.publish_recovery import ErrorCategory, PublishErrorClassifier
 
 logger = logging.getLogger("ortobahn.agents")
 
@@ -53,6 +56,42 @@ class EngagementAgent(BaseAgent):
         self.bluesky = bluesky_client
         self.max_replies_per_cycle = max_replies_per_cycle
         self.reply_confidence_threshold = reply_confidence_threshold
+
+    def _post_reply_with_retry(self, reply: EngagementReply, max_retries: int = 2) -> str | None:
+        """Post a reply with retry logic for transient errors."""
+        breaker = get_breaker("bluesky:engagement", failure_threshold=3, reset_timeout_seconds=300)
+
+        for attempt in range(max_retries + 1):
+            state = breaker.state
+            if state.value == "open":
+                raise CircuitOpenError(breaker.name, breaker._last_failure_time + breaker.reset_timeout)
+            try:
+                result = self._post_reply(reply)
+                breaker.record_success()
+                return result
+            except CircuitOpenError:
+                raise
+            except Exception as e:
+                category = PublishErrorClassifier.classify_error(e, "bluesky")
+                if category == ErrorCategory.TRANSIENT and attempt < max_retries:
+                    delay = 2 ** attempt
+                    logger.info("[engagement] Transient error, retrying in %ds: %s", delay, e)
+                    time.sleep(delay)
+                    continue
+                elif category == ErrorCategory.AUTH:
+                    logger.warning("[engagement] Auth error, attempting re-login: %s", e)
+                    try:
+                        self.bluesky.login(force=True)
+                        result = self._post_reply(reply)
+                        breaker.record_success()
+                        return result
+                    except Exception:
+                        breaker.record_failure()
+                        raise
+                else:
+                    breaker.record_failure()
+                    raise
+        return None
 
     def run(self, run_id: str, client_id: str = "default", dry_run: bool = False, **kwargs) -> EngagementResult:
         """Check notifications and reply to relevant mentions."""
@@ -106,16 +145,20 @@ class EngagementAgent(BaseAgent):
                 continue
 
             try:
-                posted_uri = self._post_reply(reply)
+                posted_uri = self._post_reply_with_retry(reply)
                 if posted_uri:
                     self._record_reply(run_id, client_id, reply, posted_uri)
                     result.replies_posted += 1
                     result.replies.append(reply)
-                    logger.info(f"[engagement] Posted reply to {reply.notification_uri[:30]}")
+                    logger.info("[engagement] Posted reply to %s", reply.notification_uri[:30])
+            except CircuitOpenError:
+                result.errors.append("Circuit breaker open for engagement, stopping replies")
+                break
             except Exception as e:
-                error_msg = f"Failed to post reply: {e}"
+                category = PublishErrorClassifier.classify_error(e, "bluesky")
+                error_msg = f"Reply failed ({category.value}): {e}"
                 result.errors.append(error_msg)
-                logger.warning(f"[engagement] {error_msg}")
+                logger.warning("[engagement] %s", error_msg)
 
         self.log_decision(
             run_id=run_id,

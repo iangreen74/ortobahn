@@ -83,7 +83,7 @@ class PostsMixin:
         query += " ORDER BY published_at DESC"
         return self.fetchall(query, params)
 
-    def get_recent_posts_with_metrics(self, limit: int = 20, client_id: str | None = None) -> list[dict]:
+    def get_recent_posts_with_metrics(self, limit: int = 20, client_id: str | None = None, offset: int = 0) -> list[dict]:
         query = """SELECT p.*,
                    COALESCE(latest_m.like_count, 0) AS like_count,
                    COALESCE(latest_m.repost_count, 0) AS repost_count,
@@ -99,8 +99,8 @@ class PostsMixin:
         if client_id:
             query += " AND p.client_id=?"
             params.append(client_id)
-        query += " ORDER BY COALESCE(p.published_at, p.created_at) DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY COALESCE(p.published_at, p.created_at) DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
         return self.fetchall(query, params)
 
     # --- Content Approval ---
@@ -144,7 +144,7 @@ class PostsMixin:
         return self.fetchall(query, params)
 
     def get_all_posts(
-        self, client_id: str | None = None, status: str | None = None, platform: str | None = None, limit: int = 50
+        self, client_id: str | None = None, status: str | None = None, platform: str | None = None, limit: int = 50, offset: int = 0
     ) -> list[dict]:
         query = "SELECT * FROM posts WHERE 1=1"
         params: list = []
@@ -157,8 +157,8 @@ class PostsMixin:
         if platform:
             query += " AND platform=?"
             params.append(platform)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
         return self.fetchall(query, params)
 
     def get_recent_posts_by_status(self, hours: int = 24, status: str = "published") -> list[dict]:
@@ -182,6 +182,22 @@ class PostsMixin:
         total = total_row["cnt"] if total_row else 0
         failed = failed_row["cnt"] if failed_row else 0
         return failed, total
+
+    def count_posts(self, client_id: str | None = None, status: str | None = None, platform: str | None = None) -> int:
+        """Count posts matching filters."""
+        query = "SELECT COUNT(*) as cnt FROM posts WHERE 1=1"
+        params: list = []
+        if client_id:
+            query += " AND client_id = ?"
+            params.append(client_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if platform:
+            query += " AND platform = ?"
+            params.append(platform)
+        row = self.fetchone(query, params)
+        return row["cnt"] if row else 0
 
     # --- Metrics ---
 

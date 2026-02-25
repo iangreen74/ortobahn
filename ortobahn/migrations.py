@@ -901,6 +901,14 @@ def _migration_031_add_platform_schedule(db: Database) -> None:
     _safe_add_column(db, "clients", "platform_schedule TEXT NOT NULL DEFAULT '{}'")
 
 
+def _migration_032_add_pipeline_phases(db: Database) -> None:
+    """Track pipeline phase for checkpoint/resume."""
+    _safe_add_column(db, "pipeline_runs", "current_phase TEXT DEFAULT NULL")
+    _safe_add_column(db, "pipeline_runs", "completed_phases TEXT DEFAULT '[]'")
+    _safe_add_column(db, "pipeline_runs", "failed_phase TEXT DEFAULT NULL")
+    _safe_add_column(db, "pipeline_runs", "phase_data TEXT DEFAULT '{}'")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -933,6 +941,7 @@ MIGRATIONS = {
     29: _migration_029_add_shared_insights,
     30: _migration_030_add_test_results_and_ci_errors,
     31: _migration_031_add_platform_schedule,
+    32: _migration_032_add_pipeline_phases,
 }
 
 
@@ -986,6 +995,10 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "client_id",
         "total_cache_creation_tokens",
         "total_cache_read_tokens",
+        "current_phase",
+        "completed_phases",
+        "failed_phase",
+        "phase_data",
     ],
     # Migration 001
     "clients": [

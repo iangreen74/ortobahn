@@ -212,3 +212,51 @@ class PipelineMixin:
 
     def get_recent_agent_logs(self, limit: int = 20) -> list[dict]:
         return self.fetchall("SELECT * FROM agent_logs ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    # --- Pipeline Phase Tracking (checkpoint/resume) ---
+
+    def update_pipeline_phase(self, run_id: str, phase: str) -> None:
+        """Set the current phase of a pipeline run."""
+        self.execute(
+            "UPDATE pipeline_runs SET current_phase = ? WHERE id = ?",
+            (phase, run_id),
+            commit=True,
+        )
+
+    def complete_pipeline_phase(self, run_id: str, phase: str, phase_data: dict | None = None) -> None:
+        """Mark a phase as completed and store its output data."""
+        import json
+
+        row = self.fetchone(
+            "SELECT completed_phases, phase_data FROM pipeline_runs WHERE id = ?",
+            (run_id,),
+        )
+        completed = json.loads(row["completed_phases"]) if row and row["completed_phases"] else []
+        data = json.loads(row["phase_data"]) if row and row["phase_data"] else {}
+        completed.append(phase)
+        if phase_data:
+            data[phase] = phase_data
+        self.execute(
+            "UPDATE pipeline_runs SET completed_phases = ?, phase_data = ?, current_phase = NULL WHERE id = ?",
+            (json.dumps(completed), json.dumps(data), run_id),
+            commit=True,
+        )
+
+    def fail_pipeline_phase(self, run_id: str, phase: str, errors: list[str]) -> None:
+        """Record phase failure."""
+        import json
+        from datetime import datetime, timezone
+
+        self.execute(
+            "UPDATE pipeline_runs SET failed_phase = ?, status = 'failed', errors = ?, completed_at = ? WHERE id = ?",
+            (phase, json.dumps(errors), datetime.now(timezone.utc).isoformat(), run_id),
+            commit=True,
+        )
+
+    def get_resumable_run(self, client_id: str) -> dict | None:
+        """Find the most recent failed run that can be resumed."""
+        return self.fetchone(
+            "SELECT * FROM pipeline_runs WHERE client_id = ? AND status = 'failed' "
+            "AND failed_phase IS NOT NULL ORDER BY started_at DESC LIMIT 1",
+            (client_id,),
+        )

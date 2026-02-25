@@ -16,10 +16,7 @@ class TestMigration032:
 
     def test_phase_columns_exist(self, tmp_path):
         db = Database(tmp_path / "m32b.db")
-        db.fetchall(
-            "SELECT current_phase, completed_phases, failed_phase, phase_data "
-            "FROM pipeline_runs LIMIT 1"
-        )
+        db.fetchall("SELECT current_phase, completed_phases, failed_phase, phase_data FROM pipeline_runs LIMIT 1")
         db.close()
 
     def test_expected_schema_includes_phase_columns(self):
@@ -45,9 +42,7 @@ class TestPhaseTracking:
         db.update_pipeline_phase("run-1", "intelligence")
         db.complete_pipeline_phase("run-1", "intelligence", {"trending_count": 5})
 
-        row = db.fetchone(
-            "SELECT completed_phases, phase_data, current_phase FROM pipeline_runs WHERE id = 'run-1'"
-        )
+        row = db.fetchone("SELECT completed_phases, phase_data, current_phase FROM pipeline_runs WHERE id = 'run-1'")
         assert row["current_phase"] is None
         completed = json.loads(row["completed_phases"])
         assert "intelligence" in completed
@@ -61,9 +56,7 @@ class TestPhaseTracking:
         db.update_pipeline_phase("run-1", "decision")
         db.fail_pipeline_phase("run-1", "decision", ["CEO agent crashed"])
 
-        row = db.fetchone(
-            "SELECT failed_phase, status, errors FROM pipeline_runs WHERE id = 'run-1'"
-        )
+        row = db.fetchone("SELECT failed_phase, status, errors FROM pipeline_runs WHERE id = 'run-1'")
         assert row["failed_phase"] == "decision"
         assert row["status"] == "failed"
         errors = json.loads(row["errors"])
@@ -104,9 +97,7 @@ class TestPhaseTracking:
         db.update_pipeline_phase("run-1", "execution")
         db.fail_pipeline_phase("run-1", "execution", ["creator failed"])
 
-        row = db.fetchone(
-            "SELECT completed_phases, failed_phase FROM pipeline_runs WHERE id = 'run-1'"
-        )
+        row = db.fetchone("SELECT completed_phases, failed_phase FROM pipeline_runs WHERE id = 'run-1'")
         completed = json.loads(row["completed_phases"])
         assert completed == ["intelligence", "decision"]
         assert row["failed_phase"] == "execution"

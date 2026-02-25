@@ -26,9 +26,7 @@ def _verify_slack_signature(request: Request, body: bytes, signing_secret: str) 
     except ValueError:
         return False
     sig_basestring = f"v0:{timestamp}:{body.decode()}"
-    my_sig = "v0=" + hmac.new(
-        signing_secret.encode(), sig_basestring.encode(), hashlib.sha256
-    ).hexdigest()
+    my_sig = "v0=" + hmac.new(signing_secret.encode(), sig_basestring.encode(), hashlib.sha256).hexdigest()
     slack_sig = request.headers.get("X-Slack-Signature", "")
     return hmac.compare_digest(my_sig, slack_sig)
 
@@ -63,10 +61,12 @@ async def slack_command(request: Request):
             posts = run.get("posts_published", 0)
             emoji = ":white_check_mark:" if status == "completed" else ":x:" if status == "failed" else ":hourglass:"
             lines.append(f"{emoji} `{rid}` — {status} ({posts} posts)")
-        return JSONResponse({
-            "response_type": "ephemeral",
-            "text": "*Recent content engine runs:*\n" + "\n".join(lines),
-        })
+        return JSONResponse(
+            {
+                "response_type": "ephemeral",
+                "text": "*Recent content engine runs:*\n" + "\n".join(lines),
+            }
+        )
 
     elif action == "approve" and arg:
         post_id = arg.strip()
@@ -84,17 +84,21 @@ async def slack_command(request: Request):
                 return JSONResponse({"response_type": "ephemeral", "text": f"Post `{post_id}` not found."})
 
         if post["status"] != "draft":
-            return JSONResponse({
-                "response_type": "ephemeral",
-                "text": f"Post `{post_id[:8]}` is `{post['status']}`, not a draft.",
-            })
+            return JSONResponse(
+                {
+                    "response_type": "ephemeral",
+                    "text": f"Post `{post_id[:8]}` is `{post['status']}`, not a draft.",
+                }
+            )
 
         db.approve_post(post_id)
         preview = (post.get("text") or "")[:100]
-        return JSONResponse({
-            "response_type": "in_channel",
-            "text": f":white_check_mark: Post `{post_id[:8]}` approved.\n>{preview}",
-        })
+        return JSONResponse(
+            {
+                "response_type": "in_channel",
+                "text": f":white_check_mark: Post `{post_id[:8]}` approved.\n>{preview}",
+            }
+        )
 
     elif action == "reject" and arg:
         post_id = arg.strip()
@@ -111,22 +115,28 @@ async def slack_command(request: Request):
                 return JSONResponse({"response_type": "ephemeral", "text": f"Post `{post_id}` not found."})
 
         if post["status"] != "draft":
-            return JSONResponse({
-                "response_type": "ephemeral",
-                "text": f"Post `{post_id[:8]}` is `{post['status']}`, not a draft.",
-            })
+            return JSONResponse(
+                {
+                    "response_type": "ephemeral",
+                    "text": f"Post `{post_id[:8]}` is `{post['status']}`, not a draft.",
+                }
+            )
 
         db.reject_post(post_id)
-        return JSONResponse({
-            "response_type": "in_channel",
-            "text": f":no_entry: Post `{post_id[:8]}` rejected.",
-        })
+        return JSONResponse(
+            {
+                "response_type": "in_channel",
+                "text": f":no_entry: Post `{post_id[:8]}` rejected.",
+            }
+        )
 
     else:
-        return JSONResponse({
-            "response_type": "ephemeral",
-            "text": "*Usage:*\n`/ortobahn status` — show recent runs\n`/ortobahn approve <id>` — approve a draft\n`/ortobahn reject <id>` — reject a draft",
-        })
+        return JSONResponse(
+            {
+                "response_type": "ephemeral",
+                "text": "*Usage:*\n`/ortobahn status` — show recent runs\n`/ortobahn approve <id>` — approve a draft\n`/ortobahn reject <id>` — reject a draft",
+            }
+        )
 
 
 @router.post("/interactions")

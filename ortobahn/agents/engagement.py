@@ -74,7 +74,7 @@ class EngagementAgent(BaseAgent):
             except Exception as e:
                 category = PublishErrorClassifier.classify_error(e, "bluesky")
                 if category == ErrorCategory.TRANSIENT and attempt < max_retries:
-                    delay = 2 ** attempt
+                    delay = 2**attempt
                     logger.info("[engagement] Transient error, retrying in %ds: %s", delay, e)
                     time.sleep(delay)
                     continue

@@ -86,7 +86,6 @@ class Pipeline:
                 person_urn=settings.linkedin_person_urn,
             )
 
-
         self.reddit = None
         if settings.has_reddit():
             self.reddit = RedditClient(
@@ -1041,10 +1040,8 @@ class Pipeline:
             import traceback
 
             # Record which phase failed
-            phase_row = self.db.fetchone(
-                "SELECT current_phase FROM pipeline_runs WHERE id = ?", (run_id,)
-            )
-            failed_phase = (phase_row["current_phase"] if phase_row and phase_row["current_phase"] else "unknown")
+            phase_row = self.db.fetchone("SELECT current_phase FROM pipeline_runs WHERE id = ?", (run_id,))
+            failed_phase = phase_row["current_phase"] if phase_row and phase_row["current_phase"] else "unknown"
             self.db.fail_pipeline_phase(run_id, failed_phase, [str(e)])
 
             logger.error(f"Pipeline error: {e}\n{traceback.format_exc()}")
@@ -1149,10 +1146,7 @@ class Pipeline:
         run_id = resumable["id"]
         completed = json.loads(resumable["completed_phases"] or "[]")
 
-        logger.info(
-            f"Resuming pipeline run {run_id[:8]} from after phase: "
-            f"{completed[-1] if completed else 'start'}"
-        )
+        logger.info(f"Resuming pipeline run {run_id[:8]} from after phase: {completed[-1] if completed else 'start'}")
 
         # Reset status to running
         self.db.execute(

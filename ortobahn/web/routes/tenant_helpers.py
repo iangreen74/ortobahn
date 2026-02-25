@@ -15,9 +15,7 @@ _METRICS_JOIN = (
 )
 
 
-def _run_tenant_pipeline(
-    settings, client_id: str, platforms: list[Platform], publish: bool = False
-):
+def _run_tenant_pipeline(settings, client_id: str, platforms: list[Platform], publish: bool = False):
     """Run pipeline in background for a tenant."""
     from ortobahn.orchestrator import Pipeline
 

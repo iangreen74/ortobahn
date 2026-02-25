@@ -15,6 +15,7 @@ from ortobahn.llm import LLMResponse
 def _clear_circuit_breakers():
     """Reset circuit breaker registry between tests to prevent state leakage."""
     from ortobahn.circuit_breaker import clear_registry
+
     clear_registry()
     yield
     clear_registry()

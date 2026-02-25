@@ -83,9 +83,7 @@ class BlueskyClient:
     def get_post_metrics(self, uri: str) -> PostMetrics:
         """Get engagement metrics for a specific post."""
         try:
-            response = self._call_with_breaker(
-                self.client.app.bsky.feed.get_posts, params={"uris": [uri]}
-            )
+            response = self._call_with_breaker(self.client.app.bsky.feed.get_posts, params={"uris": [uri]})
             if response.posts:
                 post = response.posts[0]
                 return PostMetrics(
@@ -110,9 +108,7 @@ class BlueskyClient:
         verification was inconclusive (e.g. auth error, network error).
         """
         try:
-            response = self._call_with_breaker(
-                self.client.app.bsky.feed.get_posts, params={"uris": [uri]}
-            )
+            response = self._call_with_breaker(self.client.app.bsky.feed.get_posts, params={"uris": [uri]})
             return bool(response.posts)
         except CircuitOpenError:
             raise

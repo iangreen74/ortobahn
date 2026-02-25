@@ -83,7 +83,9 @@ class PostsMixin:
         query += " ORDER BY published_at DESC"
         return self.fetchall(query, params)
 
-    def get_recent_posts_with_metrics(self, limit: int = 20, client_id: str | None = None, offset: int = 0) -> list[dict]:
+    def get_recent_posts_with_metrics(
+        self, limit: int = 20, client_id: str | None = None, offset: int = 0
+    ) -> list[dict]:
         query = """SELECT p.*,
                    COALESCE(latest_m.like_count, 0) AS like_count,
                    COALESCE(latest_m.repost_count, 0) AS repost_count,
@@ -144,7 +146,12 @@ class PostsMixin:
         return self.fetchall(query, params)
 
     def get_all_posts(
-        self, client_id: str | None = None, status: str | None = None, platform: str | None = None, limit: int = 50, offset: int = 0
+        self,
+        client_id: str | None = None,
+        status: str | None = None,
+        platform: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[dict]:
         query = "SELECT * FROM posts WHERE 1=1"
         params: list = []

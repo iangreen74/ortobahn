@@ -159,9 +159,7 @@ class TestMigrations:
         test_db.fetchall("SELECT platform_schedule FROM clients LIMIT 1")
 
         # Verify pipeline phase columns (migration 032)
-        test_db.fetchall(
-            "SELECT current_phase, completed_phases, failed_phase, phase_data FROM pipeline_runs LIMIT 1"
-        )
+        test_db.fetchall("SELECT current_phase, completed_phases, failed_phase, phase_data FROM pipeline_runs LIMIT 1")
 
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)

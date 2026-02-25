@@ -212,12 +212,16 @@ class Settings:
         if self.max_posts_per_cycle < 1:
             errors.append(f"MAX_POSTS_PER_CYCLE must be >= 1, got {self.max_posts_per_cycle}")
 
-
         # Thinking budgets
         for name in (
-            "thinking_budget_reflection", "thinking_budget_ceo", "thinking_budget_strategist",
-            "thinking_budget_creator", "thinking_budget_legal", "thinking_budget_security",
-            "thinking_budget_cto", "thinking_budget_article_writer",
+            "thinking_budget_reflection",
+            "thinking_budget_ceo",
+            "thinking_budget_strategist",
+            "thinking_budget_creator",
+            "thinking_budget_legal",
+            "thinking_budget_security",
+            "thinking_budget_cto",
+            "thinking_budget_article_writer",
         ):
             val = getattr(self, name)
             if not (1024 <= val <= 128_000):

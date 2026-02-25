@@ -99,9 +99,7 @@ class CircuitBreaker:
         def wrapper(*args, **kwargs):
             state = self.state
             if state == CircuitState.OPEN:
-                raise CircuitOpenError(
-                    self.name, self._last_failure_time + self.reset_timeout
-                )
+                raise CircuitOpenError(self.name, self._last_failure_time + self.reset_timeout)
             try:
                 result = fn(*args, **kwargs)
                 self.record_success()

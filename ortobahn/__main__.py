@@ -214,9 +214,7 @@ def cmd_schedule(args):
                         platform_schedule = {}
 
                     target_plats = [
-                        p.strip()
-                        for p in (client.get("target_platforms") or "bluesky").split(",")
-                        if p.strip()
+                        p.strip() for p in (client.get("target_platforms") or "bluesky").split(",") if p.strip()
                     ]
 
                     due_platforms = []

@@ -43,9 +43,7 @@ class TestReplyRetry:
         agent = EngagementAgent(db, "sk-ant-test", bluesky_client=mock_bs)
 
         # First call fails with transient error, second succeeds
-        agent._post_reply = MagicMock(
-            side_effect=[ConnectionError("timeout"), "at://reply/ok"]
-        )
+        agent._post_reply = MagicMock(side_effect=[ConnectionError("timeout"), "at://reply/ok"])
 
         with patch("ortobahn.agents.engagement.time.sleep"):
             result = agent._post_reply_with_retry(_make_reply(), max_retries=2)
@@ -61,9 +59,7 @@ class TestReplyRetry:
 
         # First call fails with auth error
         auth_err = Exception("401 Unauthorized")
-        agent._post_reply = MagicMock(
-            side_effect=[auth_err, "at://reply/ok"]
-        )
+        agent._post_reply = MagicMock(side_effect=[auth_err, "at://reply/ok"])
 
         with patch("ortobahn.publish_recovery.PublishErrorClassifier.classify_error", return_value=ErrorCategory.AUTH):
             result = agent._post_reply_with_retry(_make_reply())
@@ -79,6 +75,7 @@ class TestReplyRetry:
 
         # Trip the circuit breaker
         from ortobahn.circuit_breaker import get_breaker
+
         breaker = get_breaker("bluesky:engagement", failure_threshold=1)
         breaker.record_failure()
 
@@ -104,6 +101,7 @@ class TestEngagementRunWithRecovery:
 
         # Trip the breaker before running
         from ortobahn.circuit_breaker import get_breaker
+
         breaker = get_breaker("bluesky:engagement", failure_threshold=1)
         breaker.record_failure()
 

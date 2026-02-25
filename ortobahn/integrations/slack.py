@@ -149,9 +149,7 @@ def format_deploy_alert(sha: str, environment: str, status: str, detail: str = "
     return "\n".join(lines)
 
 
-def send_draft_approval_message(
-    webhook_url: str, post_id: str, text_preview: str, platform: str
-) -> bool:
+def send_draft_approval_message(webhook_url: str, post_id: str, text_preview: str, platform: str) -> bool:
     """Send a Slack message with approve/reject buttons for a draft post."""
     import httpx
 

@@ -44,8 +44,11 @@ class TestSlackCommands:
         app, db = _create_slack_app(tmp_path)
         client = TestClient(app)
         body = "command=%2Fortobahn&text=status"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "No recent" in resp.json()["text"]
         db.close()
@@ -56,8 +59,11 @@ class TestSlackCommands:
         db.complete_pipeline_run("run-1", posts_published=3)
         client = TestClient(app)
         body = "command=%2Fortobahn&text=status"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "completed" in resp.json()["text"]
         db.close()
@@ -67,8 +73,11 @@ class TestSlackCommands:
         pid = db.save_post(text="Test draft", run_id="r1", status="draft")
         client = TestClient(app)
         body = f"command=%2Fortobahn&text=approve+{pid}"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "approved" in resp.json()["text"]
         post = db.get_post(pid)
@@ -80,8 +89,11 @@ class TestSlackCommands:
         pid = db.save_post(text="Bad draft", run_id="r1", status="draft")
         client = TestClient(app)
         body = f"command=%2Fortobahn&text=reject+{pid}"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "rejected" in resp.json()["text"]
         db.close()
@@ -90,8 +102,11 @@ class TestSlackCommands:
         app, db = _create_slack_app(tmp_path)
         client = TestClient(app)
         body = "command=%2Fortobahn&text=approve+nonexistent"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "not found" in resp.json()["text"]
         db.close()
@@ -100,8 +115,11 @@ class TestSlackCommands:
         app, db = _create_slack_app(tmp_path)
         client = TestClient(app)
         body = "command=%2Fortobahn&text="
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={**_slack_signature(body), "content-type": "application/x-www-form-urlencoded"},
+        )
         assert resp.status_code == 200
         assert "Usage" in resp.json()["text"]
         db.close()
@@ -110,9 +128,15 @@ class TestSlackCommands:
         app, db = _create_slack_app(tmp_path)
         client = TestClient(app)
         body = "command=%2Fortobahn&text=status"
-        resp = client.post("/api/slack/commands", content=body,
-                          headers={"X-Slack-Request-Timestamp": "1", "X-Slack-Signature": "v0=bad",
-                                   "content-type": "application/x-www-form-urlencoded"})
+        resp = client.post(
+            "/api/slack/commands",
+            content=body,
+            headers={
+                "X-Slack-Request-Timestamp": "1",
+                "X-Slack-Signature": "v0=bad",
+                "content-type": "application/x-www-form-urlencoded",
+            },
+        )
         assert resp.status_code == 401
         db.close()
 
@@ -123,8 +147,7 @@ class TestSlackInteractions:
         pid = db.save_post(text="Draft post", run_id="r1", status="draft")
         client = TestClient(app)
         payload = json.dumps({"actions": [{"action_id": "approve_post", "value": pid}]})
-        resp = client.post("/api/slack/interactions",
-                          data={"payload": payload})
+        resp = client.post("/api/slack/interactions", data={"payload": payload})
         assert resp.status_code == 200
         assert "approved" in resp.json()["text"]
         db.close()
@@ -134,8 +157,7 @@ class TestSlackInteractions:
         pid = db.save_post(text="Draft post", run_id="r1", status="draft")
         client = TestClient(app)
         payload = json.dumps({"actions": [{"action_id": "reject_post", "value": pid}]})
-        resp = client.post("/api/slack/interactions",
-                          data={"payload": payload})
+        resp = client.post("/api/slack/interactions", data={"payload": payload})
         assert resp.status_code == 200
         assert "rejected" in resp.json()["text"]
         db.close()

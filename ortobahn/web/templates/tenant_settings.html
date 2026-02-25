@@ -68,24 +68,30 @@
 
         <label for="brand_voice">Brand Voice</label>
         <textarea id="brand_voice" name="brand_voice" rows="3">{{ client.brand_voice or '' }}</textarea>
+        <small>Markdown formatting supported. Describe your tone, style, and personality.</small>
 
         <label for="website">Website</label>
         <input type="url" id="website" name="website" value="{{ client.website or '' }}">
 
         <label for="products">Products / Services</label>
         <textarea id="products" name="products" rows="2">{{ client.products or '' }}</textarea>
+        <small>Markdown formatting supported.</small>
 
         <label for="competitive_positioning">Competitive Positioning</label>
         <textarea id="competitive_positioning" name="competitive_positioning" rows="2">{{ client.competitive_positioning or '' }}</textarea>
+        <small>Markdown formatting supported.</small>
 
         <label for="key_messages">Key Messages</label>
         <textarea id="key_messages" name="key_messages" rows="2">{{ client.key_messages or '' }}</textarea>
+        <small>Markdown formatting supported.</small>
 
         <label for="content_pillars">Content Pillars</label>
         <textarea id="content_pillars" name="content_pillars" rows="2">{{ client.content_pillars or '' }}</textarea>
+        <small>Markdown formatting supported.</small>
 
         <label for="company_story">Company Story</label>
         <textarea id="company_story" name="company_story" rows="3">{{ client.company_story or '' }}</textarea>
+        <small>Markdown formatting supported.</small>
 
         <button type="submit">Save Profile</button>
     </form>
@@ -122,9 +128,14 @@
             <input type="checkbox" name="auto_publish" value="on" {% if client.auto_publish %}checked{% endif %}>
             Enable auto-publish (the scheduler will publish content automatically)
         </label>
-        <label for="target_platforms">Target Platforms</label>
-        <input type="text" id="target_platforms" name="target_platforms" value="{{ client.target_platforms or 'bluesky' }}" placeholder="bluesky,twitter,linkedin">
-        <small>Comma-separated list of platforms for autonomous content generation.</small>
+        <label>Target Platforms</label>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <label><input type="checkbox" name="platform_bluesky" value="bluesky" {% if 'bluesky' in (client.target_platforms or 'bluesky') %}checked{% endif %}> Bluesky</label>
+            <label><input type="checkbox" name="platform_twitter" value="twitter" {% if 'twitter' in (client.target_platforms or '') %}checked{% endif %}> Twitter / X</label>
+            <label><input type="checkbox" name="platform_linkedin" value="linkedin" {% if 'linkedin' in (client.target_platforms or '') %}checked{% endif %}> LinkedIn</label>
+            <label><input type="checkbox" name="platform_reddit" value="reddit" {% if 'reddit' in (client.target_platforms or '') %}checked{% endif %}> Reddit</label>
+        </div>
+        <small>Select which platforms to publish to during autonomous content generation.</small>
         <label for="posting_interval_hours">Posting Frequency</label>
         <select id="posting_interval_hours" name="posting_interval_hours">
             <option value="3" {% if client.posting_interval_hours == 3 %}selected{% endif %}>Every 3 hours</option>
@@ -137,7 +148,7 @@
     </form>
 </article>
 
-<h2>Article Publishing</h2>
+<h2 id="article-publishing">Article Publishing</h2>
 <article>
     <form method="post" action="/my/settings">
         <input type="hidden" name="_section" value="article_settings">

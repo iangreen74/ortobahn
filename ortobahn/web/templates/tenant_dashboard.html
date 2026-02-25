@@ -42,7 +42,7 @@
 
 <!-- Hero Greeting -->
 <div class="hero-greeting">
-    <h1 class="hero-title">{{ greeting }}.</h1>
+    <h1 class="hero-title" id="hero-greeting">{{ greeting }}.</h1>
     <p class="hero-subtitle">
         {% if published_today > 0 %}
         Your AI published {{ published_today }} post{{ 's' if published_today != 1 else '' }} today.
@@ -106,7 +106,7 @@
 <div class="create-section">
     <form method="post" action="/my/generate">
         <input type="hidden" name="platforms" value="{{ connected_platforms|join(',') or 'bluesky' }}">
-        <button type="submit" class="create-btn" {% if not client.internal and subscription_status not in ('active', 'trialing') %}disabled title="Subscribe to create content"{% endif %}>
+        <button type="submit" class="create-btn" onclick="var bar=document.getElementById('pipeline-status-bar');if(bar)bar.innerHTML='<div class=&quot;glass-status-card&quot;><span class=&quot;glass-pulse running&quot;></span> <strong>Your AI is starting up&hellip;</strong></div>';" {% if not client.internal and subscription_status not in ('active', 'trialing') %}disabled title="Subscribe to create content"{% endif %}>
             <span class="create-btn-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             </span>
@@ -191,4 +191,13 @@
         </form>
     </div>
 </div>
+<script>
+/* Override greeting with client's local time */
+(function() {
+    var h = new Date().getHours();
+    var g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+    var el = document.getElementById('hero-greeting');
+    if (el) el.textContent = g + '.';
+})();
+</script>
 {% endblock %}

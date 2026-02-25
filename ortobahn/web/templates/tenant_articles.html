@@ -30,14 +30,14 @@
 
 {% if not client.article_platforms %}
 <div class="flash-msg warning" style="margin-bottom:1rem;">
-    No article platforms configured. <a href="/my/settings">Configure article publishing</a> to publish to Medium, Substack, or LinkedIn.
+    No article platforms configured. <a href="/my/settings#article-publishing">Configure article publishing</a> to publish to Medium, Substack, or LinkedIn.
 </div>
 {% endif %}
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
     <small style="color: var(--text-secondary);">{{ articles|length }} article{{ 's' if articles|length != 1 else '' }}</small>
     <form method="post" action="/my/generate-article" style="margin:0">
-        <button type="submit" id="gen-article-btn" onclick="this.setAttribute('aria-busy','true');this.textContent='Generating...';">Generate Article</button>
+        <button type="submit" id="gen-article-btn" onclick="this.disabled=true;this.setAttribute('aria-busy','true');this.textContent='Generating...';">Generate Article</button>
     </form>
 </div>
 
@@ -64,7 +64,7 @@
         {% for a in articles %}
             <tr>
                 <td>
-                    <strong>{{ a.title or 'Untitled' }}</strong>
+                    <a href="/my/articles/{{ a.id }}"><strong>{{ a.title or 'Untitled' }}</strong></a>
                     <br><small>{{ a.id[:8] }}</small>
                     {% if a.id in pubs_by_article %}
                         {% for fp in pubs_by_article[a.id] %}
@@ -91,22 +91,25 @@
                 </td>
                 <td>{{ a.word_count or 0 }}</td>
                 <td>{{ '%.2f'|format(a.confidence or 0) }}</td>
-                <td class="action-buttons">
+                <td>
+                    <div class="action-buttons">
+                    <a href="/my/articles/{{ a.id }}" role="button" class="outline" style="padding:4px 10px;font-size:0.8em">View</a>
                     {% if a.status == 'draft' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/approve" style="margin:0">
+                    <form method="post" action="/my/articles/{{ a.id }}/approve" style="margin:0;display:contents">
                         <button type="submit" style="padding:4px 10px;font-size:0.8em">Approve</button>
                     </form>
-                    <form method="post" action="/my/articles/{{ a.id }}/reject" style="margin:0">
+                    <form method="post" action="/my/articles/{{ a.id }}/reject" style="margin:0;display:contents">
                         <button type="submit" class="secondary" style="padding:4px 10px;font-size:0.8em">Reject</button>
                     </form>
-                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0">
+                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0;display:contents">
                         <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
                     </form>
                     {% elif a.status == 'approved' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0">
+                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0;display:contents">
                         <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
                     </form>
                     {% endif %}
+                    </div>
                 </td>
             </tr>
         {% endfor %}
@@ -115,15 +118,15 @@
 </div>
 {% endif %}
 
-{% if request.query_params.get('msg') == 'generating' %}
+{% if request.query_params.get('msg') == 'generating' or has_generating %}
 <script>
-/* Auto-refresh page every 15s while article is generating */
+/* Auto-refresh page every 10s while article is generating */
 var _refreshCount = 0;
 var _refreshInterval = setInterval(function() {
     _refreshCount++;
-    if (_refreshCount >= 8) { clearInterval(_refreshInterval); return; }
+    if (_refreshCount >= 12) { clearInterval(_refreshInterval); return; }
     window.location.href = '/my/articles';
-}, 15000);
+}, 10000);
 </script>
 {% endif %}
 {% endblock %}

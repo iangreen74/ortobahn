@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - {{ article.title or 'Article' }}{% endblock %}
+{% block nav_home %}/my/dashboard{% endblock %}
+{% block nav_links %}
+<li><a href="/my/dashboard">Overview</a></li>
+<li><a href="/my/analytics">Analytics</a></li>
+<li><a href="/my/articles" class="active">Articles</a></li>
+<li><a href="/my/settings">Settings</a></li>
+<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{{ article.title or 'Untitled' }}</h1>
+    {% if article.subtitle %}
+    <p class="subtitle">{{ article.subtitle }}</p>
+    {% endif %}
+    <p class="subtitle"><a href="/my/articles">&larr; Back to articles</a></p>
+</div>
+
+<div style="display:flex;gap:1rem;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;">
+    {% if article.status == 'published' %}
+    <span class="badge completed">published</span>
+    {% elif article.status == 'approved' %}
+    <span class="badge approved">approved</span>
+    {% elif article.status == 'rejected' %}
+    <span class="badge rejected">rejected</span>
+    {% elif article.status == 'failed' %}
+    <span class="badge failed">failed</span>
+    {% else %}
+    <span class="badge draft">draft</span>
+    {% endif %}
+    <small style="color: var(--text-secondary);">{{ article.word_count or 0 }} words</small>
+    {% if article.confidence %}
+    <small style="color: var(--text-secondary);">Confidence: {{ '%.2f'|format(article.confidence) }}</small>
+    {% endif %}
+    {% if article.tags %}
+    {% for tag in article.tags %}
+    <span class="badge" style="background: var(--bg-card-hover);">{{ tag }}</span>
+    {% endfor %}
+    {% endif %}
+</div>
+
+{% if pubs %}
+{% for fp in pubs %}
+{% if fp.status == 'failed' %}
+<div class="flash-msg error" style="margin-bottom:0.5rem;">
+    Failed on {{ fp.platform or 'unknown' }}{% if fp.failure_category %} [{{ fp.failure_category }}]{% endif %}: {{ (fp.error or 'Unknown error')[:200] }}
+</div>
+{% elif fp.status == 'published' %}
+<div class="flash-msg success" style="margin-bottom:0.5rem;">
+    Published on {{ fp.platform or 'unknown' }}{% if fp.url %} — <a href="{{ fp.url }}" target="_blank" rel="noopener">View</a>{% endif %}
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<div class="action-buttons" style="margin-bottom:1.5rem;">
+    {% if article.status in ('draft', 'approved') %}
+    <form method="post" action="/my/articles/{{ article.id }}/approve" style="margin:0;display:contents">
+        <button type="submit">Approve</button>
+    </form>
+    <form method="post" action="/my/articles/{{ article.id }}/reject" style="margin:0;display:contents">
+        <button type="submit" class="secondary">Reject</button>
+    </form>
+    <form method="post" action="/my/articles/{{ article.id }}/publish" style="margin:0;display:contents">
+        <button type="submit" class="contrast">Publish</button>
+    </form>
+    {% endif %}
+</div>
+
+<article style="line-height:1.8;max-width:70ch;">
+    {% for line in (article.body_markdown or 'No content yet.').split('\n') %}
+    {% if line.startswith('# ') %}
+    <h2>{{ line[2:] }}</h2>
+    {% elif line.startswith('## ') %}
+    <h3>{{ line[3:] }}</h3>
+    {% elif line.startswith('### ') %}
+    <h4>{{ line[4:] }}</h4>
+    {% elif line.startswith('- ') %}
+    <li style="margin-left:1.5rem;">{{ line[2:] }}</li>
+    {% elif line.startswith('> ') %}
+    <blockquote>{{ line[2:] }}</blockquote>
+    {% elif line.strip() == '' %}
+    <br>
+    {% else %}
+    <p>{{ line }}</p>
+    {% endif %}
+    {% endfor %}
+</article>
+{% endblock %}

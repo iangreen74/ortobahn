@@ -294,7 +294,8 @@ class TestTenantAutoPublish:
             "/my/auto-publish",
             data={
                 "auto_publish": "on",
-                "target_platforms": "bluesky,twitter",
+                "platform_bluesky": "bluesky",
+                "platform_twitter": "twitter",
                 "posting_interval_hours": "8",
             },
             follow_redirects=False,
@@ -314,7 +315,7 @@ class TestTenantAutoPublish:
             "/my/auto-publish",
             data={
                 "auto_publish": "",
-                "target_platforms": "bluesky",
+                "platform_bluesky": "bluesky",
                 "posting_interval_hours": "6",
             },
             follow_redirects=False,
@@ -333,7 +334,7 @@ class TestTenantAutoPublish:
             "/my/auto-publish",
             data={
                 "auto_publish": "on",
-                "target_platforms": "bluesky",
+                "platform_bluesky": "bluesky",
                 "posting_interval_hours": "1",  # below min of 3
             },
             follow_redirects=False,
@@ -352,7 +353,7 @@ class TestTenantAutoPublish:
             "/my/auto-publish",
             data={
                 "auto_publish": "on",
-                "target_platforms": "bluesky",
+                "platform_bluesky": "bluesky",
                 "posting_interval_hours": "48",
             },
             follow_redirects=False,

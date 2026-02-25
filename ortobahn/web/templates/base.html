@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
 <body>
     <nav class="container">
@@ -65,6 +66,19 @@
                 setTimeout(function() { toast.remove(); }, 400);
             }
         }
+    });
+    /* Convert <time datetime="..."> elements to local timezone */
+    function _localizeTimestamps(root) {
+        (root || document).querySelectorAll('time[datetime]').forEach(function(el) {
+            var d = new Date(el.getAttribute('datetime'));
+            if (!isNaN(d)) {
+                el.textContent = d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+            }
+        });
+    }
+    _localizeTimestamps();
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        _localizeTimestamps(evt.detail.target);
     });
     </script>
 </body>

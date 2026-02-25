@@ -21,6 +21,25 @@ PIPELINE_STEPS = [
     "learning",
 ]
 
+STEP_LABELS: dict[str, str] = {
+    "sre": "Checking system health",
+    "cifix": "Running diagnostics",
+    "analytics": "Analyzing past performance",
+    "reflection": "Reviewing past results",
+    "trends": "Scanning latest trends",
+    "support": "Processing support requests",
+    "security": "Security review",
+    "legal": "Compliance check",
+    "ceo": "Quality review",
+    "strategist": "Building content strategy",
+    "creator": "Writing your content",
+    "publisher": "Publishing to platforms",
+    "cfo": "Budget review",
+    "ops": "Operations check",
+    "marketing": "Marketing optimization",
+    "learning": "Learning from results",
+}
+
 
 def badge(status: str) -> str:
     """Return an HTML badge span for the given status."""

@@ -13,7 +13,7 @@ from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
 from ortobahn.db import to_datetime
 from ortobahn.models import Platform
-from ortobahn.web.utils import PIPELINE_STEPS
+from ortobahn.web.utils import PIPELINE_STEPS, STEP_LABELS
 from ortobahn.web.utils import badge as _badge
 from ortobahn.web.utils import escape as _escape
 from ortobahn.web.utils import step_index as _step_index
@@ -435,20 +435,24 @@ async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient
 async def tenant_toggle_auto_publish(
     request: Request,
     client: AuthClient,
-    auto_publish: str = Form(""),
-    target_platforms: str = Form("bluesky"),
-    posting_interval_hours: int = Form(6),
 ):
     """Toggle auto-publish setting for this tenant."""
     db = request.app.state.db
-    enabled = 1 if auto_publish == "on" else 0
-    interval = max(3, min(24, posting_interval_hours))
+    form = await request.form()
+    enabled = 1 if form.get("auto_publish") == "on" else 0
+    # Build target_platforms from individual checkboxes
+    platforms = []
+    for p in ("bluesky", "twitter", "linkedin", "reddit"):
+        if form.get(f"platform_{p}"):
+            platforms.append(p)
+    target_platforms = ",".join(platforms) or "bluesky"
+    interval = max(3, min(24, int(form.get("posting_interval_hours", 6))))
     db.execute(
         "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=? WHERE id=?",
         (enabled, target_platforms, interval, client["id"]),
         commit=True,
     )
-    return RedirectResponse("/my/settings", status_code=303)
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)
 
 
 @router.get("/settings")
@@ -537,7 +541,7 @@ async def tenant_settings_update(request: Request, client: AuthClient):
                 "company_story": form.get("company_story", ""),
             },
         )
-    return RedirectResponse("/my/settings", status_code=303)
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)
 
 
 @router.post("/credentials/{platform}")
@@ -566,7 +570,7 @@ async def tenant_save_credentials(
         db.update_client(client["id"], {"status": "active"})
         logger.info(f"Client {client['id']} re-activated after credential update")
 
-    return RedirectResponse("/my/settings", status_code=303)
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)
 
 
 @router.get("/subscribe")
@@ -611,11 +615,35 @@ async def tenant_articles(request: Request, client: AuthClient):
     templates = request.app.state.templates
     articles = db.get_recent_articles(client["id"], limit=50)
     pubs_by_article: dict = {}
+    has_generating = False
     for a in articles:
         pubs_by_article[a["id"]] = db.get_article_publications(a["id"])
+        if a.get("status") == "generating":
+            has_generating = True
     return templates.TemplateResponse(
         "tenant_articles.html",
-        {"request": request, "client": client, "articles": articles, "pubs_by_article": pubs_by_article},
+        {
+            "request": request,
+            "client": client,
+            "articles": articles,
+            "pubs_by_article": pubs_by_article,
+            "has_generating": has_generating,
+        },
+    )
+
+
+@router.get("/articles/{article_id}")
+async def tenant_article_detail(request: Request, article_id: str, client: AuthClient):
+    """View full article content before publishing."""
+    db = request.app.state.db
+    templates = request.app.state.templates
+    article = db.get_article(article_id)
+    if not article or article.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404, detail="Article not found")
+    pubs = db.get_article_publications(article_id)
+    return templates.TemplateResponse(
+        "tenant_article_detail.html",
+        {"request": request, "client": client, "article": article, "pubs": pubs},
     )
 
 
@@ -790,10 +818,12 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
         step_name = latest_agent["agent_name"] if latest_agent else "initializing"
         step_num = _step_index(step_name) if latest_agent else 0
         total_steps = len(PIPELINE_STEPS)
+        step_label = STEP_LABELS.get(step_name.lower().strip(), _escape(step_name))
         html = (
             '<div class="glass-status-card">'
             '<span class="glass-pulse running"></span>'
-            f" <strong>Pipeline running</strong> &mdash; step {step_num}/{total_steps}: {_escape(step_name)}"
+            f" <strong>Your AI is working</strong> &mdash; {_escape(step_label)}"
+            f" ({step_num}/{total_steps})"
             "</div>"
         )
     else:
@@ -811,10 +841,13 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
         draft_note = f" &middot; {draft_count} draft(s) pending review" if draft_count else ""
 
         if last and last["status"] == "failed":
+            fail_ts = str(last.get("completed_at") or "unknown")
             html = (
                 '<div class="glass-status-card">'
                 '<span class="glass-pulse failed"></span>'
-                f" <strong>Last run failed</strong> &mdash; {_escape(str(last.get('completed_at') or 'unknown'))}"
+                f" <strong>Last run had an issue</strong> &mdash;"
+                f' <time datetime="{_escape(fail_ts)}">{_escape(fail_ts[:16])}</time>.'
+                f" This can happen during setup. Try creating content again."
                 f"{draft_note}"
                 "</div>"
             )
@@ -1074,7 +1107,8 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
         platform = _escape(p.get("platform") or "bluesky")
         likes = p.get("likes") or 0
         reposts = p.get("reposts") or 0
-        ts = _escape(str(p.get("published_at") or p.get("created_at") or "")[:16])
+        raw_ts = str(p.get("published_at") or p.get("created_at") or "")
+        ts = _escape(raw_ts[:16])
         engagement = ""
         if likes or reposts:
             engagement = (
@@ -1089,7 +1123,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
             f'<div class="activity-body">'
             f'<div class="activity-header">'
             f'<span class="badge {_escape(platform)}">{platform}</span>'
-            f'<span class="activity-time">{ts}</span>'
+            f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
             f"</div>"
             f'<p class="activity-text">{text}</p>'
             f"{engagement}"
@@ -1100,7 +1134,8 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
         title = _escape(a.get("title") or "Untitled")
         status = a.get("status") or "draft"
         words = a.get("word_count") or 0
-        ts = _escape(str(a.get("created_at") or "")[:16])
+        raw_ts = str(a.get("created_at") or "")
+        ts = _escape(raw_ts[:16])
         icon_class = "published" if status == "published" else "draft" if status == "draft" else "running"
         parts.append(
             f'<div class="activity-item">'
@@ -1108,7 +1143,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
             f'<div class="activity-body">'
             f'<div class="activity-header">'
             f'<span class="badge draft">article</span>'
-            f'<span class="activity-time">{ts}</span>'
+            f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
             f"</div>"
             f'<p class="activity-text"><strong>{title}</strong> &mdash; {words} words ({status})</p>'
             f"</div></div>"
@@ -1117,7 +1152,8 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
     for r in runs:
         status = r.get("status") or "unknown"
         count = r.get("posts_published") or 0
-        ts = _escape(str(r.get("started_at") or "")[:16])
+        raw_ts = str(r.get("started_at") or "")
+        ts = _escape(raw_ts[:16])
         if status == "completed" and count > 0:
             parts.append(
                 f'<div class="activity-item">'
@@ -1125,7 +1161,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-body">'
                 f'<div class="activity-header">'
                 f'<span class="badge completed">pipeline</span>'
-                f'<span class="activity-time">{ts}</span>'
+                f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
                 f"</div>"
                 f'<p class="activity-text">Created and published {count} post{"s" if count != 1 else ""}</p>'
                 f"</div></div>"
@@ -1137,7 +1173,7 @@ async def tenant_activity_feed(request: Request, client: AuthClient):
                 f'<div class="activity-body">'
                 f'<div class="activity-header">'
                 f'<span class="badge failed">pipeline</span>'
-                f'<span class="activity-time">{ts}</span>'
+                f'<time datetime="{_escape(raw_ts)}" class="activity-time">{ts}</time>'
                 f"</div>"
                 f'<p class="activity-text">Pipeline run encountered an issue</p>'
                 f"</div></div>"

@@ -43,7 +43,7 @@ async def slack_command(request: Request):
             return JSONResponse({"error": "invalid signature"}, status_code=401)
 
     form = await request.form()
-    text = (form.get("text") or "").strip()
+    text = str(form.get("text") or "").strip()
     parts = text.split(maxsplit=1)
     action = parts[0].lower() if parts else "help"
     arg = parts[1].strip() if len(parts) > 1 else ""
@@ -143,7 +143,7 @@ async def slack_command(request: Request):
 async def slack_interaction(request: Request):
     """Handle interactive button callbacks from Slack messages."""
     form = await request.form()
-    payload_str = form.get("payload", "{}")
+    payload_str = str(form.get("payload") or "{}")
     payload = json.loads(payload_str)
 
     # Verify if signing secret configured (for interactions, check token)

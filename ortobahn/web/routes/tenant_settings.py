@@ -36,7 +36,7 @@ async def tenant_toggle_auto_publish(
     for p in platforms:
         val = form.get(f"interval_{p}")
         if val:
-            schedule[p] = max(3, min(24, int(val)))
+            schedule[p] = max(3, min(24, int(str(val))))
         else:
             schedule[p] = 6  # default
     schedule_json = json.dumps(schedule)

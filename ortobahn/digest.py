@@ -50,8 +50,7 @@ class WeeklyDigest:
         for c in clients:
             # Check no recent digest
             recent = self.db.fetchone(
-                "SELECT id FROM digest_history"
-                " WHERE client_id=? AND sent_at > ? AND status='sent'",
+                "SELECT id FROM digest_history WHERE client_id=? AND sent_at > ? AND status='sent'",
                 (c["id"], cutoff),
             )
             if not recent:
@@ -77,8 +76,7 @@ class WeeklyDigest:
 
         # Posts published this period
         count_row = self.db.fetchone(
-            "SELECT COUNT(*) as c FROM posts"
-            " WHERE status='published' AND client_id=? AND published_at >= ?",
+            "SELECT COUNT(*) as c FROM posts WHERE status='published' AND client_id=? AND published_at >= ?",
             (client_id, period_start),
         )
         posts_published = count_row["c"] if count_row else 0
@@ -87,9 +85,7 @@ class WeeklyDigest:
         eng_row = self.db.fetchone(
             "SELECT SUM(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as total,"
             " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
-            " FROM posts p"
-            + _METRICS_JOIN
-            + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?",
+            " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?",
             (client_id, period_start),
         )
         total_engagement = int(eng_row["total"] or 0) if eng_row else 0
@@ -101,9 +97,7 @@ class WeeklyDigest:
             " COALESCE(m.like_count,0) as like_count,"
             " COALESCE(m.repost_count,0) as repost_count,"
             " COALESCE(m.reply_count,0) as reply_count"
-            " FROM posts p"
-            + _METRICS_JOIN
-            + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?"
+            " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?"
             " ORDER BY (COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) DESC"
             " LIMIT 1",
             (client_id, period_start),
@@ -129,9 +123,7 @@ class WeeklyDigest:
         platform_rows = self.db.fetchall(
             "SELECT p.platform, COUNT(*) as count,"
             " SUM(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as engagement"
-            " FROM posts p"
-            + _METRICS_JOIN
-            + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?"
+            " FROM posts p" + _METRICS_JOIN + " WHERE p.status='published' AND p.client_id=? AND p.published_at >= ?"
             " GROUP BY p.platform",
             (client_id, period_start),
         )
@@ -201,7 +193,10 @@ class WeeklyDigest:
             </div>
         </div>
         {top_section}
-        {"" if not platform_rows_html else f'''
+        {
+            ""
+            if not platform_rows_html
+            else f'''
         <h3 style="margin:20px 0 12px;font-size:14px;color:#333;">Platform Breakdown</h3>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
             <tr style="background:#f8f9ff;">
@@ -210,7 +205,8 @@ class WeeklyDigest:
                 <th style="padding:8px 12px;text-align:center;">Engagement</th>
             </tr>
             {platform_rows_html}
-        </table>'''}
+        </table>'''
+        }
         <div style="margin-top:24px;text-align:center;">
             <a href="https://app.ortobahn.com/my/analytics"
                style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#6366f1,#764ba2);color:white;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">
@@ -286,9 +282,4 @@ class WeeklyDigest:
 
 def _esc(text: str) -> str:
     """Minimal HTML escaping for email templates."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

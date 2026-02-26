@@ -343,7 +343,7 @@ async def engagement_drafts(request: Request, client: AuthClient):
         parts.append(
             f'<div class="card" style="margin-bottom: 0.5rem; padding: 0.75rem;">'
             f'<p style="opacity: 0.7; font-size: 0.85rem;">Replying to: {_esc((d.get("notification_text") or "")[:100])}</p>'
-            f'<p><strong>{_esc(d.get("reply_text") or "")}</strong></p>'
+            f"<p><strong>{_esc(d.get('reply_text') or '')}</strong></p>"
             f'<div style="display: flex; gap: 0.5rem; align-items: center;">'
             f'<span class="badge draft">{_esc(d.get("platform") or "bluesky")}</span>'
             f'<span style="font-size: 0.8rem;">{conf}% confidence</span>'

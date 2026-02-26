@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 
@@ -27,9 +25,7 @@ class TestCalendarMigration:
 
     def test_digest_columns_exist(self, test_db):
         """Migration 038 should add digest columns and table."""
-        test_db.fetchall(
-            "SELECT digest_enabled, digest_email, digest_day, digest_hour FROM clients LIMIT 1"
-        )
+        test_db.fetchall("SELECT digest_enabled, digest_email, digest_day, digest_hour FROM clients LIMIT 1")
         test_db.fetchall("SELECT id, client_id, sent_at FROM digest_history LIMIT 1")
 
 

@@ -7,7 +7,6 @@ import json
 import pytest
 
 from ortobahn.agents.insight_generator import (
-    HIGH_PERFORMANCE_MULTIPLIER,
     InsightGeneratorAgent,
     InsightReport,
 )
@@ -166,9 +165,7 @@ class TestInsightGeneratorRun:
         assert report.insights_generated >= 1
 
         # Check insight was stored
-        rows = test_db.fetchall(
-            "SELECT * FROM post_insights WHERE client_id='insight-test'"
-        )
+        rows = test_db.fetchall("SELECT * FROM post_insights WHERE client_id='insight-test'")
         assert len(rows) >= 1
         assert rows[0]["insight_text"] == "This post performed well due to emotional language."
 

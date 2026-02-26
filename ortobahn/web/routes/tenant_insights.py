@@ -424,16 +424,13 @@ async def post_insights_partial(request: Request, client: AuthClient):
         post_preview = _escape((row.get("post_text") or "")[:80])
         platform = _escape(row.get("platform") or "")
         insight = _escape(row.get("insight_text") or "")
-        conf = int((row.get("confidence") or 0) * 100)
-
         try:
             factors = json.loads(row.get("factors") or "[]")
         except (json.JSONDecodeError, TypeError):
             factors = []
 
         factor_badges = " ".join(
-            f'<span class="badge draft" style="font-size: 0.7rem;">{_escape(f)}</span>'
-            for f in factors[:4]
+            f'<span class="badge draft" style="font-size: 0.7rem;">{_escape(f)}</span>' for f in factors[:4]
         )
 
         parts.append(

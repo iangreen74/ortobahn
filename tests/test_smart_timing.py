@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ortobahn.smart_timing import MIN_POSTS_FOR_TIMING, SmartTimingOptimizer
+from ortobahn.smart_timing import SmartTimingOptimizer
 
 
 @pytest.fixture()
@@ -34,7 +34,6 @@ def _seed_posts(test_db, _seed_client):
     for i in range(10):
         hour = 9 + (i % 4)  # hours 9, 10, 11, 12 repeating
         published = datetime(2025, 1, 15, hour, 30, 0, tzinfo=timezone.utc).isoformat()
-        post_id = f"timing-post-{i}"
         test_db.save_post(
             text=f"Post at hour {hour} #{i}",
             run_id=f"run-{i}",
@@ -51,9 +50,7 @@ def _seed_posts(test_db, _seed_client):
         )
 
     # Add metrics for engagement (higher engagement at hours 9 and 10)
-    posts = test_db.fetchall(
-        "SELECT id, published_at FROM posts WHERE client_id='timing-test' ORDER BY published_at"
-    )
+    posts = test_db.fetchall("SELECT id, published_at FROM posts WHERE client_id='timing-test' ORDER BY published_at")
     for post in posts:
         pa = post["published_at"] or ""
         # Extract hour from the ISO string
@@ -111,9 +108,7 @@ class TestUpdateClientPostingHours:
         result = optimizer.update_client_posting_hours("timing-test")
         assert result is True
 
-        client = test_db.fetchone(
-            "SELECT preferred_posting_hours FROM clients WHERE id='timing-test'"
-        )
+        client = test_db.fetchone("SELECT preferred_posting_hours FROM clients WHERE id='timing-test'")
         assert client is not None
         hours_str = client["preferred_posting_hours"]
         assert hours_str != ""
@@ -142,7 +137,5 @@ class TestUpdateClientPostingHours:
         assert result is False
 
         # Hours should be unchanged
-        client = test_db.fetchone(
-            "SELECT preferred_posting_hours FROM clients WHERE id='timing-test'"
-        )
+        client = test_db.fetchone("SELECT preferred_posting_hours FROM clients WHERE id='timing-test'")
         assert client["preferred_posting_hours"] == "8,9,10"

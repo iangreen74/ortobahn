@@ -155,10 +155,7 @@ async def calendar_grid(request: Request, client: AuthClient):
                 platform = cp.get("platform") or "generic"
                 emoji = _PLATFORM_EMOJI.get(platform, "&#x1F4DD;")
                 text_preview = _escape((cp.get("text") or "")[:40])
-                parts.append(
-                    f'<span class="calendar-dot badge {status_cls}"'
-                    f' title="{text_preview}">{emoji}</span>'
-                )
+                parts.append(f'<span class="calendar-dot badge {status_cls}" title="{text_preview}">{emoji}</span>')
             if len(cell_posts) > 4:
                 parts.append(f'<span class="calendar-more">+{len(cell_posts) - 4}</span>')
             parts.append("</div>")

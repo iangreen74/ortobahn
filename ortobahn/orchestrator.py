@@ -36,7 +36,6 @@ from ortobahn.integrations.trends import get_trending_searches
 from ortobahn.integrations.twitter import TwitterClient
 from ortobahn.learning import LearningEngine
 from ortobahn.memory import MemoryStore
-from ortobahn.smart_timing import SmartTimingOptimizer
 from ortobahn.models import Client, DirectiveCategory, Platform, TrendingTopic
 from ortobahn.post_feedback import PostFeedbackLoop
 from ortobahn.predictive_timing import TopicVelocityTracker
@@ -49,6 +48,7 @@ from ortobahn.shared_insights import (
     PLATFORM_ISSUE,
     SharedInsightBus,
 )
+from ortobahn.smart_timing import SmartTimingOptimizer
 from ortobahn.style_evolution import StyleEvolution
 from ortobahn.webhooks import (
     EVENT_PIPELINE_COMPLETED,
@@ -137,7 +137,9 @@ class Pipeline:
         self.support = SupportAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection = ReflectionAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection.thinking_budget = settings.thinking_budget_reflection
-        self.insight_generator = InsightGeneratorAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
+        self.insight_generator = InsightGeneratorAgent(
+            self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region
+        )
         self.cifix = (
             CIFixAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
             if settings.cifix_enabled

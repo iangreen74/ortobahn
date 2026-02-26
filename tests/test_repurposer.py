@@ -112,9 +112,7 @@ class TestArticleToSeries:
 
     def test_respects_platform_limit(self, test_db, _seed_article):
         repurposer = Repurposer(test_db)
-        post_ids = repurposer.article_to_series(
-            _seed_article, "repurpose-test", platform="bluesky", num_posts=2
-        )
+        post_ids = repurposer.article_to_series(_seed_article, "repurpose-test", platform="bluesky", num_posts=2)
 
         for pid in post_ids:
             post = test_db.fetchone("SELECT text, platform FROM posts WHERE id=?", (pid,))

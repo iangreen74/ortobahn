@@ -54,9 +54,7 @@ class TestEngagementMode:
         )
         agent._record_reply("run-1", "eng-test", reply, posted_uri="", status="draft")
 
-        rows = test_db.fetchall(
-            "SELECT status, platform FROM engagement_replies WHERE client_id='eng-test'"
-        )
+        rows = test_db.fetchall("SELECT status, platform FROM engagement_replies WHERE client_id='eng-test'")
         assert len(rows) == 1
         assert rows[0]["status"] == "draft"
         assert rows[0]["platform"] == "bluesky"
@@ -75,9 +73,7 @@ class TestRecordReply:
         )
         agent._record_reply("run-1", "eng-test", reply, "at://reply", status="posted", platform="bluesky")
 
-        rows = test_db.fetchall(
-            "SELECT platform, status FROM engagement_replies WHERE client_id='eng-test'"
-        )
+        rows = test_db.fetchall("SELECT platform, status FROM engagement_replies WHERE client_id='eng-test'")
         assert len(rows) == 1
         assert rows[0]["platform"] == "bluesky"
         assert rows[0]["status"] == "posted"
@@ -94,9 +90,7 @@ class TestRecordReply:
         )
         agent._record_reply("run-1", "eng-test", reply, "", status="draft")
 
-        row = test_db.fetchone(
-            "SELECT status, reply_uri FROM engagement_replies WHERE client_id='eng-test'"
-        )
+        row = test_db.fetchone("SELECT status, reply_uri FROM engagement_replies WHERE client_id='eng-test'")
         assert row["status"] == "draft"
         assert row["reply_uri"] == ""
 
@@ -114,9 +108,7 @@ class TestApproveRejectReply:
         )
         agent._record_reply("run-1", "eng-test", reply, "", status="draft")
 
-        row = test_db.fetchone(
-            "SELECT id FROM engagement_replies WHERE client_id='eng-test' AND status='draft'"
-        )
+        row = test_db.fetchone("SELECT id FROM engagement_replies WHERE client_id='eng-test' AND status='draft'")
         assert row is not None
 
         test_db.execute(
@@ -125,9 +117,7 @@ class TestApproveRejectReply:
             commit=True,
         )
 
-        updated = test_db.fetchone(
-            "SELECT status FROM engagement_replies WHERE id=?", (row["id"],)
-        )
+        updated = test_db.fetchone("SELECT status FROM engagement_replies WHERE id=?", (row["id"],))
         assert updated["status"] == "posted"
 
     def test_reject_changes_status(self, test_db, _seed_client):
@@ -142,9 +132,7 @@ class TestApproveRejectReply:
         )
         agent._record_reply("run-1", "eng-test", reply, "", status="draft")
 
-        row = test_db.fetchone(
-            "SELECT id FROM engagement_replies WHERE client_id='eng-test' AND status='draft'"
-        )
+        row = test_db.fetchone("SELECT id FROM engagement_replies WHERE client_id='eng-test' AND status='draft'")
 
         test_db.execute(
             "UPDATE engagement_replies SET status='rejected' WHERE id=? AND client_id=?",
@@ -152,9 +140,7 @@ class TestApproveRejectReply:
             commit=True,
         )
 
-        updated = test_db.fetchone(
-            "SELECT status FROM engagement_replies WHERE id=?", (row["id"],)
-        )
+        updated = test_db.fetchone("SELECT status FROM engagement_replies WHERE id=?", (row["id"],))
         assert updated["status"] == "rejected"
 
 

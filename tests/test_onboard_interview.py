@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from ortobahn.web.routes.onboard import (
+    STEP_QUESTIONS,
     _build_summary,
     _get_interview_state,
     _parse_step_answer,
     _render_messages,
-    STEP_QUESTIONS,
 )
 
 

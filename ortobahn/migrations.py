@@ -943,8 +943,7 @@ def _migration_034_add_content_calendar(db: Database) -> None:
     """Add scheduled_at to posts for content calendar and scheduling."""
     _safe_add_column(db, "posts", "scheduled_at TIMESTAMP")
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_posts_scheduled"
-        " ON posts(client_id, scheduled_at)",
+        "CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(client_id, scheduled_at)",
         commit=True,
     )
 
@@ -968,13 +967,11 @@ def _migration_035_add_post_insights(db: Database) -> None:
         commit=True,
     )
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_post_insights_client"
-        " ON post_insights(client_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_post_insights_client ON post_insights(client_id, created_at DESC)",
         commit=True,
     )
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_post_insights_post"
-        " ON post_insights(post_id)",
+        "CREATE INDEX IF NOT EXISTS idx_post_insights_post ON post_insights(post_id)",
         commit=True,
     )
 
@@ -1019,8 +1016,7 @@ def _migration_038_add_email_digest(db: Database) -> None:
         commit=True,
     )
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_digest_history_client"
-        " ON digest_history(client_id, sent_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_digest_history_client ON digest_history(client_id, sent_at DESC)",
         commit=True,
     )
 

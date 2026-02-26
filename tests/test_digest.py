@@ -104,8 +104,14 @@ class TestRenderEmail:
             "posts_published": 1,
             "total_engagement": 10,
             "avg_engagement": 10.0,
-            "top_post": {"id": "x", "text": "<script>xss</script>", "platform": "bluesky",
-                         "like_count": 5, "repost_count": 3, "reply_count": 2},
+            "top_post": {
+                "id": "x",
+                "text": "<script>xss</script>",
+                "platform": "bluesky",
+                "like_count": 5,
+                "repost_count": 3,
+                "reply_count": 2,
+            },
             "engagement_change_pct": 50,
             "platform_breakdown": [],
             "period_start": "2025-01-01",
@@ -127,9 +133,7 @@ class TestSendDigest:
         mock_ses.send_html_email.assert_called_once()
 
         # Check digest_history record
-        row = test_db.fetchone(
-            "SELECT status, posts_published FROM digest_history WHERE client_id='digest-test'"
-        )
+        row = test_db.fetchone("SELECT status, posts_published FROM digest_history WHERE client_id='digest-test'")
         assert row is not None
         assert row["status"] == "sent"
         assert row["posts_published"] == 5
@@ -142,9 +146,7 @@ class TestSendDigest:
         result = digest.send_digest("digest-test", "Digest Test Co", "team@example.com", mock_ses)
         assert result is False
 
-        row = test_db.fetchone(
-            "SELECT status, error FROM digest_history WHERE client_id='digest-test'"
-        )
+        row = test_db.fetchone("SELECT status, error FROM digest_history WHERE client_id='digest-test'")
         assert row["status"] == "failed"
         assert row["error"] == "SES send failed"
 

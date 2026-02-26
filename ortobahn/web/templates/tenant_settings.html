@@ -1,13 +1,5 @@
-{% extends "base.html" %}
+{% extends "base_sidebar.html" %}
 {% block title %}Ortobahn - Settings{% endblock %}
-{% block nav_home %}/my/dashboard{% endblock %}
-{% block nav_links %}
-<li><a href="/my/dashboard" {% if request.url.path == '/my/dashboard' %}class="active"{% endif %}>Overview</a></li>
-<li><a href="/my/analytics" {% if request.url.path == '/my/analytics' %}class="active"{% endif %}>Analytics</a></li>
-<li><a href="/my/articles" {% if request.url.path == '/my/articles' %}class="active"{% endif %}>Articles</a></li>
-<li><a href="/my/settings" {% if request.url.path == '/my/settings' %}class="active"{% endif %}>Settings</a></li>
-<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
-{% endblock %}
 {% block content %}
 {% if request.query_params.get('msg') == 'saved' %}
 <div class="flash-msg success">Settings saved successfully.</div>
@@ -150,7 +142,6 @@
             {% endif %}
             {% endfor %}
         </div>
-        <small>How often the content engine generates new content per platform.</small>
         <button type="submit" class="outline">Save Automation Settings</button>
     </form>
 </article>
@@ -167,19 +158,25 @@
             <input type="checkbox" name="auto_publish_articles" value="on" {% if client.auto_publish_articles %}checked{% endif %}>
             Auto-publish articles (when off, articles go to review before publishing)
         </label>
-        <label for="article_frequency">Frequency</label>
-        <select id="article_frequency" name="article_frequency">
-            <option value="weekly" {% if (client.article_frequency or 'weekly') == 'weekly' %}selected{% endif %}>Weekly</option>
-            <option value="biweekly" {% if client.article_frequency == 'biweekly' %}selected{% endif %}>Biweekly</option>
-            <option value="monthly" {% if client.article_frequency == 'monthly' %}selected{% endif %}>Monthly</option>
-        </select>
         <label>Publish To</label>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
             <label><input type="checkbox" name="article_platform_medium" value="medium" {% if 'medium' in (client.article_platforms or '') %}checked{% endif %}> Medium</label>
             <label><input type="checkbox" name="article_platform_substack" value="substack" {% if 'substack' in (client.article_platforms or '') %}checked{% endif %}> Substack</label>
             <label><input type="checkbox" name="article_platform_linkedin" value="linkedin" {% if 'linkedin' in (client.article_platforms or '') %}checked{% endif %}> LinkedIn</label>
         </div>
-        <small>Select where articles should be published. Configure credentials for each platform below.</small>
+        <label>Article Frequency</label>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:0.5rem 1rem;align-items:center;margin-bottom:1rem;">
+            {% for pname, plabel in [('medium','Medium'), ('substack','Substack'), ('linkedin','LinkedIn Articles')] %}
+            {% if pname in (client.article_platforms or '') %}
+            <span>{{ plabel }}</span>
+            <select name="article_interval_{{ pname }}">
+                <option value="weekly" {% if article_schedule.get(pname, client.article_frequency or 'weekly') == 'weekly' %}selected{% endif %}>Weekly</option>
+                <option value="biweekly" {% if article_schedule.get(pname, '') == 'biweekly' %}selected{% endif %}>Biweekly</option>
+                <option value="monthly" {% if article_schedule.get(pname, '') == 'monthly' %}selected{% endif %}>Monthly</option>
+            </select>
+            {% endif %}
+            {% endfor %}
+        </div>
         <label for="article_topics">Topics / Focus Areas</label>
         <textarea id="article_topics" name="article_topics" rows="2" placeholder="AI trends, industry insights, thought leadership">{{ client.article_topics or '' }}</textarea>
         <label for="article_voice">Article Voice / Style</label>

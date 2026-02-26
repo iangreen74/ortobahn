@@ -1,13 +1,5 @@
-{% extends "base.html" %}
+{% extends "base_sidebar.html" %}
 {% block title %}Ortobahn - Articles{% endblock %}
-{% block nav_home %}/my/dashboard{% endblock %}
-{% block nav_links %}
-<li><a href="/my/dashboard" {% if request.url.path == '/my/dashboard' %}class="active"{% endif %}>Overview</a></li>
-<li><a href="/my/analytics" {% if request.url.path == '/my/analytics' %}class="active"{% endif %}>Analytics</a></li>
-<li><a href="/my/articles" {% if request.url.path == '/my/articles' %}class="active"{% endif %}>Articles</a></li>
-<li><a href="/my/settings" {% if request.url.path == '/my/settings' %}class="active"{% endif %}>Settings</a></li>
-<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
-{% endblock %}
 {% block content %}
 {% if request.query_params.get('msg') == 'generating' %}
 <div class="flash-msg info">Article generation started. This usually takes 30-60 seconds &mdash; the page will refresh automatically.</div>
@@ -93,20 +85,17 @@
                 <td>{{ '%.2f'|format(a.confidence or 0) }}</td>
                 <td>
                     <div class="action-buttons">
-                    <a href="/my/articles/{{ a.id }}" role="button" class="outline" style="padding:4px 10px;font-size:0.8em">View</a>
-                    {% if a.status == 'draft' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/approve" style="margin:0;display:contents">
-                        <button type="submit" style="padding:4px 10px;font-size:0.8em">Approve</button>
+                    <a href="/my/articles/{{ a.id }}" role="button" class="outline" class="action-btn">View</a>
+                    {% if a.status in ('draft', 'approved') %}
+                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0;display:contents">
+                        <button type="submit">Publish</button>
                     </form>
                     <form method="post" action="/my/articles/{{ a.id }}/reject" style="margin:0;display:contents">
-                        <button type="submit" class="secondary" style="padding:4px 10px;font-size:0.8em">Reject</button>
+                        <button type="submit" class="secondary">Reject</button>
                     </form>
+                    {% elif a.status == 'failed' %}
                     <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0;display:contents">
-                        <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
-                    </form>
-                    {% elif a.status == 'approved' %}
-                    <form method="post" action="/my/articles/{{ a.id }}/publish" style="margin:0;display:contents">
-                        <button type="submit" class="contrast" style="padding:4px 10px;font-size:0.8em">Publish</button>
+                        <button type="submit" class="contrast" class="action-btn">Retry Publish</button>
                     </form>
                     {% endif %}
                     </div>

@@ -1,0 +1,87 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Review Queue{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Review Queue</h1>
+    <p class="subtitle">Approve, edit, or reject content before it goes live.</p>
+</div>
+
+{% if drafts %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <small style="color:var(--text-secondary);">{{ drafts|length }} draft{{ 's' if drafts|length != 1 else '' }} awaiting review</small>
+    <form method="post" action="/my/review/publish-all" style="margin:0;">
+        <button type="submit" onclick="this.disabled=true;this.setAttribute('aria-busy','true');">Publish All</button>
+    </form>
+</div>
+
+{% for d in drafts %}
+<article class="draft-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <span class="badge {{ d.platform or 'generic' }}">{{ d.platform or 'generic' }}</span>
+        <span style="display:flex;gap:0.75rem;align-items:center;">
+            <small style="opacity:0.5;">confidence: {{ '%.2f'|format(d.confidence or 0) }}</small>
+            {% if d.created_at %}
+            <time datetime="{{ d.created_at }}" style="font-size:0.75em;color:var(--text-tertiary);">{{ (d.created_at|string)[:16] }}</time>
+            {% endif %}
+        </span>
+    </div>
+    <p id="text-{{ d.id }}" style="margin:0.5rem 0;white-space:pre-wrap;">{{ d.text or '' }}</p>
+    <form id="edit-form-{{ d.id }}" method="post" action="/my/drafts/{{ d.id }}/edit" style="display:none;margin:0.5rem 0;">
+        <textarea name="text" rows="4" spellcheck="true" style="width:100%;margin-bottom:0.5rem;">{{ d.text or '' }}</textarea>
+        <div class="action-buttons">
+            <button type="submit">Save</button>
+            <button type="button" class="secondary" onclick="
+                document.getElementById('edit-form-{{ d.id }}').style.display='none';
+                document.getElementById('text-{{ d.id }}').style.display='block';
+                document.getElementById('edit-actions-{{ d.id }}').style.display='flex';
+            ">Cancel</button>
+        </div>
+    </form>
+    <div id="edit-actions-{{ d.id }}" class="action-buttons" style="margin-top:0.5rem;">
+        <form method="post" action="/my/drafts/{{ d.id }}/approve" style="margin:0;">
+            <button type="submit">Publish</button>
+        </form>
+        <button type="button" class="outline" onclick="
+            document.getElementById('edit-form-{{ d.id }}').style.display='block';
+            document.getElementById('text-{{ d.id }}').style.display='none';
+            document.getElementById('edit-actions-{{ d.id }}').style.display='none';
+        ">Edit</button>
+        <form method="post" action="/my/drafts/{{ d.id }}/reject" style="margin:0;display:flex;gap:0.25rem;align-items:center;">
+            <input type="text" name="reason" placeholder="Why? (optional)">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+    </div>
+</article>
+{% endfor %}
+{% else %}
+<article>
+    <div class="empty-state">
+        <div class="empty-state-icon">&#10003;</div>
+        <p>All caught up! No drafts awaiting review.</p>
+        <p><a href="/my/dashboard">Generate more content</a> from the dashboard.</p>
+    </div>
+</article>
+{% endif %}
+
+{% if engagement_drafts %}
+<h2 style="margin-top:2rem;">Engagement Replies</h2>
+{% for d in engagement_drafts %}
+<article class="draft-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <span class="badge {{ d.platform or 'bluesky' }}">{{ d.platform or 'bluesky' }}</span>
+        <small style="opacity:0.5;">confidence: {{ '%d'|format((d.confidence or 0) * 100) }}%</small>
+    </div>
+    <p style="opacity:0.7;font-size:0.85rem;margin-bottom:0.25rem;">Replying to: {{ (d.notification_text or '')[:120] }}</p>
+    <p style="margin:0.5rem 0;"><strong>{{ d.reply_text or '' }}</strong></p>
+    <div class="action-buttons">
+        <form method="post" action="/my/engagement/{{ d.id }}/approve" style="margin:0;">
+            <button type="submit">Approve</button>
+        </form>
+        <form method="post" action="/my/engagement/{{ d.id }}/reject" style="margin:0;">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+    </div>
+</article>
+{% endfor %}
+{% endif %}
+{% endblock %}

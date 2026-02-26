@@ -49,7 +49,7 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
         )
     else:
         last = db.fetchone(
-            "SELECT status, completed_at, posts_published FROM pipeline_runs"
+            "SELECT id, status, completed_at, posts_published FROM pipeline_runs"
             " WHERE status IN ('completed','failed') AND client_id=?"
             " ORDER BY completed_at DESC LIMIT 1",
             (client["id"],),
@@ -63,14 +63,22 @@ async def tenant_pipeline_status(request: Request, client: AuthClient):
 
         if last and last["status"] == "failed":
             fail_ts = str(last.get("completed_at") or "unknown")
+            run_id = last.get("id") or "unknown"
             html = (
-                '<div class="glass-status-card">'
+                f'<div class="glass-status-card" id="fail-{_escape(run_id[:8])}">'
                 '<span class="glass-pulse failed"></span>'
                 f" <strong>Last run had an issue</strong> &mdash;"
                 f' <time datetime="{_escape(fail_ts)}">{_escape(fail_ts[:16])}</time>.'
                 f" This can happen during setup. Try creating content again."
                 f"{draft_note}"
+                f" <button onclick=\"localStorage.setItem('dismiss_fail_{_escape(run_id[:8])}','1');"
+                f"this.parentElement.style.display='none';\""
+                ' style="margin-left:0.5rem;padding:2px 8px;font-size:0.75em;" class="outline">'
+                "Dismiss</button>"
                 "</div>"
+                f"<script>if(localStorage.getItem('dismiss_fail_{_escape(run_id[:8])}'))"
+                f"{{var el=document.getElementById('fail-{_escape(run_id[:8])}');"
+                f"if(el)el.style.display='none';}}</script>"
             )
         elif last:
             published = last.get("posts_published") or 0
@@ -119,7 +127,8 @@ async def tenant_health(request: Request, client: AuthClient):
         (cid,),
     )
     if last_pub and last_pub.get("published_at"):
-        last_pub_display = _escape(str(last_pub["published_at"])[:16])
+        raw_pub_ts = str(last_pub["published_at"])
+        last_pub_display = f'<time datetime="{_escape(raw_pub_ts)}">{_escape(raw_pub_ts[:16])}</time>'
     else:
         last_pub_display = "never"
 
@@ -419,13 +428,15 @@ async def tenant_recent_posts_partial(request: Request, client: AuthClient):
             error_line = f'<br><small style="color: #ef4444;">{_escape(p["error_message"][:120])}</small>'
 
         badge = _badge("completed" if status == "published" else "running" if status == "draft" else status)
+        raw_pub = str(p.get("published_at") or "")
+        pub_cell = f'<time datetime="{_escape(raw_pub)}">{_escape(raw_pub[:16])}</time>' if raw_pub else "-"
         rows.append(
             f"<tr><td>{text}{error_line}</td>"
             f"<td>{badge}</td>"
             f"<td>{_escape(p.get('platform') or 'generic')}</td>"
             f"<td>{p.get('like_count') or 0}</td>"
             f"<td>{p.get('repost_count') or 0}</td>"
-            f"<td>{_escape(str(p.get('published_at') or '-'))}</td></tr>"
+            f"<td>{pub_cell}</td></tr>"
         )
 
     html = (

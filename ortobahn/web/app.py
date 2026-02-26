@@ -395,6 +395,7 @@ def create_app() -> FastAPI:
         pipeline,
         slack_events,
         sre,
+        tenant_activity,
         tenant_articles,
         tenant_billing,
         tenant_calendar,
@@ -402,6 +403,9 @@ def create_app() -> FastAPI:
         tenant_dashboard,
         tenant_insights,
         tenant_polling,
+        tenant_posts,
+        tenant_review,
+        tenant_search,
         tenant_settings,
         webhooks,
     )
@@ -423,6 +427,10 @@ def create_app() -> FastAPI:
     app.include_router(tenant_calendar.router)
     app.include_router(tenant_polling.router)
     app.include_router(tenant_insights.router)
+    app.include_router(tenant_search.router)
+    app.include_router(tenant_review.router)
+    app.include_router(tenant_posts.router)
+    app.include_router(tenant_activity.router)
     app.include_router(chat.router)
     app.include_router(webhooks.router)
 

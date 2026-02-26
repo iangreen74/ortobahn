@@ -1,0 +1,109 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Activity{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Activity</h1>
+    <p class="subtitle">Pipeline runs and content events for <strong>{{ client.name }}</strong></p>
+</div>
+
+<h2>Pipeline Runs</h2>
+{% if pipeline_runs %}
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Posts</th>
+                <th>Tokens</th>
+                <th>Started</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for run in pipeline_runs %}
+            <tr>
+                <td><code>{{ run.id[:8] }}</code></td>
+                <td>
+                    {% if run.status == 'completed' %}
+                    <span class="badge completed">completed</span>
+                    {% elif run.status == 'running' %}
+                    <span class="badge running">running</span>
+                    {% elif run.status == 'failed' %}
+                    <span class="badge failed">failed</span>
+                    {% else %}
+                    <span class="badge">{{ run.status or 'unknown' }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ run.posts_published or 0 }}</td>
+                <td>
+                    {% set total_tokens = (run.total_input_tokens or 0) + (run.total_output_tokens or 0) %}
+                    {% if total_tokens > 1000 %}{{ '%.1f'|format(total_tokens / 1000) }}k{% elif total_tokens > 0 %}{{ total_tokens }}{% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    {% if run.started_at %}
+                    <time datetime="{{ run.started_at }}">{{ (run.started_at|string)[:16] }}</time>
+                    {% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    {% if run.completed_at %}
+                    <time datetime="{{ run.completed_at }}">{{ (run.completed_at|string)[:16] }}</time>
+                    {% else %}&mdash;{% endif %}
+                </td>
+            </tr>
+            {% if run.status == 'failed' and run.errors %}
+            <tr>
+                <td colspan="6">
+                    <small style="color:var(--danger);">{{ (run.errors or '')[:200] }}</small>
+                </td>
+            </tr>
+            {% endif %}
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<article>
+    <div class="empty-state">
+        <p>No pipeline runs yet. <a href="/my/dashboard">Generate content</a> to see activity here.</p>
+    </div>
+</article>
+{% endif %}
+
+<h2 style="margin-top:2rem;">Recent Events</h2>
+{% if recent_events %}
+<div class="activity-feed">
+{% for event in recent_events %}
+    <div class="activity-item">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                {% if event.status == 'published' %}
+                <span style="color:var(--success);">&#10003;</span>
+                <span>Published</span>
+                {% elif event.status == 'approved' %}
+                <span style="color:var(--primary);">&#10003;</span>
+                <span>Approved</span>
+                {% elif event.status == 'rejected' %}
+                <span style="color:var(--danger);">&#10007;</span>
+                <span>Rejected</span>
+                {% endif %}
+                <span class="badge {{ event.platform or 'generic' }}">{{ event.platform or 'generic' }}</span>
+            </div>
+            {% if event.published_at %}
+            <time datetime="{{ event.published_at }}" style="font-size:0.8em;color:var(--text-tertiary);">{{ (event.published_at|string)[:16] }}</time>
+            {% elif event.created_at %}
+            <time datetime="{{ event.created_at }}" style="font-size:0.8em;color:var(--text-tertiary);">{{ (event.created_at|string)[:16] }}</time>
+            {% endif %}
+        </div>
+        <p style="margin:0.25rem 0 0;opacity:0.8;font-size:0.9rem;">{{ (event.text or '')[:120] }}{% if (event.text or '')|length > 120 %}...{% endif %}</p>
+    </div>
+{% endfor %}
+</div>
+{% else %}
+<article>
+    <div class="empty-state">
+        <p>No events yet.</p>
+    </div>
+</article>
+{% endif %}
+{% endblock %}

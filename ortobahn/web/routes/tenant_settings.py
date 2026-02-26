@@ -79,6 +79,12 @@ async def tenant_settings(request: Request, client: AuthClient):
     except (json.JSONDecodeError, TypeError):
         platform_schedule = {}
 
+    # Parse per-platform article schedule
+    try:
+        article_schedule = json.loads(client.get("article_schedule") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        article_schedule = {}
+
     return templates.TemplateResponse(
         "tenant_settings.html",
         {
@@ -88,6 +94,7 @@ async def tenant_settings(request: Request, client: AuthClient):
             "connected_platforms": connected_platforms,
             "credential_error": credential_error,
             "platform_schedule": platform_schedule,
+            "article_schedule": article_schedule,
         },
     )
 
@@ -116,16 +123,29 @@ async def tenant_settings_update(request: Request, client: AuthClient):
             platforms.append("substack")
         if form.get("article_platform_linkedin"):
             platforms.append("linkedin")
+        # Build per-platform article schedule JSON
+        article_sched: dict[str, str] = {}
+        for p in platforms:
+            val = form.get(f"article_interval_{p}")
+            if val and str(val) in ("weekly", "biweekly", "monthly"):
+                article_sched[p] = str(val)
+            else:
+                article_sched[p] = "weekly"
+        article_schedule_json = json.dumps(article_sched)
+        # Global fallback = most frequent among platforms
+        freq_order = {"weekly": 0, "biweekly": 1, "monthly": 2}
+        global_freq = min(article_sched.values(), key=lambda v: freq_order.get(v, 0)) if article_sched else "weekly"
         db.update_client(
             client["id"],
             {
                 "article_enabled": 1 if form.get("article_enabled") == "on" else 0,
                 "auto_publish_articles": 1 if form.get("auto_publish_articles") == "on" else 0,
-                "article_frequency": form.get("article_frequency", "weekly"),
+                "article_frequency": global_freq,
                 "article_voice": form.get("article_voice", ""),
                 "article_platforms": ",".join(platforms),
                 "article_topics": form.get("article_topics", ""),
                 "article_length": form.get("article_length", "medium"),
+                "article_schedule": article_schedule_json,
             },
         )
     else:

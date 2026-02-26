@@ -82,21 +82,39 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
         platform = d.get("platform") or "generic"
         text = _escape(d.get("text") or "")
         confidence = d.get("confidence") or 0
+        created_at = _escape(str(d.get("created_at") or ""))
         parts.append(
-            f'<div class="draft-card" style="border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:0.75rem;">'
+            f'<div class="draft-card">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
-            f'<span style="background:#3b82f6;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.75em;">{_escape(platform)}</span>'
-            f'<span style="opacity:0.5;font-size:0.8em;">confidence: {confidence:.2f}</span>'
+            f'<span class="badge {_escape(platform)}">{_escape(platform)}</span>'
+            f'<span style="display:flex;gap:0.75rem;align-items:center;">'
+            f'<small style="opacity:0.5;">confidence: {confidence:.2f}</small>'
+            f'<time datetime="{created_at}" style="font-size:0.75em;color:var(--text-tertiary);">{created_at[:16]}</time>'
+            f"</span>"
             f"</div>"
-            f'<p style="margin:0.5rem 0;white-space:pre-wrap;">{text}</p>'
-            f'<div style="display:flex;gap:0.5rem;margin-top:0.5rem;">'
+            f'<p id="text-{pid}" style="margin:0.5rem 0;white-space:pre-wrap;">{text}</p>'
+            f'<form id="edit-form-{pid}" method="post" action="/my/drafts/{pid}/edit" style="display:none;margin:0.5rem 0;">'
+            f'<textarea name="text" rows="4" spellcheck="true" style="width:100%;margin-bottom:0.5rem;">{text}</textarea>'
+            f'<div class="action-buttons">'
+            f'<button type="submit">Save</button>'
+            f'<button type="button" class="secondary" onclick="'
+            f"document.getElementById('edit-form-{pid}').style.display='none';"
+            f"document.getElementById('text-{pid}').style.display='block';"
+            f"document.getElementById('edit-actions-{pid}').style.display='flex';"
+            f'">Cancel</button>'
+            f"</div></form>"
+            f'<div id="edit-actions-{pid}" class="action-buttons" style="margin-top:0.5rem;">'
             f'<form method="post" action="/my/drafts/{pid}/approve" style="margin:0;">'
-            f'<button type="submit" style="padding:4px 12px;font-size:0.8em;">Approve</button>'
+            f'<button type="submit">Publish</button>'
             f"</form>"
+            f'<button type="button" class="outline" onclick="'
+            f"document.getElementById('edit-form-{pid}').style.display='block';"
+            f"document.getElementById('text-{pid}').style.display='none';"
+            f"document.getElementById('edit-actions-{pid}').style.display='none';"
+            f'">Edit</button>'
             f'<form method="post" action="/my/drafts/{pid}/reject" style="margin:0;display:flex;gap:0.25rem;align-items:center;">'
-            f'<input type="text" name="reason" placeholder="Why? (optional)" '
-            f'style="font-size:0.75em;padding:2px 6px;width:140px;">'
-            f'<button type="submit" class="secondary" style="padding:4px 12px;font-size:0.8em;">Reject</button>'
+            f'<input type="text" name="reason" placeholder="Why? (optional)">'
+            f'<button type="submit" class="secondary">Reject</button>'
             f"</form>"
             f"</div>"
             f"</div>"
@@ -106,8 +124,10 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
 
 
 @router.post("/drafts/{post_id}/approve")
-async def tenant_approve_draft(request: Request, post_id: str, client: AuthClient):
+async def tenant_approve_draft(request: Request, post_id: str, background_tasks: BackgroundTasks, client: AuthClient):
+    """Approve and publish a draft post (merged approve+publish flow)."""
     db = request.app.state.db
+    settings = request.app.state.settings
     # Verify the post belongs to this client
     post = db.get_post(post_id)
     if not post or post.get("client_id") != client["id"]:
@@ -134,6 +154,23 @@ async def tenant_approve_draft(request: Request, post_id: str, client: AuthClien
     except Exception:
         logger.warning("Voice learning failed on approve (non-fatal)", exc_info=True)
 
+    # Immediately publish the approved post
+    def _publish_single():
+        from ortobahn.orchestrator import Pipeline
+
+        pipeline = Pipeline(settings)
+        try:
+            pipeline.publish_approved_drafts(client_id=client["id"])
+        except Exception as e:
+            logger.error(f"Post publish failed after approve: {e}")
+        finally:
+            pipeline.close()
+
+    background_tasks.add_task(_publish_single)
+
+    referer = request.headers.get("referer", "")
+    if "/my/review" in referer:
+        return RedirectResponse("/my/review", status_code=303)
     return RedirectResponse("/my/dashboard", status_code=303)
 
 
@@ -165,6 +202,46 @@ async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient
         )
     except Exception:
         logger.warning("Voice learning failed on reject (non-fatal)", exc_info=True)
+
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
+@router.post("/drafts/{post_id}/edit")
+async def tenant_edit_draft(request: Request, post_id: str, client: AuthClient):
+    """Edit a draft post's text and record the change for voice learning."""
+    db = request.app.state.db
+    post = db.get_post(post_id)
+    if not post or post.get("client_id") != client["id"]:
+        raise HTTPException(status_code=404)
+
+    form = await request.form()
+    new_text = str(form.get("text", "")).strip()
+    if not new_text:
+        return RedirectResponse("/my/dashboard", status_code=303)
+
+    original_text = post.get("text", "")
+    db.update_post_text(post_id, new_text)
+
+    # Record edit for voice learning
+    try:
+        from ortobahn.memory import MemoryStore
+        from ortobahn.voice_learning import VoiceLearner
+
+        voice = VoiceLearner(db, MemoryStore(db))
+        voice.record_review(
+            client_id=client["id"],
+            content_type="post",
+            content_id=post_id,
+            action="edited",
+            content_snapshot={
+                "original_text": original_text,
+                "edited_text": new_text,
+                "confidence": post.get("confidence"),
+                "platform": post.get("platform"),
+            },
+        )
+    except Exception:
+        logger.warning("Voice learning failed on edit (non-fatal)", exc_info=True)
 
     return RedirectResponse("/my/dashboard", status_code=303)
 

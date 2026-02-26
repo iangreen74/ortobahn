@@ -1,0 +1,98 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Posts{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Posts</h1>
+    <p class="subtitle">All social content for <strong>{{ client.name }}</strong></p>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+    <form method="get" action="/my/posts" style="margin:0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <select name="platform" onchange="this.form.submit()">
+            <option value="">All Platforms</option>
+            {% for p in available_platforms %}
+            <option value="{{ p }}" {% if platform_filter == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+        </select>
+        <select name="status" onchange="this.form.submit()">
+            <option value="">All Statuses</option>
+            <option value="published" {% if status_filter == 'published' %}selected{% endif %}>Published</option>
+            <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+            <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+        </select>
+    </form>
+    <form method="post" action="/my/generate" style="margin:0;">
+        <input type="hidden" name="platforms" value="bluesky">
+        <button type="submit" onclick="this.disabled=true;this.setAttribute('aria-busy','true');this.textContent='Generating...';">Generate Content</button>
+    </form>
+</div>
+
+<small style="color:var(--text-secondary);display:block;margin-bottom:1rem;">{{ posts|length }} post{{ 's' if posts|length != 1 else '' }}</small>
+
+{% if not posts %}
+<article>
+    <div class="empty-state">
+        <div class="empty-state-icon">&#9997;</div>
+        <p>No posts yet. Click <strong>Generate Content</strong> to create your first post.</p>
+    </div>
+</article>
+{% else %}
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>Content</th>
+                <th>Platform</th>
+                <th>Status</th>
+                <th>Engagement</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in posts %}
+            <tr>
+                <td class="content-text" style="max-width:400px;">
+                    {{ (p.text or '')[:120] }}{% if (p.text or '')|length > 120 %}...{% endif %}
+                </td>
+                <td><span class="badge {{ p.platform or 'generic' }}">{{ p.platform or 'generic' }}</span></td>
+                <td>
+                    {% if p.status == 'published' %}
+                    <span class="badge completed">published</span>
+                    {% elif p.status == 'approved' %}
+                    <span class="badge approved">approved</span>
+                    {% elif p.status == 'rejected' %}
+                    <span class="badge rejected">rejected</span>
+                    {% elif p.status == 'failed' %}
+                    <span class="badge failed">failed</span>
+                    {% else %}
+                    <span class="badge draft">draft</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.status == 'published' %}
+                    {{ (p.like_count or 0) + (p.repost_count or 0) + (p.reply_count or 0) }}
+                    <small style="opacity:0.5;">
+                        ({{ p.like_count or 0 }}L / {{ p.repost_count or 0 }}R / {{ p.reply_count or 0 }}C)
+                    </small>
+                    {% else %}
+                    &mdash;
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.published_at %}
+                    <time datetime="{{ p.published_at }}">{{ (p.published_at|string)[:16] }}</time>
+                    {% elif p.created_at %}
+                    <time datetime="{{ p.created_at }}">{{ (p.created_at|string)[:16] }}</time>
+                    {% else %}
+                    &mdash;
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

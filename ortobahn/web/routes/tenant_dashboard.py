@@ -168,6 +168,12 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     )
 
 
+@router.get("/performance")
+async def tenant_performance(request: Request, client: AuthClient):
+    """Performance page (renamed from analytics)."""
+    return await tenant_analytics(request, client)
+
+
 @router.get("/analytics")
 async def tenant_analytics(request: Request, client: AuthClient):
     """Client-facing analytics dashboard showing content performance."""

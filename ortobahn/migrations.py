@@ -1021,6 +1021,11 @@ def _migration_038_add_email_digest(db: Database) -> None:
     )
 
 
+def _migration_039_add_article_schedule(db: Database) -> None:
+    """Add per-platform article posting schedule."""
+    _safe_add_column(db, "clients", "article_schedule TEXT")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1060,6 +1065,7 @@ MIGRATIONS = {
     36: _migration_036_add_engagement_modes,
     37: _migration_037_add_content_provenance,
     38: _migration_038_add_email_digest,
+    39: _migration_039_add_article_schedule,
 }
 
 

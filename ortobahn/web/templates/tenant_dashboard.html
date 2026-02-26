@@ -1,13 +1,5 @@
-{% extends "base.html" %}
+{% extends "base_sidebar.html" %}
 {% block title %}Ortobahn - {{ client.name }}{% endblock %}
-{% block nav_home %}/my/dashboard{% endblock %}
-{% block nav_links %}
-<li><a href="/my/dashboard" {% if request.url.path == '/my/dashboard' %}class="active"{% endif %}>Overview</a></li>
-<li><a href="/my/analytics" {% if request.url.path == '/my/analytics' %}class="active"{% endif %}>Analytics</a></li>
-<li><a href="/my/articles" {% if request.url.path == '/my/articles' %}class="active"{% endif %}>Articles</a></li>
-<li><a href="/my/settings" {% if request.url.path == '/my/settings' %}class="active"{% endif %}>Settings</a></li>
-<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
-{% endblock %}
 {% block content %}
 {% if credential_issue %}
 <div class="alert-banner danger">
@@ -37,7 +29,7 @@
 {% endif %}
 
 {% if request.query_params.get('msg') == 'creating' %}
-<div class="flash-msg info">Your AI is creating content now. New posts will appear in the activity feed below.</div>
+<div class="flash-msg info">Your AI is creating content now. Check <a href="/my/activity">Activity</a> for progress.</div>
 {% endif %}
 
 <!-- Hero Greeting -->
@@ -147,7 +139,7 @@
     {% if draft_count > 0 %}
     <p class="create-subtitle" style="margin-top: 0.5rem;">
         <strong>{{ draft_count }}</strong> draft{{ 's' if draft_count != 1 else '' }} awaiting review
-        &middot; <a href="/my/dashboard#draft-review-section">View below</a>
+        &middot; <a href="/my/review">Review Queue</a>
     </p>
     {% endif %}
     {% if article_count > 0 %}
@@ -165,68 +157,17 @@
 </div>
 
 {% if draft_count > 0 %}
-<!-- Drafts for Review -->
-<h2 id="draft-review-section">Drafts for Review</h2>
-<div hx-get="/my/api/partials/drafts"
-     hx-trigger="load, every 15s"
-     hx-swap="innerHTML">
-    <div class="skeleton skeleton-card"></div>
-</div>
-{% endif %}
-
-<!-- Activity Feed -->
-<h2>Activity</h2>
-<div class="activity-feed"
-     id="activity-feed"
-     hx-get="/my/api/partials/activity"
-     hx-trigger="load, every 15s"
-     hx-swap="innerHTML">
-    <div class="skeleton skeleton-card"></div>
-    <div class="skeleton skeleton-card"></div>
-    <div class="skeleton skeleton-card"></div>
-</div>
-
-<!-- AI Insights -->
-<h2>Insights</h2>
-<article class="insights-card"
-         id="ai-insights-panel"
-         hx-get="/my/api/partials/insights"
-         hx-trigger="load, every 60s"
-         hx-swap="innerHTML">
-    <div class="skeleton skeleton-text"></div>
-    <div class="skeleton skeleton-text medium"></div>
-    <div class="skeleton skeleton-text short"></div>
-</article>
-
-<!-- Chat Widget -->
-<div id="chat-widget" class="chat-widget">
-    <button id="chat-toggle" class="chat-toggle" onclick="document.getElementById('chat-panel').classList.toggle('open'); if(document.getElementById('chat-panel').classList.contains('open')){htmx.trigger('#chat-messages','load');}">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-    </button>
-    <div id="chat-panel" class="chat-panel">
-        <div class="chat-header">
-            <strong>Support Chat</strong>
-            <button class="chat-close" onclick="document.getElementById('chat-panel').classList.remove('open')">&times;</button>
+<!-- Review nudge -->
+<article style="background:linear-gradient(135deg, rgba(99,102,241,0.06), rgba(0,212,170,0.06));border:1px solid rgba(99,102,241,0.15);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+            <strong>{{ draft_count }} draft{{ 's' if draft_count != 1 else '' }} awaiting review</strong>
+            <p style="margin:0.25rem 0 0;opacity:0.7;font-size:0.9rem;">Review, edit, and publish pending content.</p>
         </div>
-        <div id="chat-messages" class="chat-messages"
-             hx-get="/my/chat/history"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-            <div class="skeleton skeleton-text"></div>
-            <div class="skeleton skeleton-text medium"></div>
-        </div>
-        <form class="chat-input-form"
-              hx-post="/my/chat/send"
-              hx-target="#chat-messages"
-              hx-swap="innerHTML"
-              hx-on::after-request="this.reset(); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;">
-            <input type="text" name="message" placeholder="Ask a question..." autocomplete="off" required>
-            <button type="submit">Send</button>
-        </form>
+        <a href="/my/review" role="button" class="outline">Review Queue &rarr;</a>
     </div>
-</div>
+</article>
+{% endif %}
 <script>
 /* Override greeting with client's local time */
 (function() {

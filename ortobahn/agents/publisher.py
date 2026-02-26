@@ -113,6 +113,8 @@ class PublisherAgent(BaseAgent):
                 else str(draft.content_type),
                 ab_group=draft.ab_group,
                 series_id=draft.series_id,
+                image_url=draft.image_url,
+                image_prompt=draft.image_prompt,
             )
 
             if dry_run:
@@ -130,7 +132,7 @@ class PublisherAgent(BaseAgent):
             publisher = self._get_publisher(draft.platform)
             if publisher is not None:
                 try:
-                    uri, platform_id = publisher.post(draft.text)
+                    uri, platform_id = publisher.post(draft.text, image_url=draft.image_url)
 
                     # Verify the post actually exists on the platform
                     # Returns True (found), False (not found), or None (inconclusive)

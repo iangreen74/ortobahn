@@ -90,6 +90,7 @@ class Client(BaseModel):
     subscription_status: str = "none"
     auto_publish: bool = False
     target_platforms: str = "bluesky"
+    image_generation_enabled: bool = False
 
 
 # --- Trending data (fed into Strategist) ---
@@ -145,6 +146,8 @@ class DraftPost(BaseModel):
     content_type: ContentType = ContentType.SOCIAL_POST
     ab_group: str | None = None  # "A" or "B" for style evolution experiments
     series_id: str | None = None  # Links post to a content series
+    image_prompt: str | None = None  # Prompt for AI image generation
+    image_url: str | None = None  # URL of generated image (S3)
 
 
 class DraftPosts(BaseModel):

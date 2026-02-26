@@ -11,7 +11,7 @@ from ortobahn.migrations import EXPECTED_SCHEMA, _get_schema_version
 class TestMigration032:
     def test_schema_version(self, tmp_path):
         db = Database(tmp_path / "m32.db")
-        assert _get_schema_version(db) == 39
+        assert _get_schema_version(db) == 40
         db.close()
 
     def test_phase_columns_exist(self, tmp_path):

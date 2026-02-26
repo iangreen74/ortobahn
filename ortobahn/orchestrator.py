@@ -787,6 +787,26 @@ class Pipeline:
             )
             logger.info(f"  -> {len(drafts.posts)} drafts written")
 
+            # 3.2b Image generation (between Creator and Publisher)
+            client_img_enabled = getattr(client, "image_generation_enabled", False) if client else False
+            if self.settings.image_generation_enabled and client_img_enabled:
+                try:
+                    from ortobahn.image_gen import ImageGenerator
+
+                    img_gen = ImageGenerator(self.settings)
+                    if img_gen.enabled:
+                        img_count = 0
+                        for draft in drafts.posts:
+                            if draft.image_prompt:
+                                url = img_gen.generate(draft.image_prompt, client_id, str(uuid.uuid4()))
+                                if url:
+                                    draft.image_url = url
+                                    img_count += 1
+                        if img_count:
+                            logger.info(f"  -> Generated {img_count} images")
+                except Exception:
+                    logger.warning("Image generation step failed (non-fatal)", exc_info=True)
+
             # 3.2a Style evolution: tag A/B pairs in drafts
             if self.style_evolution and style_context:
                 ab_a = [d for d in drafts.posts if d.ab_group == "A"]
@@ -815,6 +835,8 @@ class Pipeline:
                             content_type=draft.content_type.value,
                             ab_group=draft.ab_group,
                             series_id=draft.series_id,
+                            image_url=draft.image_url,
+                            image_prompt=draft.image_prompt,
                         )
                 logger.info(f"  -> {len(drafts.posts)} drafts saved for review")
             else:

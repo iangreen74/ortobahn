@@ -30,6 +30,12 @@ Confidence scoring:
 - 0.5-0.69: Decent but might not stand out
 - Below 0.5: Weak, skip it
 
+Image prompts:
+- For each post, include an "image_prompt" field — a vivid description for AI image generation
+- Describe the visual scene, style (photo-realistic, illustration, abstract), mood, colors, and composition
+- Keep the prompt under 200 characters
+- If the post doesn't benefit from an image (e.g. a short quip or reply), set image_prompt to null
+
 You MUST respond with valid JSON matching this exact schema:
 {
   "posts": [
@@ -39,7 +45,8 @@ You MUST respond with valid JSON matching this exact schema:
       "reasoning": "brief explanation of creative choices",
       "confidence": 0.85,
       "platform": "twitter|linkedin|google_ads|bluesky|instagram|generic",
-      "content_type": "social_post|ad_headline|ad_description"
+      "content_type": "social_post|ad_headline|ad_description",
+      "image_prompt": "A vivid scene description for image generation, or null"
     }
   ]
 }

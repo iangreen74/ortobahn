@@ -77,7 +77,7 @@ class RedditClient:
                 self._breaker._last_failure_time + self._breaker.reset_timeout,
             )
 
-    def post(self, text: str, subreddit: str = "", title: str = "") -> tuple[str, str]:
+    def post(self, text: str, subreddit: str = "", title: str = "", image_url: str | None = None) -> tuple[str, str]:
         """Submit a self-post. Returns (post_url, post_id)."""
         self._check_breaker()
         try:

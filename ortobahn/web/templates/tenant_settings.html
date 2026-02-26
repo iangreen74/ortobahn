@@ -120,6 +120,10 @@
             <input type="checkbox" name="auto_publish" value="on" {% if client.auto_publish %}checked{% endif %}>
             Auto-publish content (when off, all posts go to Drafts for your review before publishing)
         </label>
+        <label>
+            <input type="checkbox" name="image_generation_enabled" value="on" {% if client.image_generation_enabled %}checked{% endif %}>
+            Generate AI images for posts (uses Amazon Bedrock Titan Image)
+        </label>
         <label>Target Platforms</label>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
             <label><input type="checkbox" name="platform_bluesky" value="bluesky" {% if 'bluesky' in (client.target_platforms or 'bluesky') %}checked{% endif %}> Bluesky</label>

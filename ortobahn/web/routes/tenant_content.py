@@ -83,6 +83,13 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
         text = _escape(d.get("text") or "")
         confidence = d.get("confidence") or 0
         created_at = _escape(str(d.get("created_at") or ""))
+        image_url = d.get("image_url") or ""
+        image_html = ""
+        if image_url:
+            image_html = (
+                f'<img src="{_escape(image_url)}" alt="Generated image" '
+                f'style="max-width:200px;max-height:150px;border-radius:0.5rem;margin:0.5rem 0;">'
+            )
         parts.append(
             f'<div class="draft-card">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
@@ -92,6 +99,7 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
             f'<time datetime="{created_at}" style="font-size:0.75em;color:var(--text-tertiary);">{created_at[:16]}</time>'
             f"</span>"
             f"</div>"
+            f"{image_html}"
             f'<p id="text-{pid}" style="margin:0.5rem 0;white-space:pre-wrap;">{text}</p>'
             f'<form id="edit-form-{pid}" method="post" action="/my/drafts/{pid}/edit" style="display:none;margin:0.5rem 0;">'
             f'<textarea name="text" rows="4" spellcheck="true" style="width:100%;margin-bottom:0.5rem;">{text}</textarea>'

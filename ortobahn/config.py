@@ -53,6 +53,11 @@ class Settings:
     use_bedrock: bool = False
     bedrock_region: str = "us-west-2"
 
+    # Image generation (Bedrock Titan Image Generator v2)
+    image_generation_enabled: bool = False
+    bedrock_image_model: str = "amazon.titan-image-generator-v2:0"
+    image_s3_bucket: str = ""
+
     # Database
     database_url: str = ""  # PostgreSQL: postgresql://user:pass@host:5432/dbname
     db_path: Path = Path("data/ortobahn.db")  # SQLite fallback (ignored if database_url set)
@@ -312,6 +317,9 @@ def load_settings() -> Settings:
         thinking_budget_security=int(os.environ.get("THINKING_BUDGET_SECURITY", "8000")),
         use_bedrock=os.environ.get("USE_BEDROCK", "false").lower() in ("true", "1", "yes"),
         bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
+        image_generation_enabled=os.environ.get("IMAGE_GENERATION_ENABLED", "false").lower() in ("true", "1", "yes"),
+        bedrock_image_model=os.environ.get("BEDROCK_IMAGE_MODEL", "amazon.titan-image-generator-v2:0"),
+        image_s3_bucket=os.environ.get("IMAGE_S3_BUCKET", ""),
         database_url=os.environ.get("DATABASE_URL", ""),
         db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
         db_pool_min=int(os.environ.get("DB_POOL_MIN", "2")),

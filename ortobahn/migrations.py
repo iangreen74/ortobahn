@@ -1026,6 +1026,13 @@ def _migration_039_add_article_schedule(db: Database) -> None:
     _safe_add_column(db, "clients", "article_schedule TEXT")
 
 
+def _migration_040_add_image_columns(db: Database) -> None:
+    """Add image generation columns to posts and clients."""
+    _safe_add_column(db, "posts", "image_url TEXT")
+    _safe_add_column(db, "posts", "image_prompt TEXT")
+    _safe_add_column(db, "clients", "image_generation_enabled INTEGER DEFAULT 0")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1066,6 +1073,7 @@ MIGRATIONS = {
     37: _migration_037_add_content_provenance,
     38: _migration_038_add_email_digest,
     39: _migration_039_add_article_schedule,
+    40: _migration_040_add_image_columns,
 }
 
 
@@ -1115,6 +1123,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "source_post_id",
         "source_article_id",
         "repurpose_type",
+        "image_url",
+        "image_prompt",
     ],
     "metrics": ["id", "post_id"],
     "agent_logs": ["id", "cache_creation_input_tokens", "cache_read_input_tokens"],
@@ -1152,6 +1162,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "digest_email",
         "digest_day",
         "digest_hour",
+        "image_generation_enabled",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],

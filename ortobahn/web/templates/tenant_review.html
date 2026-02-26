@@ -25,6 +25,9 @@
             {% endif %}
         </span>
     </div>
+    {% if d.image_url %}
+    <img src="{{ d.image_url }}" alt="Generated image" style="max-width:200px;max-height:150px;border-radius:0.5rem;margin:0.5rem 0;">
+    {% endif %}
     <p id="text-{{ d.id }}" style="margin:0.5rem 0;white-space:pre-wrap;">{{ d.text or '' }}</p>
     <form id="edit-form-{{ d.id }}" method="post" action="/my/drafts/{{ d.id }}/edit" style="display:none;margin:0.5rem 0;">
         <textarea name="text" rows="4" spellcheck="true" style="width:100%;margin-bottom:0.5rem;">{{ d.text or '' }}</textarea>

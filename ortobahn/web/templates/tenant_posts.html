@@ -54,6 +54,9 @@
         {% for p in posts %}
             <tr>
                 <td class="content-text" style="max-width:400px;">
+                    {% if p.image_url %}
+                    <img src="{{ p.image_url }}" alt="" style="max-width:60px;max-height:60px;border-radius:0.25rem;vertical-align:middle;margin-right:0.5rem;">
+                    {% endif %}
                     {{ (p.text or '')[:120] }}{% if (p.text or '')|length > 120 %}...{% endif %}
                 </td>
                 <td><span class="badge {{ p.platform or 'generic' }}">{{ p.platform or 'generic' }}</span></td>

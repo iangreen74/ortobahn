@@ -15,6 +15,17 @@ logger = logging.getLogger("ortobahn.linkedin")
 LINKEDIN_API_BASE = "https://api.linkedin.com/v2"
 
 
+def _download_image(url: str) -> bytes | None:
+    """Download image from URL. Returns None on failure."""
+    try:
+        resp = httpx.get(url, timeout=30, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.content
+    except Exception:
+        logger.warning("Failed to download image: %s", url, exc_info=True)
+        return None
+
+
 @dataclass
 class LinkedInPostMetrics:
     post_urn: str
@@ -80,18 +91,35 @@ class LinkedInClient:
             )
 
     @_handle_auth_error
-    def post(self, text: str) -> tuple[str, str]:
-        """Create a text post on LinkedIn. Returns (post_url, post_urn)."""
+    def post(self, text: str, image_url: str | None = None) -> tuple[str, str]:
+        """Create a post on LinkedIn, optionally with image. Returns (post_url, post_urn)."""
         self._check_breaker()
+
+        share_content: dict = {
+            "shareCommentary": {"text": text},
+            "shareMediaCategory": "NONE",
+        }
+
+        if image_url:
+            try:
+                image_bytes = _download_image(image_url)
+                if image_bytes:
+                    asset_urn = self._upload_image(image_bytes)
+                    if asset_urn:
+                        share_content["shareMediaCategory"] = "IMAGE"
+                        share_content["media"] = [
+                            {
+                                "status": "READY",
+                                "media": asset_urn,
+                            }
+                        ]
+            except Exception:
+                logger.warning("LinkedIn image attach failed, posting text-only", exc_info=True)
+
         payload = {
             "author": self.person_urn,
             "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": text},
-                    "shareMediaCategory": "NONE",
-                }
-            },
+            "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
             "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
         }
         try:
@@ -113,6 +141,41 @@ class LinkedInClient:
             if not _is_auth_error(e):
                 self._breaker.record_failure()
             raise
+
+    def _upload_image(self, image_bytes: bytes) -> str | None:
+        """Upload an image to LinkedIn and return the asset URN."""
+        register_body = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": self.person_urn,
+                "serviceRelationships": [
+                    {
+                        "relationshipType": "OWNER",
+                        "identifier": "urn:li:userGeneratedContent",
+                    }
+                ],
+            }
+        }
+        reg_resp = httpx.post(
+            f"{LINKEDIN_API_BASE}/assets?action=registerUpload",
+            headers=self._headers,
+            json=register_body,
+            timeout=30,
+        )
+        reg_resp.raise_for_status()
+        reg_data = reg_resp.json()["value"]
+        upload_url = reg_data["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"][
+            "uploadUrl"
+        ]
+        asset_urn = reg_data["asset"]
+
+        httpx.put(
+            upload_url,
+            content=image_bytes,
+            headers={**self._headers, "Content-Type": "image/png"},
+            timeout=60,
+        )
+        return asset_urn
 
     @_handle_auth_error
     def get_post_metrics(self, post_urn: str) -> LinkedInPostMetrics:

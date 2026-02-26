@@ -5,11 +5,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+import httpx
 from atproto import Client
 
 from ortobahn.circuit_breaker import CircuitOpenError, CircuitState, get_breaker
 
 logger = logging.getLogger("ortobahn.bluesky")
+
+
+def _download_image(url: str) -> bytes | None:
+    """Download image from URL. Returns None on failure."""
+    try:
+        resp = httpx.get(url, timeout=30, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.content
+    except Exception:
+        logger.warning("Failed to download image: %s", url, exc_info=True)
+        return None
 
 
 @dataclass
@@ -74,9 +86,24 @@ class BlueskyClient:
                 self._breaker.record_failure()
             raise
 
-    def post(self, text: str) -> tuple[str, str]:
-        """Post text to Bluesky. Returns (uri, cid)."""
-        response = self._call_with_breaker(self.client.send_post, text=text)
+    def post(self, text: str, image_url: str | None = None) -> tuple[str, str]:
+        """Post text (optionally with image) to Bluesky. Returns (uri, cid)."""
+        kwargs: dict = {"text": text}
+
+        if image_url:
+            try:
+                image_bytes = _download_image(image_url)
+                if image_bytes:
+                    blob = self.client.upload_blob(image_bytes)
+                    from atproto import models as atproto_models
+
+                    kwargs["embed"] = atproto_models.AppBskyEmbedImages.Main(
+                        images=[atproto_models.AppBskyEmbedImages.Image(alt=text[:100], image=blob.blob)]
+                    )
+            except Exception:
+                logger.warning("Bluesky image attach failed, posting text-only", exc_info=True)
+
+        response = self._call_with_breaker(self.client.send_post, **kwargs)
         logger.info(f"Posted to Bluesky: {text[:50]}...")
         return response.uri, response.cid
 

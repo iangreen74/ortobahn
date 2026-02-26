@@ -26,7 +26,7 @@ class TestPublisherAgent:
 
         assert len(result.posts) == 1
         assert result.posts[0].status == "published"
-        mock_bluesky_client.post.assert_called_once_with("Great post")
+        mock_bluesky_client.post.assert_called_once_with("Great post", image_url=None)
 
     def test_skips_below_threshold(self, test_db, mock_bluesky_client):
         agent = PublisherAgent(
@@ -141,7 +141,9 @@ class TestPublisherAgent:
         assert result.posts[2].status == "draft"
 
     def test_publishes_to_twitter(self, test_db):
-        mock_twitter = type("MockTwitter", (), {"post": lambda self, text: ("https://x.com/i/status/123", "123")})()
+        mock_twitter = type(
+            "MockTwitter", (), {"post": lambda self, text, **kw: ("https://x.com/i/status/123", "123")}
+        )()
         agent = PublisherAgent(
             db=test_db,
             twitter_client=mock_twitter,
@@ -157,7 +159,12 @@ class TestPublisherAgent:
         mock_linkedin = type(
             "MockLinkedIn",
             (),
-            {"post": lambda self, text: ("https://linkedin.com/feed/update/urn:li:share:123", "urn:li:share:123")},
+            {
+                "post": lambda self, text, **kw: (
+                    "https://linkedin.com/feed/update/urn:li:share:123",
+                    "urn:li:share:123",
+                )
+            },
         )()
         agent = PublisherAgent(
             db=test_db,
@@ -172,11 +179,18 @@ class TestPublisherAgent:
 
     def test_multi_platform_all_publish(self, test_db, mock_bluesky_client):
         """All three platforms publish when clients are configured."""
-        mock_twitter = type("MockTwitter", (), {"post": lambda self, text: ("https://x.com/i/status/123", "123")})()
+        mock_twitter = type(
+            "MockTwitter", (), {"post": lambda self, text, **kw: ("https://x.com/i/status/123", "123")}
+        )()
         mock_linkedin = type(
             "MockLinkedIn",
             (),
-            {"post": lambda self, text: ("https://linkedin.com/feed/update/urn:li:share:123", "urn:li:share:123")},
+            {
+                "post": lambda self, text, **kw: (
+                    "https://linkedin.com/feed/update/urn:li:share:123",
+                    "urn:li:share:123",
+                )
+            },
         )()
 
         agent = PublisherAgent(

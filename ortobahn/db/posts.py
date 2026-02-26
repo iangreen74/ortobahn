@@ -25,13 +25,15 @@ class PostsMixin:
         content_type: str = "social_post",
         ab_group: str | None = None,
         series_id: str | None = None,
+        image_url: str | None = None,
+        image_prompt: str | None = None,
     ) -> str:
         pid = str(uuid.uuid4())
         self.execute(
             """INSERT INTO posts (id, text, source_idea, reasoning, confidence, status,
                run_id, strategy_id, client_id, platform, content_type,
-               ab_group, series_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               ab_group, series_id, image_url, image_prompt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 pid,
                 text,
@@ -46,6 +48,8 @@ class PostsMixin:
                 content_type,
                 ab_group,
                 series_id,
+                image_url,
+                image_prompt,
             ),
             commit=True,
         )

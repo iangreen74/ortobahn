@@ -5,11 +5,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+import httpx
 import tweepy
 
 from ortobahn.circuit_breaker import CircuitOpenError, CircuitState, get_breaker
 
 logger = logging.getLogger("ortobahn.twitter")
+
+
+def _download_image(url: str) -> bytes | None:
+    """Download image from URL. Returns None on failure."""
+    try:
+        resp = httpx.get(url, timeout=30, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.content
+    except Exception:
+        logger.warning("Failed to download image: %s", url, exc_info=True)
+        return None
 
 
 @dataclass
@@ -81,10 +93,31 @@ class TwitterClient:
                 self._breaker.record_failure()
             raise
 
-    def post(self, text: str) -> tuple[str, str]:
-        """Post a tweet. Returns (tweet_url, tweet_id)."""
+    def post(self, text: str, image_url: str | None = None) -> tuple[str, str]:
+        """Post a tweet, optionally with image. Returns (tweet_url, tweet_id)."""
         client = self._get_client()
-        response = self._call_with_breaker(client.create_tweet, text=text)
+        kwargs: dict = {"text": text}
+
+        if image_url:
+            try:
+                image_bytes = _download_image(image_url)
+                if image_bytes:
+                    import io
+
+                    # Use v1.1 API for media upload (v2 doesn't support it directly)
+                    auth = tweepy.OAuth1UserHandler(
+                        self.api_key,
+                        self.api_secret,
+                        self.access_token,
+                        self.access_token_secret,
+                    )
+                    api = tweepy.API(auth)
+                    media = api.media_upload(filename="image.png", file=io.BytesIO(image_bytes))
+                    kwargs["media_ids"] = [media.media_id]
+            except Exception:
+                logger.warning("Twitter image attach failed, posting text-only", exc_info=True)
+
+        response = self._call_with_breaker(client.create_tweet, **kwargs)
         tweet_id = str(response.data["id"])
         tweet_url = f"https://x.com/i/status/{tweet_id}"
         logger.info(f"Posted to Twitter: {text[:50]}...")

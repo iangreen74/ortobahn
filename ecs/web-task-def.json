@@ -27,7 +27,10 @@
         {"name": "LOG_LEVEL", "value": "INFO"},
         {"name": "USE_BEDROCK", "value": "true"},
         {"name": "BEDROCK_REGION", "value": "us-west-2"},
-        {"name": "DEPLOY_SHA", "value": "unknown"}
+        {"name": "DEPLOY_SHA", "value": "unknown"},
+        {"name": "IMAGE_GENERATION_ENABLED", "value": "true"},
+        {"name": "IMAGE_S3_BUCKET", "value": "ortobahn-images"},
+        {"name": "BEDROCK_IMAGE_MODEL", "value": "amazon.titan-image-generator-v2:0"}
       ],
       "secrets": [
         {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:418295677815:secret:ortobahn/prod-TaDxEG:ANTHROPIC_API_KEY::"},

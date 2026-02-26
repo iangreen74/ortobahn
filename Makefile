@@ -159,6 +159,15 @@ waf-setup:
 	@echo "\nWAF created. Associate it with the ALB:"
 	@echo "  aws wafv2 associate-web-acl --region $(AWS_REGION) --web-acl-arn <WAF_ARN> --resource-arn <ALB_ARN>"
 
+tf-init:
+	cd terraform && terraform init
+
+tf-plan:
+	cd terraform && terraform plan
+
+tf-apply:
+	cd terraform && terraform apply
+
 clean:
 	rm -rf .mypy_cache .ruff_cache .pytest_cache htmlcov .coverage
 	find . -type d -name __pycache__ -exec rm -rf {} +

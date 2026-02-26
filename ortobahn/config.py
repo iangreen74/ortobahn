@@ -92,14 +92,6 @@ class Settings:
     backup_dir: Path = Path("data/backups")
     backup_max_count: int = 10
 
-    # S3 Backups
-    s3_backup_enabled: bool = False
-    s3_backup_bucket: str = ""
-    s3_backup_prefix: str = "backups/"
-    s3_backup_schedule_hours: int = 24
-    s3_backup_retention_days: int = 30
-    s3_region: str = "us-west-2"
-
     # Authentication
     secret_key: str = ""
     admin_api_key: str = ""
@@ -263,140 +255,132 @@ class Settings:
         if self.rate_limit_window_seconds < 1:
             errors.append(f"rate_limit_window_seconds must be >= 1, got {self.rate_limit_window_seconds}")
 
-        # S3 backup validation
-        if self.s3_backup_enabled:
-            if not self.s3_backup_bucket:
-                errors.append("S3_BACKUP_BUCKET must be set when s3_backup_enabled is True")
-            if self.s3_backup_schedule_hours < 1:
-                errors.append(f"s3_backup_schedule_hours must be >= 1, got {self.s3_backup_schedule_hours}")
-            if self.s3_backup_retention_days < 0:
-                errors.append(f"s3_backup_retention_days must be >= 0, got {self.s3_backup_retention_days}")
+        # Budget
+        if self.default_monthly_budget < 0:
+            errors.append(f"default_monthly_budget must be >= 0, got {self.default_monthly_budget}")
+
+        # Engagement/article thresholds (0-1)
+        if not (0.0 <= self.engagement_confidence_threshold <= 1.0):
+            errors.append(f"engagement_confidence_threshold must be 0-1, got {self.engagement_confidence_threshold}")
+        if not (0.0 <= self.creator_critique_threshold <= 1.0):
+            errors.append(f"creator_critique_threshold must be 0-1, got {self.creator_critique_threshold}")
+        if not (0.0 <= self.article_confidence_threshold <= 1.0):
+            errors.append(f"article_confidence_threshold must be 0-1, got {self.article_confidence_threshold}")
 
         return errors
 
+    def has_twitter(self) -> bool:
+        return bool(
+            self.twitter_api_key
+            and self.twitter_api_secret
+            and self.twitter_access_token
+            and self.twitter_access_token_secret
+        )
 
-_settings: Settings | None = None
+    def has_linkedin(self) -> bool:
+        return bool(self.linkedin_access_token and self.linkedin_person_urn)
+
+    def has_reddit(self) -> bool:
+        return bool(self.reddit_client_id and self.reddit_client_secret)
 
 
 def load_settings() -> Settings:
-    """Load settings from environment, caching the result."""
-    global _settings
-    if _settings is None:
-        load_dotenv()
-        _settings = Settings(
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            bluesky_handle=os.getenv("BLUESKY_HANDLE", ""),
-            bluesky_app_password=os.getenv("BLUESKY_APP_PASSWORD", ""),
-            newsapi_key=os.getenv("NEWSAPI_KEY"),
-            twitter_api_key=os.getenv("TWITTER_API_KEY", ""),
-            twitter_api_secret=os.getenv("TWITTER_API_SECRET", ""),
-            twitter_access_token=os.getenv("TWITTER_ACCESS_TOKEN", ""),
-            twitter_access_token_secret=os.getenv("TWITTER_ACCESS_TOKEN_SECRET", ""),
-            linkedin_access_token=os.getenv("LINKEDIN_ACCESS_TOKEN", ""),
-            linkedin_person_urn=os.getenv("LINKEDIN_PERSON_URN", ""),
-            reddit_client_id=os.getenv("REDDIT_CLIENT_ID", ""),
-            reddit_client_secret=os.getenv("REDDIT_CLIENT_SECRET", ""),
-            reddit_username=os.getenv("REDDIT_USERNAME", ""),
-            reddit_password=os.getenv("REDDIT_PASSWORD", ""),
-            autonomous_mode=os.getenv("AUTONOMOUS_MODE", "true").lower() == "true",
-            claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
-            claude_max_tokens=int(os.getenv("CLAUDE_MAX_TOKENS", "4096")),
-            thinking_budget_ceo=int(os.getenv("THINKING_BUDGET_CEO", "10000")),
-            thinking_budget_strategist=int(os.getenv("THINKING_BUDGET_STRATEGIST", "8000")),
-            thinking_budget_creator=int(os.getenv("THINKING_BUDGET_CREATOR", "6000")),
-            thinking_budget_legal=int(os.getenv("THINKING_BUDGET_LEGAL", "10000")),
-            thinking_budget_security=int(os.getenv("THINKING_BUDGET_SECURITY", "8000")),
-            use_bedrock=os.getenv("USE_BEDROCK", "false").lower() == "true",
-            bedrock_region=os.getenv("BEDROCK_REGION", "us-west-2"),
-            database_url=os.getenv("DATABASE_URL", ""),
-            db_path=Path(os.getenv("DB_PATH", "data/ortobahn.db")),
-            db_pool_min=int(os.getenv("DB_POOL_MIN", "2")),
-            db_pool_max=int(os.getenv("DB_POOL_MAX", "10")),
-            post_confidence_threshold=float(os.getenv("POST_CONFIDENCE_THRESHOLD", "0.7")),
-            pipeline_interval_hours=int(os.getenv("PIPELINE_INTERVAL_HOURS", "8")),
-            max_posts_per_cycle=int(os.getenv("MAX_POSTS_PER_CYCLE", "4")),
-            default_client_id=os.getenv("DEFAULT_CLIENT_ID", DEFAULT_CLIENT_ID),
-            web_host=os.getenv("WEB_HOST", "127.0.0.1"),
-            web_port=int(os.getenv("WEB_PORT", "8000")),
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
-            default_monthly_budget=float(os.getenv("DEFAULT_MONTHLY_BUDGET", "0.0")),
-            post_delay_seconds=int(os.getenv("POST_DELAY_SECONDS", "30")),
-            rate_limit_enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",
-            rate_limit_default=int(os.getenv("RATE_LIMIT_DEFAULT", "60")),
-            rate_limit_window_seconds=int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")),
-            slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""),
-            slack_signing_secret=os.getenv("SLACK_SIGNING_SECRET", ""),
-            backup_enabled=os.getenv("BACKUP_ENABLED", "true").lower() == "true",
-            backup_dir=Path(os.getenv("BACKUP_DIR", "data/backups")),
-            backup_max_count=int(os.getenv("BACKUP_MAX_COUNT", "10")),
-            s3_backup_enabled=os.getenv("S3_BACKUP_ENABLED", "false").lower() == "true",
-            s3_backup_bucket=os.getenv("S3_BACKUP_BUCKET", ""),
-            s3_backup_prefix=os.getenv("S3_BACKUP_PREFIX", "backups/"),
-            s3_backup_schedule_hours=int(os.getenv("S3_BACKUP_SCHEDULE_HOURS", "24")),
-            s3_backup_retention_days=int(os.getenv("S3_BACKUP_RETENTION_DAYS", "30")),
-            s3_region=os.getenv("S3_REGION", "us-west-2"),
-            secret_key=os.getenv("SECRET_KEY", ""),
-            admin_api_key=os.getenv("ADMIN_API_KEY", ""),
-            cognito_user_pool_id=os.getenv("COGNITO_USER_POOL_ID", ""),
-            cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),
-            cognito_region=os.getenv("COGNITO_REGION", "us-west-2"),
-            thinking_budget_reflection=int(os.getenv("THINKING_BUDGET_REFLECTION", "8000")),
-            enable_self_critique=os.getenv("ENABLE_SELF_CRITIQUE", "true").lower() == "true",
-            memory_max_per_agent=int(os.getenv("MEMORY_MAX_PER_AGENT", "100")),
-            memory_prune_days=int(os.getenv("MEMORY_PRUNE_DAYS", "90")),
-            ab_testing_enabled=os.getenv("AB_TESTING_ENABLED", "true").lower() == "true",
-            min_ab_pairs=int(os.getenv("MIN_AB_PAIRS", "5")),
-            creator_critique_threshold=float(os.getenv("CREATOR_CRITIQUE_THRESHOLD", "0.8")),
-            preflight_enabled=os.getenv("PREFLIGHT_ENABLED", "true").lower() == "true",
-            cifix_enabled=os.getenv("CIFIX_ENABLED", "true").lower() == "true",
-            cifix_auto_pr=os.getenv("CIFIX_AUTO_PR", "true").lower() == "true",
-            cifix_max_llm_attempts=int(os.getenv("CIFIX_MAX_LLM_ATTEMPTS", "2")),
-            cto_enabled=os.getenv("CTO_ENABLED", "true").lower() == "true",
-            cto_max_tasks_per_cycle=int(os.getenv("CTO_MAX_TASKS_PER_CYCLE", "1")),
-            thinking_budget_cto=int(os.getenv("THINKING_BUDGET_CTO", "16000")),
-            ortobahn_bluesky_handle=os.getenv("ORTOBAHN_BLUESKY_HANDLE", ""),
-            ortobahn_bluesky_app_password=os.getenv("ORTOBAHN_BLUESKY_APP_PASSWORD", ""),
-            stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
-            stripe_publishable_key=os.getenv("STRIPE_PUBLISHABLE_KEY", ""),
-            stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
-            stripe_price_id=os.getenv("STRIPE_PRICE_ID", ""),
-            watchdog_enabled=os.getenv("WATCHDOG_ENABLED", "true").lower() == "true",
-            watchdog_stale_run_minutes=int(os.getenv("WATCHDOG_STALE_RUN_MINUTES", "60")),
-            watchdog_post_verify_hours=int(os.getenv("WATCHDOG_POST_VERIFY_HOURS", "6")),
-            watchdog_credential_check=os.getenv("WATCHDOG_CREDENTIAL_CHECK", "true").lower() == "true",
-            watchdog_max_verify_posts=int(os.getenv("WATCHDOG_MAX_VERIFY_POSTS", "5")),
-            auto_rollback_enabled=os.getenv("AUTO_ROLLBACK_ENABLED", "true").lower() == "true",
-            auto_rollback_window_minutes=int(os.getenv("AUTO_ROLLBACK_WINDOW_MINUTES", "30")),
-            auto_rollback_health_failures=int(os.getenv("AUTO_ROLLBACK_HEALTH_FAILURES", "3")),
-            engagement_enabled=os.getenv("ENGAGEMENT_ENABLED", "true").lower() == "true",
-            engagement_max_replies=int(os.getenv("ENGAGEMENT_MAX_REPLIES", "3")),
-            engagement_confidence_threshold=float(os.getenv("ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.75")),
-            style_evolution_enabled=os.getenv("STYLE_EVOLUTION_ENABLED", "true").lower() == "true",
-            predictive_timing_enabled=os.getenv("PREDICTIVE_TIMING_ENABLED", "true").lower() == "true",
-            serialization_enabled=os.getenv("SERIALIZATION_ENABLED", "true").lower() == "true",
-            post_feedback_enabled=os.getenv("POST_FEEDBACK_ENABLED", "true").lower() == "true",
-            post_feedback_delay_seconds=int(os.getenv("POST_FEEDBACK_DELAY_SECONDS", "600")),
-            meta_learning_enabled=os.getenv("META_LEARNING_ENABLED", "true").lower() == "true",
-            publish_retry_enabled=os.getenv("PUBLISH_RETRY_ENABLED", "true").lower() == "true",
-            publish_max_retries=int(os.getenv("PUBLISH_MAX_RETRIES", "2")),
-            dynamic_cadence_enabled=os.getenv("DYNAMIC_CADENCE_ENABLED", "true").lower() == "true",
-            thinking_budget_article_writer=int(os.getenv("THINKING_BUDGET_ARTICLE_WRITER", "16000")),
-            article_confidence_threshold=float(os.getenv("ARTICLE_CONFIDENCE_THRESHOLD", "0.8")),
-            ses_region=os.getenv("SES_REGION", "us-west-2"),
-            ses_sender_email=os.getenv("SES_SENDER_EMAIL", ""),
-            digest_enabled_global=os.getenv("DIGEST_ENABLED_GLOBAL", "true").lower() == "true",
-        )
-    return _settings
+    load_dotenv()
 
-
-def get_settings() -> Settings:
-    """Get cached settings."""
-    if _settings is None:
-        return load_settings()
-    return _settings
-
-
-def reset_settings() -> None:
-    """Reset cached settings (used in tests)."""
-    global _settings
-    _settings = None
+    return Settings(
+        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        bluesky_handle=os.environ.get("BLUESKY_HANDLE", ""),
+        bluesky_app_password=os.environ.get("BLUESKY_APP_PASSWORD", ""),
+        newsapi_key=os.environ.get("NEWSAPI_KEY") or None,
+        twitter_api_key=os.environ.get("TWITTER_API_KEY", ""),
+        twitter_api_secret=os.environ.get("TWITTER_API_SECRET", ""),
+        twitter_access_token=os.environ.get("TWITTER_ACCESS_TOKEN", ""),
+        twitter_access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET", ""),
+        linkedin_access_token=os.environ.get("LINKEDIN_ACCESS_TOKEN", ""),
+        linkedin_person_urn=os.environ.get("LINKEDIN_PERSON_URN", ""),
+        reddit_client_id=os.environ.get("REDDIT_CLIENT_ID", ""),
+        reddit_client_secret=os.environ.get("REDDIT_CLIENT_SECRET", ""),
+        reddit_username=os.environ.get("REDDIT_USERNAME", ""),
+        reddit_password=os.environ.get("REDDIT_PASSWORD", ""),
+        autonomous_mode=os.environ.get("AUTONOMOUS_MODE", "true").lower() in ("true", "1", "yes"),
+        claude_model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
+        claude_max_tokens=int(os.environ.get("CLAUDE_MAX_TOKENS", "4096")),
+        thinking_budget_ceo=int(os.environ.get("THINKING_BUDGET_CEO", "10000")),
+        thinking_budget_strategist=int(os.environ.get("THINKING_BUDGET_STRATEGIST", "8000")),
+        thinking_budget_creator=int(os.environ.get("THINKING_BUDGET_CREATOR", "6000")),
+        thinking_budget_legal=int(os.environ.get("THINKING_BUDGET_LEGAL", "10000")),
+        thinking_budget_security=int(os.environ.get("THINKING_BUDGET_SECURITY", "8000")),
+        use_bedrock=os.environ.get("USE_BEDROCK", "false").lower() in ("true", "1", "yes"),
+        bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
+        database_url=os.environ.get("DATABASE_URL", ""),
+        db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
+        db_pool_min=int(os.environ.get("DB_POOL_MIN", "2")),
+        db_pool_max=int(os.environ.get("DB_POOL_MAX", "10")),
+        post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),
+        pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "8")),
+        max_posts_per_cycle=int(os.environ.get("MAX_POSTS_PER_CYCLE", "4")),
+        default_client_id=os.environ.get("DEFAULT_CLIENT_ID", DEFAULT_CLIENT_ID),
+        web_host=os.environ.get("WEB_HOST", "127.0.0.1"),
+        web_port=int(os.environ.get("WEB_PORT", "8000")),
+        log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        default_monthly_budget=float(os.environ.get("DEFAULT_MONTHLY_BUDGET", "0")),
+        post_delay_seconds=int(os.environ.get("POST_DELAY_SECONDS", "30")),
+        rate_limit_enabled=os.environ.get("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"),
+        rate_limit_default=int(os.environ.get("RATE_LIMIT_DEFAULT", "60")),
+        rate_limit_window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60")),
+        slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
+        slack_signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
+        backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
+        backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),
+        backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),
+        secret_key=os.environ.get("ORTOBAHN_SECRET_KEY", ""),
+        admin_api_key=os.environ.get("ADMIN_API_KEY", ""),
+        thinking_budget_reflection=int(os.environ.get("THINKING_BUDGET_REFLECTION", "8000")),
+        enable_self_critique=os.environ.get("ENABLE_SELF_CRITIQUE", "true").lower() in ("true", "1", "yes"),
+        memory_max_per_agent=int(os.environ.get("MEMORY_MAX_PER_AGENT", "100")),
+        memory_prune_days=int(os.environ.get("MEMORY_PRUNE_DAYS", "90")),
+        ab_testing_enabled=os.environ.get("AB_TESTING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        min_ab_pairs=int(os.environ.get("MIN_AB_PAIRS", "5")),
+        creator_critique_threshold=float(os.environ.get("CREATOR_CRITIQUE_THRESHOLD", "0.8")),
+        preflight_enabled=os.environ.get("PREFLIGHT_ENABLED", "true").lower() in ("true", "1", "yes"),
+        cifix_enabled=os.environ.get("CIFIX_ENABLED", "true").lower() in ("true", "1", "yes"),
+        cifix_auto_pr=os.environ.get("CIFIX_AUTO_PR", "true").lower() in ("true", "1", "yes"),
+        cifix_max_llm_attempts=int(os.environ.get("CIFIX_MAX_LLM_ATTEMPTS", "2")),
+        cto_enabled=os.environ.get("CTO_ENABLED", "true").lower() in ("true", "1", "yes"),
+        cto_max_tasks_per_cycle=int(os.environ.get("CTO_MAX_TASKS_PER_CYCLE", "1")),
+        thinking_budget_cto=int(os.environ.get("THINKING_BUDGET_CTO", "16000")),
+        stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
+        stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
+        stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        stripe_price_id=os.environ.get("STRIPE_PRICE_ID", ""),
+        cognito_user_pool_id=os.environ.get("COGNITO_USER_POOL_ID", ""),
+        cognito_client_id=os.environ.get("COGNITO_CLIENT_ID", ""),
+        cognito_region=os.environ.get("COGNITO_REGION", "us-west-2"),
+        ortobahn_bluesky_handle=os.environ.get("ORTOBAHN_BLUESKY_HANDLE", ""),
+        ortobahn_bluesky_app_password=os.environ.get("ORTOBAHN_BLUESKY_APP_PASSWORD", ""),
+        watchdog_enabled=os.environ.get("WATCHDOG_ENABLED", "true").lower() in ("true", "1", "yes"),
+        watchdog_stale_run_minutes=int(os.environ.get("WATCHDOG_STALE_RUN_MINUTES", "60")),
+        watchdog_post_verify_hours=int(os.environ.get("WATCHDOG_POST_VERIFY_HOURS", "6")),
+        watchdog_credential_check=os.environ.get("WATCHDOG_CREDENTIAL_CHECK", "true").lower() in ("true", "1", "yes"),
+        watchdog_max_verify_posts=int(os.environ.get("WATCHDOG_MAX_VERIFY_POSTS", "5")),
+        auto_rollback_enabled=os.environ.get("AUTO_ROLLBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        auto_rollback_window_minutes=int(os.environ.get("AUTO_ROLLBACK_WINDOW_MINUTES", "30")),
+        auto_rollback_health_failures=int(os.environ.get("AUTO_ROLLBACK_HEALTH_FAILURES", "3")),
+        engagement_enabled=os.environ.get("ENGAGEMENT_ENABLED", "true").lower() in ("true", "1", "yes"),
+        engagement_max_replies=int(os.environ.get("ENGAGEMENT_MAX_REPLIES", "3")),
+        engagement_confidence_threshold=float(os.environ.get("ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.75")),
+        style_evolution_enabled=os.environ.get("STYLE_EVOLUTION_ENABLED", "true").lower() in ("true", "1", "yes"),
+        predictive_timing_enabled=os.environ.get("PREDICTIVE_TIMING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        serialization_enabled=os.environ.get("SERIALIZATION_ENABLED", "true").lower() in ("true", "1", "yes"),
+        post_feedback_enabled=os.environ.get("POST_FEEDBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        post_feedback_delay_seconds=int(os.environ.get("POST_FEEDBACK_DELAY_SECONDS", "600")),
+        meta_learning_enabled=os.environ.get("META_LEARNING_ENABLED", "true").lower() in ("true", "1", "yes"),
+        publish_retry_enabled=os.environ.get("PUBLISH_RETRY_ENABLED", "true").lower() in ("true", "1", "yes"),
+        publish_max_retries=int(os.environ.get("PUBLISH_MAX_RETRIES", "2")),
+        dynamic_cadence_enabled=os.environ.get("DYNAMIC_CADENCE_ENABLED", "true").lower() in ("true", "1", "yes"),
+        thinking_budget_article_writer=int(os.environ.get("THINKING_BUDGET_ARTICLE_WRITER", "16000")),
+        article_confidence_threshold=float(os.environ.get("ARTICLE_CONFIDENCE_THRESHOLD", "0.8")),
+        ses_region=os.environ.get("SES_REGION", "us-west-2"),
+        ses_sender_email=os.environ.get("SES_SENDER_EMAIL", ""),
+        digest_enabled_global=os.environ.get("DIGEST_ENABLED", "true").lower() in ("true", "1", "yes"),
+    )

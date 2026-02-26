@@ -393,3 +393,58 @@ async def tenant_insights_partial(request: Request, client: AuthClient):
         )
 
     return HTMLResponse("".join(parts))
+
+
+@router.get("/api/partials/post-insights", response_class=HTMLResponse)
+async def post_insights_partial(request: Request, client: AuthClient):
+    """Return recent 'Why This Worked' insights as an HTML fragment."""
+    db = request.app.state.db
+    client_id = client["id"]
+
+    rows = db.fetchall(
+        "SELECT pi.insight_text, pi.factors, pi.confidence, pi.created_at,"
+        " p.text as post_text, p.platform"
+        " FROM post_insights pi"
+        " JOIN posts p ON pi.post_id = p.id"
+        " WHERE pi.client_id=?"
+        " ORDER BY pi.created_at DESC LIMIT 5",
+        (client_id,),
+    )
+
+    if not rows:
+        return HTMLResponse(
+            '<p style="opacity: 0.6; text-align: center;">No post insights yet. '
+            "Insights are generated when posts significantly outperform your average.</p>"
+        )
+
+    import json
+
+    parts = ['<div class="post-insights-list">']
+    for row in rows:
+        post_preview = _escape((row.get("post_text") or "")[:80])
+        platform = _escape(row.get("platform") or "")
+        insight = _escape(row.get("insight_text") or "")
+        try:
+            factors = json.loads(row.get("factors") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            factors = []
+
+        factor_badges = " ".join(
+            f'<span class="badge draft" style="font-size: 0.7rem;">{_escape(f)}</span>' for f in factors[:4]
+        )
+
+        parts.append(
+            f'<div class="insight-item" style="border-left: 3px solid #00d4aa;">'
+            f'<div class="insight-header">'
+            f'<span class="insight-icon" style="color: #00d4aa;">&#x1F4A1;</span>'
+            f"<strong>Why This Worked</strong>"
+            f'<span class="badge completed" style="margin-left: auto; font-size: 0.7rem;">{platform}</span>'
+            f"</div>"
+            f'<p class="insight-detail" style="margin: 0.25rem 0;">'
+            f'<em>"{post_preview}..."</em></p>'
+            f'<p class="insight-detail">{insight}</p>'
+            f'<div style="margin-top: 0.25rem;">{factor_badges}</div>'
+            f"</div>"
+        )
+    parts.append("</div>")
+    return HTMLResponse("".join(parts))

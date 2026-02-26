@@ -167,3 +167,48 @@ async def tenant_reject_draft(request: Request, post_id: str, client: AuthClient
         logger.warning("Voice learning failed on reject (non-fatal)", exc_info=True)
 
     return RedirectResponse("/my/dashboard", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Content repurposing endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/repurpose/post-to-article/{post_id}")
+async def repurpose_post_to_article(request: Request, post_id: str, client: AuthClient):
+    """Create a draft article seeded from a high-performing post."""
+    from ortobahn.repurposer import Repurposer
+
+    db = request.app.state.db
+    repurposer = Repurposer(db)
+    article_id = repurposer.post_to_article(post_id, client["id"])
+
+    if not article_id:
+        return RedirectResponse("/my/dashboard?msg=repurpose_failed", status_code=303)
+
+    return RedirectResponse("/my/articles?msg=article_created", status_code=303)
+
+
+@router.post("/repurpose/article-to-series/{article_id}")
+async def repurpose_article_to_series(
+    request: Request,
+    article_id: str,
+    client: AuthClient,
+):
+    """Create a series of social posts from an article."""
+    from ortobahn.repurposer import Repurposer
+
+    db = request.app.state.db
+
+    form = await request.form()
+    platform = str(form.get("platform", "bluesky"))
+    num_posts = int(str(form.get("num_posts", "3")))
+    num_posts = max(2, min(5, num_posts))
+
+    repurposer = Repurposer(db)
+    post_ids = repurposer.article_to_series(article_id, client["id"], platform=platform, num_posts=num_posts)
+
+    if not post_ids:
+        return RedirectResponse("/my/dashboard?msg=repurpose_failed", status_code=303)
+
+    return RedirectResponse("/my/dashboard?msg=series_created", status_code=303)

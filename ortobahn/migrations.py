@@ -939,6 +939,88 @@ def _migration_033_add_voice_learning(db: Database) -> None:
     _safe_add_column(db, "clients", "voice_confidence REAL NOT NULL DEFAULT 0.0")
 
 
+def _migration_034_add_content_calendar(db: Database) -> None:
+    """Add scheduled_at to posts for content calendar and scheduling."""
+    _safe_add_column(db, "posts", "scheduled_at TIMESTAMP")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(client_id, scheduled_at)",
+        commit=True,
+    )
+
+
+def _migration_035_add_post_insights(db: Database) -> None:
+    """Add post_insights table for 'Why This Worked' explanations."""
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS post_insights (
+            id TEXT PRIMARY KEY,
+            post_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            insight_text TEXT NOT NULL,
+            factors TEXT NOT NULL DEFAULT '[]',
+            confidence REAL NOT NULL DEFAULT 0.5,
+            accuracy_score REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            verified_at TIMESTAMP
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_insights_client ON post_insights(client_id, created_at DESC)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_insights_post ON post_insights(post_id)",
+        commit=True,
+    )
+
+
+def _migration_036_add_engagement_modes(db: Database) -> None:
+    """Add per-client engagement mode and reply status tracking."""
+    _safe_add_column(db, "clients", "engagement_mode TEXT NOT NULL DEFAULT 'auto'")
+    _safe_add_column(db, "engagement_replies", "platform TEXT NOT NULL DEFAULT 'bluesky'")
+    _safe_add_column(db, "engagement_replies", "status TEXT NOT NULL DEFAULT 'posted'")
+
+
+def _migration_037_add_content_provenance(db: Database) -> None:
+    """Add provenance tracking for content repurposing."""
+    _safe_add_column(db, "posts", "source_post_id TEXT")
+    _safe_add_column(db, "posts", "source_article_id TEXT")
+    _safe_add_column(db, "articles", "source_post_id TEXT")
+    _safe_add_column(db, "articles", "source_article_id TEXT")
+    _safe_add_column(db, "posts", "repurpose_type TEXT")
+
+
+def _migration_038_add_email_digest(db: Database) -> None:
+    """Add email digest preferences and history tracking."""
+    _safe_add_column(db, "clients", "digest_enabled INTEGER NOT NULL DEFAULT 1")
+    _safe_add_column(db, "clients", "digest_email TEXT NOT NULL DEFAULT ''")
+    _safe_add_column(db, "clients", "digest_day INTEGER NOT NULL DEFAULT 1")
+    _safe_add_column(db, "clients", "digest_hour INTEGER NOT NULL DEFAULT 9")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS digest_history (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            sent_at TIMESTAMP NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            posts_published INTEGER DEFAULT 0,
+            total_engagement INTEGER DEFAULT 0,
+            top_post_id TEXT,
+            status TEXT DEFAULT 'sent',
+            error TEXT
+        )
+    """,
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_digest_history_client ON digest_history(client_id, sent_at DESC)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -973,6 +1055,11 @@ MIGRATIONS = {
     31: _migration_031_add_platform_schedule,
     32: _migration_032_add_pipeline_phases,
     33: _migration_033_add_voice_learning,
+    34: _migration_034_add_content_calendar,
+    35: _migration_035_add_post_insights,
+    36: _migration_036_add_engagement_modes,
+    37: _migration_037_add_content_provenance,
+    38: _migration_038_add_email_digest,
 }
 
 
@@ -1018,6 +1105,10 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "series_id",
         "series_part",
         "failure_category",
+        "scheduled_at",
+        "source_post_id",
+        "source_article_id",
+        "repurpose_type",
     ],
     "metrics": ["id", "post_id"],
     "agent_logs": ["id", "cache_creation_input_tokens", "cache_read_input_tokens"],
@@ -1050,6 +1141,11 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "platform_schedule",
         "auto_publish_articles",
         "voice_confidence",
+        "engagement_mode",
+        "digest_enabled",
+        "digest_email",
+        "digest_day",
+        "digest_hour",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],
@@ -1080,11 +1176,11 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     # Migration 022
     "deployments": ["id", "sha"],
     # Migration 024
-    "engagement_replies": ["id", "run_id"],
+    "engagement_replies": ["id", "run_id", "platform", "status"],
     "content_series": ["id", "client_id"],
     "topic_velocity": ["id", "topic_title"],
     # Migration 026
-    "articles": ["id", "client_id"],
+    "articles": ["id", "client_id", "source_post_id", "source_article_id"],
     "article_publications": ["id", "article_id", "failure_category", "retry_count"],
     # Migration 027
     "webhooks": ["id", "client_id"],
@@ -1095,6 +1191,10 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     "ci_errors": ["id", "run_id", "test_name", "error_type", "error_message"],
     # Migration 033
     "content_reviews": ["id", "client_id", "content_type", "content_id", "action"],
+    # Migration 035
+    "post_insights": ["id", "post_id", "client_id", "insight_text", "factors", "confidence"],
+    # Migration 038
+    "digest_history": ["id", "client_id", "sent_at", "period_start", "period_end"],
     # Internal
     "schema_version": ["version"],
 }

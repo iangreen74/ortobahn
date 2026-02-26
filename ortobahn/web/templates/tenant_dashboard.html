@@ -113,10 +113,17 @@
         <span class="badge {{ best_post.platform or 'bluesky' }}">{{ best_post.platform or 'bluesky' }}</span>
     </div>
     <p style="margin: 0 0 0.75rem 0; line-height: 1.5;">{{ (best_post.text or '')[:200] }}{% if (best_post.text or '')|length > 200 %}...{% endif %}</p>
-    <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; opacity: 0.7;">
-        <span>{{ best_post.like_count or 0 }} likes</span>
-        <span>{{ best_post.repost_count or 0 }} reposts</span>
-        <span>{{ best_post.reply_count or 0 }} replies</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; opacity: 0.7;">
+            <span>{{ best_post.like_count or 0 }} likes</span>
+            <span>{{ best_post.repost_count or 0 }} reposts</span>
+            <span>{{ best_post.reply_count or 0 }} replies</span>
+        </div>
+        {% if best_post.id %}
+        <form method="post" action="/my/repurpose/post-to-article/{{ best_post.id }}" style="margin:0;">
+            <button type="submit" class="secondary" style="font-size:0.8em;padding:4px 12px;">Expand to Article</button>
+        </form>
+        {% endif %}
     </div>
 </article>
 {% endif %}

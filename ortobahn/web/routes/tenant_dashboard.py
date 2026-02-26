@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ortobahn.auth import AuthClient
 from ortobahn.db import to_datetime
@@ -82,7 +83,7 @@ async def tenant_dashboard(request: Request, client: AuthClient):
         " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
     best_post = db.fetchone(
-        "SELECT p.text, p.platform,"
+        "SELECT p.id, p.text, p.platform,"
         " COALESCE(m.like_count,0) as like_count,"
         " COALESCE(m.repost_count,0) as repost_count,"
         " COALESCE(m.reply_count,0) as reply_count"
@@ -306,3 +307,101 @@ async def _render_analytics(db, templates, request, client, client_id):
             "recent_posts": recent_posts,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Engagement draft review endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/partials/engagement-drafts", response_class=HTMLResponse)
+async def engagement_drafts(request: Request, client: AuthClient):
+    """Return pending engagement reply drafts as HTML fragment."""
+    db = request.app.state.db
+    client_id = client["id"]
+
+    drafts = db.fetchall(
+        "SELECT id, notification_text, reply_text, confidence, platform, created_at"
+        " FROM engagement_replies"
+        " WHERE client_id=? AND status='draft'"
+        " ORDER BY created_at DESC LIMIT 10",
+        (client_id,),
+    )
+
+    if not drafts:
+        return HTMLResponse("")
+
+    import html
+
+    def _esc(s: str) -> str:
+        return html.escape(str(s)) if s else ""
+
+    parts = ['<div class="engagement-drafts" style="margin-top: 1rem;">']
+    parts.append("<h4>Engagement Drafts</h4>")
+    for d in drafts:
+        conf = int((d.get("confidence") or 0) * 100)
+        parts.append(
+            f'<div class="card" style="margin-bottom: 0.5rem; padding: 0.75rem;">'
+            f'<p style="opacity: 0.7; font-size: 0.85rem;">Replying to: {_esc((d.get("notification_text") or "")[:100])}</p>'
+            f"<p><strong>{_esc(d.get('reply_text') or '')}</strong></p>"
+            f'<div style="display: flex; gap: 0.5rem; align-items: center;">'
+            f'<span class="badge draft">{_esc(d.get("platform") or "bluesky")}</span>'
+            f'<span style="font-size: 0.8rem;">{conf}% confidence</span>'
+            f'<form method="post" action="/my/engagement/{d["id"]}/approve" style="margin: 0;">'
+            f'<button type="submit" class="outline" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;">Approve</button>'
+            f"</form>"
+            f'<form method="post" action="/my/engagement/{d["id"]}/reject" style="margin: 0;">'
+            f'<button type="submit" class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;">Reject</button>'
+            f"</form>"
+            f"</div></div>"
+        )
+    parts.append("</div>")
+    return HTMLResponse("".join(parts))
+
+
+@router.post("/engagement/{reply_id}/approve")
+async def approve_engagement_reply(request: Request, reply_id: str, client: AuthClient):
+    """Approve and post a drafted engagement reply."""
+    db = request.app.state.db
+    client_id = client["id"]
+
+    row = db.fetchone(
+        "SELECT id, status FROM engagement_replies WHERE id=? AND client_id=?",
+        (reply_id, client_id),
+    )
+    if not row:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    if row["status"] != "draft":
+        return JSONResponse({"error": "Reply is not a draft"}, status_code=400)
+
+    db.execute(
+        "UPDATE engagement_replies SET status='posted' WHERE id=? AND client_id=?",
+        (reply_id, client_id),
+        commit=True,
+    )
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse("/my/dashboard", status_code=303)
+
+
+@router.post("/engagement/{reply_id}/reject")
+async def reject_engagement_reply(request: Request, reply_id: str, client: AuthClient):
+    """Reject a drafted engagement reply."""
+    db = request.app.state.db
+    client_id = client["id"]
+
+    row = db.fetchone(
+        "SELECT id, status FROM engagement_replies WHERE id=? AND client_id=?",
+        (reply_id, client_id),
+    )
+    if not row:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+
+    db.execute(
+        "UPDATE engagement_replies SET status='rejected' WHERE id=? AND client_id=?",
+        (reply_id, client_id),
+        commit=True,
+    )
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse("/my/dashboard", status_code=303)

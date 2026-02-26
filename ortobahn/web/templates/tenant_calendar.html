@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Ortobahn - Content Calendar{% endblock %}
+{% block nav_home %}/my/dashboard{% endblock %}
+{% block nav_links %}
+<li><a href="/my/dashboard">Overview</a></li>
+<li><a href="/my/calendar" class="active">Calendar</a></li>
+<li><a href="/my/analytics">Analytics</a></li>
+<li><a href="/my/articles">Articles</a></li>
+<li><a href="/my/settings">Settings</a></li>
+<li><a href="/api/auth/logout" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/api/auth/login');return false;">Log Out</a></li>
+{% endblock %}
+{% block content %}
+<div class="container">
+  <h2>Content Calendar</h2>
+  <p class="muted">View and schedule your content across all platforms.</p>
+
+  <div id="calendar-grid"
+       hx-get="/my/api/partials/calendar"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <p>Loading calendar...</p>
+  </div>
+
+  <details style="margin-top: 1.5rem;">
+    <summary>Legend</summary>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap; padding: 0.5rem 0;">
+      <span><span class="badge completed">&#x2713;</span> Published</span>
+      <span><span class="badge draft">&#x270E;</span> Draft</span>
+      <span><span class="badge running">&#x23F3;</span> Scheduled</span>
+      <span><span class="badge failed">&#x2717;</span> Failed</span>
+    </div>
+  </details>
+</div>
+{% endblock %}

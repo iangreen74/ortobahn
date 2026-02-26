@@ -177,6 +177,11 @@ class Settings:
     thinking_budget_article_writer: int = 16_000
     article_confidence_threshold: float = 0.8
 
+    # Email digest (AWS SES)
+    ses_region: str = "us-west-2"
+    ses_sender_email: str = ""
+    digest_enabled_global: bool = True
+
     # RSS feeds
     rss_feeds: list[str] = field(
         default_factory=lambda: [
@@ -375,4 +380,7 @@ def load_settings() -> Settings:
         dynamic_cadence_enabled=os.environ.get("DYNAMIC_CADENCE_ENABLED", "true").lower() in ("true", "1", "yes"),
         thinking_budget_article_writer=int(os.environ.get("THINKING_BUDGET_ARTICLE_WRITER", "16000")),
         article_confidence_threshold=float(os.environ.get("ARTICLE_CONFIDENCE_THRESHOLD", "0.8")),
+        ses_region=os.environ.get("SES_REGION", "us-west-2"),
+        ses_sender_email=os.environ.get("SES_SENDER_EMAIL", ""),
+        digest_enabled_global=os.environ.get("DIGEST_ENABLED", "true").lower() in ("true", "1", "yes"),
     )

@@ -14,6 +14,7 @@ from ortobahn.agents.cifix import CIFixAgent
 from ortobahn.agents.creator import CreatorAgent
 from ortobahn.agents.cto import CTOAgent
 from ortobahn.agents.engagement import EngagementAgent
+from ortobahn.agents.insight_generator import InsightGeneratorAgent
 from ortobahn.agents.legal import LegalAgent
 from ortobahn.agents.marketing import MarketingAgent
 from ortobahn.agents.ops import OpsAgent
@@ -47,6 +48,7 @@ from ortobahn.shared_insights import (
     PLATFORM_ISSUE,
     SharedInsightBus,
 )
+from ortobahn.smart_timing import SmartTimingOptimizer
 from ortobahn.style_evolution import StyleEvolution
 from ortobahn.webhooks import (
     EVENT_PIPELINE_COMPLETED,
@@ -135,6 +137,9 @@ class Pipeline:
         self.support = SupportAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection = ReflectionAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
         self.reflection.thinking_budget = settings.thinking_budget_reflection
+        self.insight_generator = InsightGeneratorAgent(
+            self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region
+        )
         self.cifix = (
             CIFixAgent(self.db, _api_key, _model, use_bedrock=_bedrock, bedrock_region=_region)
             if settings.cifix_enabled
@@ -165,6 +170,9 @@ class Pipeline:
                 _api_key,
                 _model,
                 bluesky_client=self.bluesky,
+                twitter_client=self.twitter,
+                linkedin_client=self.linkedin,
+                reddit_client=self.reddit,
                 max_replies_per_cycle=settings.engagement_max_replies,
                 reply_confidence_threshold=settings.engagement_confidence_threshold,
                 use_bedrock=_bedrock,
@@ -179,6 +187,7 @@ class Pipeline:
 
         # Intelligence modules
         self.cadence_optimizer = CadenceOptimizer(self.db) if settings.dynamic_cadence_enabled else None
+        self.smart_timing = SmartTimingOptimizer(self.db)
         self.post_feedback = (
             PostFeedbackLoop(
                 self.db,
@@ -596,6 +605,22 @@ class Pipeline:
             logger.info("[2/14] Analytics Agent analyzing past performance...")
             analytics_report = self.analytics.run(run_id)
             logger.info(f"  -> {analytics_report.total_posts} posts analyzed")
+
+            # 1.2a Smart Timing: update preferred posting hours from engagement data
+            try:
+                updated = self.smart_timing.update_client_posting_hours(client_id)
+                if updated:
+                    logger.info("  -> Smart Timing: posting hours updated")
+            except Exception as e:
+                logger.warning(f"  -> Smart Timing error (non-fatal): {e}")
+
+            # 1.2b Insight Generator: explain high-performing posts
+            try:
+                insight_report = self.insight_generator.run(run_id, client_id=client_id)
+                if insight_report.insights_generated:
+                    logger.info(f"  -> Generated {insight_report.insights_generated} post insight(s)")
+            except Exception as e:
+                logger.warning(f"  -> Insight Generator error (non-fatal): {e}")
 
             # 1.3 Reflection Agent
             logger.info("[3/14] Reflection Agent analyzing patterns...")

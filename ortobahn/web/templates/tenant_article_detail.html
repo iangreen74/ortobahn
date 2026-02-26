@@ -67,6 +67,14 @@
         <button type="submit" class="contrast">Publish</button>
     </form>
     {% endif %}
+    <form method="post" action="/my/repurpose/article-to-series/{{ article.id }}" style="margin:0;display:flex;gap:0.5rem;align-items:center;">
+        <select name="num_posts" style="font-size:0.85em;padding:4px 8px;width:auto;">
+            <option value="3" selected>3 posts</option>
+            <option value="4">4 posts</option>
+            <option value="5">5 posts</option>
+        </select>
+        <button type="submit" class="secondary">Create Post Series</button>
+    </form>
 </div>
 
 <article style="line-height:1.8;max-width:70ch;">

@@ -174,3 +174,38 @@ async def tenant_save_credentials(
         logger.info(f"Client {client['id']} re-activated after credential update")
 
     return RedirectResponse("/my/settings?msg=saved", status_code=303)
+
+
+@router.post("/settings/digest")
+async def tenant_digest_settings(request: Request, client: AuthClient):
+    """Update weekly digest email preferences."""
+    db = request.app.state.db
+    form = await request.form()
+    digest_enabled = 1 if form.get("digest_enabled") == "on" else 0
+    digest_email = str(form.get("digest_email", "")).strip()
+    digest_day = int(str(form.get("digest_day", "1")))
+    digest_day = max(0, min(6, digest_day))
+    digest_hour = int(str(form.get("digest_hour", "9")))
+    digest_hour = max(0, min(23, digest_hour))
+    db.update_client(
+        client["id"],
+        {
+            "digest_enabled": digest_enabled,
+            "digest_email": digest_email,
+            "digest_day": digest_day,
+            "digest_hour": digest_hour,
+        },
+    )
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)
+
+
+@router.post("/settings/engagement")
+async def tenant_engagement_settings(request: Request, client: AuthClient):
+    """Update engagement autopilot mode."""
+    db = request.app.state.db
+    form = await request.form()
+    mode = str(form.get("engagement_mode", "auto")).strip()
+    if mode not in ("auto", "draft", "off"):
+        mode = "auto"
+    db.update_client(client["id"], {"engagement_mode": mode})
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)

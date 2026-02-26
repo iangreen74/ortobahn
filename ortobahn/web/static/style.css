@@ -1249,3 +1249,77 @@ footer p {
     transition: width 0.4s ease;
     min-width: 2px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Content Calendar
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.calendar-container { margin: 1rem 0; }
+
+.calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.calendar-header h3 { margin: 0; }
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.calendar-dow {
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted-color, #888);
+    padding: 0.5rem 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.calendar-cell {
+    min-height: 80px;
+    background: var(--card-background-color, #1a1a2e);
+    border-radius: 6px;
+    padding: 0.4rem;
+    position: relative;
+    transition: background 0.15s;
+}
+.calendar-cell:hover:not(.empty) {
+    background: var(--card-sectionning-background-color, #252540);
+}
+.calendar-cell.empty {
+    background: transparent;
+    min-height: 40px;
+}
+.calendar-cell.today {
+    outline: 2px solid #6366f1;
+    outline-offset: -2px;
+}
+
+.calendar-day-num {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted-color, #888);
+    margin-bottom: 0.25rem;
+}
+.calendar-cell.today .calendar-day-num { color: #6366f1; }
+
+.calendar-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.calendar-dot {
+    font-size: 0.65rem;
+    padding: 1px 4px;
+    cursor: default;
+}
+.calendar-more {
+    font-size: 0.65rem;
+    color: var(--muted-color, #888);
+}

@@ -1,7 +1,6 @@
 # S3 bucket for AI-generated images
-
 resource "aws_s3_bucket" "images" {
-  bucket = var.image_bucket_name
+  bucket = "ortobahn-images"
 }
 
 resource "aws_s3_bucket_public_access_block" "images" {
@@ -17,7 +16,6 @@ resource "aws_s3_bucket_public_access_block" "images" {
 resource "aws_s3_bucket_policy" "images_public_read" {
   bucket = aws_s3_bucket.images.id
 
-  # Wait for public access block to be configured first
   depends_on = [aws_s3_bucket_public_access_block.images]
 
   policy = jsonencode({
@@ -46,7 +44,39 @@ resource "aws_s3_bucket_lifecycle_configuration" "images" {
     }
 
     expiration {
-      days = var.image_expiry_days
+      days = 90
     }
   }
+}
+
+# IAM policy for Bedrock image generation + S3 storage
+resource "aws_iam_policy" "image_gen" {
+  name        = "ortobahn-image-gen"
+  description = "Allows ECS tasks to generate images via Bedrock and store them in S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "BedrockInvokeModel"
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-image-generator-v2:0"
+      },
+      {
+        Sid    = "S3WriteImages"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+        ]
+        Resource = "${aws_s3_bucket.images.arn}/images/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "image_gen" {
+  role       = var.task_role_name
+  policy_arn = aws_iam_policy.image_gen.arn
 }

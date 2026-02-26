@@ -47,6 +47,9 @@ class EngagementAgent(BaseAgent):
         api_key,
         model="claude-sonnet-4-5-20250929",
         bluesky_client=None,
+        twitter_client=None,
+        linkedin_client=None,
+        reddit_client=None,
         max_replies_per_cycle: int = 3,
         reply_confidence_threshold: float = 0.75,
         use_bedrock: bool = False,
@@ -54,6 +57,9 @@ class EngagementAgent(BaseAgent):
     ):
         super().__init__(db, api_key, model, use_bedrock=use_bedrock, bedrock_region=bedrock_region)
         self.bluesky = bluesky_client
+        self.twitter = twitter_client
+        self.linkedin = linkedin_client
+        self.reddit = reddit_client
         self.max_replies_per_cycle = max_replies_per_cycle
         self.reply_confidence_threshold = reply_confidence_threshold
 
@@ -94,8 +100,21 @@ class EngagementAgent(BaseAgent):
         return None
 
     def run(self, run_id: str, client_id: str = "default", dry_run: bool = False, **kwargs) -> EngagementResult:
-        """Check notifications and reply to relevant mentions."""
+        """Check notifications and reply to relevant mentions.
+
+        Respects the client's engagement_mode:
+        - 'auto': post replies immediately if above confidence threshold
+        - 'draft': save replies for manual review
+        - 'off': skip engagement entirely
+        """
         result = EngagementResult()
+
+        # Check client engagement mode
+        client_data = self.db.get_client(client_id)
+        engagement_mode = (client_data.get("engagement_mode") or "auto") if client_data else "auto"
+        if engagement_mode == "off":
+            logger.info("[engagement] Engagement disabled for %s", client_id)
+            return result
 
         if not self.bluesky:
             logger.info("[engagement] No Bluesky client configured, skipping")
@@ -133,7 +152,7 @@ class EngagementAgent(BaseAgent):
         replies = self._draft_replies(notifications, brand_voice, memory_context)
         result.replies_drafted = len(replies)
 
-        # 4. Post high-confidence replies
+        # 4. Post or draft high-confidence replies
         for reply in replies[: self.max_replies_per_cycle]:
             if reply.confidence < self.reply_confidence_threshold:
                 logger.info(f"[engagement] Skipping low-confidence reply ({reply.confidence:.2f})")
@@ -144,10 +163,18 @@ class EngagementAgent(BaseAgent):
                 result.replies.append(reply)
                 continue
 
+            if engagement_mode == "draft":
+                # Save as draft for manual review
+                self._record_reply(run_id, client_id, reply, posted_uri="", status="draft")
+                result.replies_drafted += 1
+                result.replies.append(reply)
+                logger.info("[engagement] Drafted reply for review: %s", reply.reply_text[:60])
+                continue
+
             try:
                 posted_uri = self._post_reply_with_retry(reply)
                 if posted_uri:
-                    self._record_reply(run_id, client_id, reply, posted_uri)
+                    self._record_reply(run_id, client_id, reply, posted_uri, status="posted")
                     result.replies_posted += 1
                     result.replies.append(reply)
                     logger.info("[engagement] Posted reply to %s", reply.notification_uri[:30])
@@ -317,15 +344,23 @@ class EngagementAgent(BaseAgent):
             logger.warning(f"[engagement] Failed to post reply: {e}")
         return None
 
-    def _record_reply(self, run_id: str, client_id: str, reply: EngagementReply, posted_uri: str) -> None:
+    def _record_reply(
+        self,
+        run_id: str,
+        client_id: str,
+        reply: EngagementReply,
+        posted_uri: str,
+        status: str = "posted",
+        platform: str = "bluesky",
+    ) -> None:
         """Record the reply in the database."""
         import uuid
 
         self.db.execute(
             """INSERT INTO engagement_replies
                 (id, run_id, client_id, notification_uri, notification_text,
-                 reply_text, reply_uri, confidence, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                 reply_text, reply_uri, confidence, platform, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
             (
                 str(uuid.uuid4())[:8],
                 run_id,
@@ -335,6 +370,8 @@ class EngagementAgent(BaseAgent):
                 reply.reply_text[:500],
                 posted_uri,
                 reply.confidence,
+                platform,
+                status,
             ),
             commit=True,
         )

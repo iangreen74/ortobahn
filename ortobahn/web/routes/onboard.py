@@ -323,11 +323,12 @@ async def interview_page(request: Request):
 @router.get("/onboard/interview/start", response_class=HTMLResponse)
 async def interview_start(request: Request):
     """Initialize interview and return first AI message."""
-    state = {"step": 1, "answers": {}, "messages": []}
+    messages: list[dict[str, str]] = []
     first_msg = STEP_QUESTIONS[1]
-    state["messages"].append({"role": "ai", "text": first_msg})
+    messages.append({"role": "ai", "text": first_msg})
+    state: dict[str, object] = {"step": 1, "answers": {}, "messages": messages}
 
-    html = _render_messages(state["messages"], state["step"])
+    html = _render_messages(messages, 1)
     response = HTMLResponse(html)
     response.set_cookie(
         INTERVIEW_COOKIE,

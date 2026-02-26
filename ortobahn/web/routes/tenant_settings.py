@@ -183,9 +183,9 @@ async def tenant_digest_settings(request: Request, client: AuthClient):
     form = await request.form()
     digest_enabled = 1 if form.get("digest_enabled") == "on" else 0
     digest_email = str(form.get("digest_email", "")).strip()
-    digest_day = int(form.get("digest_day", "1"))
+    digest_day = int(str(form.get("digest_day", "1")))
     digest_day = max(0, min(6, digest_day))
-    digest_hour = int(form.get("digest_hour", "9"))
+    digest_hour = int(str(form.get("digest_hour", "9")))
     digest_hour = max(0, min(23, digest_hour))
     db.update_client(
         client["id"],

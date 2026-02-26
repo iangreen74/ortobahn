@@ -162,7 +162,7 @@ class InsightGeneratorAgent(BaseAgent):
 
         try:
             # Extract JSON from response
-            text = response.strip()
+            text = str(response).strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             data = json.loads(text)

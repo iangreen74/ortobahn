@@ -201,8 +201,8 @@ async def repurpose_article_to_series(
     db = request.app.state.db
 
     form = await request.form()
-    platform = form.get("platform", "bluesky")
-    num_posts = int(form.get("num_posts", "3"))
+    platform = str(form.get("platform", "bluesky"))
+    num_posts = int(str(form.get("num_posts", "3")))
     num_posts = max(2, min(5, num_posts))
 
     repurposer = Repurposer(db)

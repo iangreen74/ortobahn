@@ -17,6 +17,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("ortobahn.shared_insights")
 
+
+def _parse_dt(val: str | datetime) -> datetime:
+    """Parse an ISO datetime string to a timezone-aware datetime."""
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=timezone.utc)
+        return val
+    try:
+        dt = datetime.fromisoformat(str(val))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc)
+
 # ---------------------------------------------------------------------------
 # Insight type constants
 # ---------------------------------------------------------------------------
@@ -132,40 +147,30 @@ class SharedInsightBus:
 
         ``since_hours`` defaults to 168 (7 days).
         """
-        now = datetime.now(timezone.utc)
-        cutoff = datetime(
-            now.year,
-            now.month,
-            now.day,
-            now.hour,
-            now.minute,
-            now.second,
-            tzinfo=timezone.utc,
-        )
-        # Shift back by since_hours
         from datetime import timedelta
 
-        cutoff_str = (cutoff - timedelta(hours=since_hours)).isoformat()
+        now = datetime.now(timezone.utc)
+        cutoff_str = (now - timedelta(hours=since_hours)).isoformat()
 
         if insight_type:
             rows = self.db.fetchall(
-                """SELECT *, (confidence * (1.0 / (1 + (julianday('now') - julianday(updated_at))))) AS relevance
-                   FROM shared_insights
-                   WHERE insight_type = ? AND confidence >= ? AND updated_at >= ?
-                   ORDER BY relevance DESC
-                   LIMIT ?""",
-                (insight_type, min_confidence, cutoff_str, limit),
+                """SELECT * FROM shared_insights
+                   WHERE insight_type = ? AND confidence >= ? AND updated_at >= ?""",
+                (insight_type, min_confidence, cutoff_str),
             )
         else:
             rows = self.db.fetchall(
-                """SELECT *, (confidence * (1.0 / (1 + (julianday('now') - julianday(updated_at))))) AS relevance
-                   FROM shared_insights
-                   WHERE confidence >= ? AND updated_at >= ?
-                   ORDER BY relevance DESC
-                   LIMIT ?""",
-                (min_confidence, cutoff_str, limit),
+                """SELECT * FROM shared_insights
+                   WHERE confidence >= ? AND updated_at >= ?""",
+                (min_confidence, cutoff_str),
             )
-        return [dict(r) for r in rows]
+        results = [dict(r) for r in rows]
+        # Compute relevance in Python (backend-agnostic, replaces SQLite julianday)
+        for r in results:
+            age_days = (now - _parse_dt(r.get("updated_at", ""))).total_seconds() / 86400.0
+            r["relevance"] = r.get("confidence", 0) * (1.0 / (1 + age_days))
+        results.sort(key=lambda r: r["relevance"], reverse=True)
+        return results[:limit]
 
     # ------------------------------------------------------------------
     # Agent-scoped query
@@ -178,14 +183,17 @@ class SharedInsightBus:
 
         placeholders = ",".join("?" for _ in types)
         rows = self.db.fetchall(
-            f"""SELECT *, (confidence * (1.0 / (1 + (julianday('now') - julianday(updated_at))))) AS relevance
-                FROM shared_insights
-                WHERE insight_type IN ({placeholders}) AND confidence >= 0.3
-                ORDER BY relevance DESC
-                LIMIT ?""",
-            (*types, limit),
+            f"""SELECT * FROM shared_insights
+                WHERE insight_type IN ({placeholders}) AND confidence >= 0.3""",
+            tuple(types),
         )
-        return [dict(r) for r in rows]
+        now = datetime.now(timezone.utc)
+        results = [dict(r) for r in rows]
+        for r in results:
+            age_days = (now - _parse_dt(r.get("updated_at", ""))).total_seconds() / 86400.0
+            r["relevance"] = r.get("confidence", 0) * (1.0 / (1 + age_days))
+        results.sort(key=lambda r: r["relevance"], reverse=True)
+        return results[:limit]
 
     # ------------------------------------------------------------------
     # Summarize

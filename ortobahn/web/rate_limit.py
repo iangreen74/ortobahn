@@ -139,6 +139,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path.startswith("/static/"):
             return True
 
+        # Skip authenticated HTMX partials (already behind auth middleware)
+        if path.startswith("/my/api/partials/") and request.headers.get("hx-request") == "true":
+            return True
+
         return False
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -162,16 +166,31 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         else:
             # Rate limit exceeded - return 429
-            retry_after = int(reset_time - current_time)
+            retry_after = max(1, int(reset_time - current_time))
             logger.warning(f"Rate limit exceeded for IP {ip}: {limit} req/{self.window_seconds}s")
-            response = JSONResponse(
-                status_code=429,
-                content={
-                    "error": "rate_limit_exceeded",
-                    "message": f"Rate limit of {limit} requests per {self.window_seconds} seconds exceeded",
-                    "retry_after": retry_after,
-                },
-            )
+
+            # Return HTML for HTMX requests so it renders in the page
+            is_htmx = request.headers.get("hx-request") == "true"
+            if is_htmx:
+                from starlette.responses import HTMLResponse
+
+                response = HTMLResponse(
+                    status_code=429,
+                    content=(
+                        '<div class="rate-limit-notice" style="text-align:center;padding:2rem;color:var(--muted-color,#888);">'
+                        f"<p>Too many requests. Retrying in {retry_after}s...</p>"
+                        "</div>"
+                    ),
+                )
+            else:
+                response = JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "rate_limit_exceeded",
+                        "message": f"Rate limit of {limit} requests per {self.window_seconds} seconds exceeded",
+                        "retry_after": retry_after,
+                    },
+                )
             response.headers["Retry-After"] = str(retry_after)
 
         # Add rate limit headers to all responses

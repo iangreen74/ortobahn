@@ -135,8 +135,21 @@ class CreatorAgent(BaseAgent):
         for draft in drafts.posts:
             max_chars = self._get_max_chars(draft.platform, draft.content_type)
             if len(draft.text) > max_chars:
-                draft.text = draft.text[: max_chars - 3] + "..."
-                draft.confidence = min(draft.confidence, 0.5)
+                overage_pct = (len(draft.text) - max_chars) / max_chars
+                # Truncate at word boundary when possible
+                truncated = draft.text[:max_chars]
+                last_space = truncated.rfind(" ")
+                if last_space > max_chars * 0.8:
+                    draft.text = truncated[:last_space]
+                else:
+                    draft.text = draft.text[: max_chars - 1] + "\u2026"
+                # Graduated penalty — small overages shouldn't kill publishability
+                if overage_pct < 0.15:
+                    draft.confidence = max(draft.confidence - 0.1, 0.6)
+                elif overage_pct < 0.4:
+                    draft.confidence = max(draft.confidence - 0.2, 0.5)
+                else:
+                    draft.confidence = min(draft.confidence, 0.5)
 
         self.log_decision(
             run_id=run_id,

@@ -144,6 +144,11 @@ async def tenant_dashboard(request: Request, client: AuthClient):
     )
     total_reviews = review_count_row["c"] if review_count_row else 0
 
+    # Feature flags
+    image_gen_enabled = bool(client.get("image_generation_enabled"))
+    articles_enabled = bool(client.get("article_enabled"))
+    auto_publish = bool(client.get("auto_publish"))
+
     return templates.TemplateResponse(
         "tenant_dashboard.html",
         {
@@ -164,6 +169,9 @@ async def tenant_dashboard(request: Request, client: AuthClient):
             "article_count": article_count,
             "voice_confidence": voice_confidence,
             "total_reviews": total_reviews,
+            "image_gen_enabled": image_gen_enabled,
+            "articles_enabled": articles_enabled,
+            "auto_publish": auto_publish,
         },
     )
 

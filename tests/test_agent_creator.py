@@ -92,7 +92,9 @@ class TestCreatorAgent:
             )
 
         assert len(result.posts[0].text) <= 280
-        assert result.posts[0].confidence <= 0.5
+        # Small overage (3.6%) → graduated penalty, not hard cap
+        assert result.posts[0].confidence < 0.9
+        assert result.posts[0].confidence >= 0.6
 
     def test_truncates_long_generic_posts(self, test_db, mock_llm_response):
         long_json = json.dumps(
@@ -116,7 +118,9 @@ class TestCreatorAgent:
             result = agent.run(run_id="run-1", content_plan=_make_plan(), strategy=_make_strategy())
 
         assert len(result.posts[0].text) <= 500
-        assert result.posts[0].confidence <= 0.5
+        # Small overage (2%) → graduated penalty, not hard cap
+        assert result.posts[0].confidence < 0.9
+        assert result.posts[0].confidence >= 0.6
 
     def test_ad_headline_truncation(self, test_db, mock_llm_response):
         long_json = json.dumps(

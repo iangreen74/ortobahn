@@ -136,6 +136,13 @@
     {% else %}
     <p class="create-subtitle"><a href="/my/settings">Connect a platform</a> to start publishing</p>
     {% endif %}
+    <div class="feature-flags" style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem;">
+        {% if auto_publish %}<span class="badge completed" style="font-size: 0.75rem;">Auto-publish</span>{% endif %}
+        {% if image_gen_enabled %}<span class="badge completed" style="font-size: 0.75rem;">AI Images</span>{% endif %}
+        {% if articles_enabled %}<span class="badge completed" style="font-size: 0.75rem;">Articles</span>{% endif %}
+        {% if not auto_publish %}<span class="badge draft" style="font-size: 0.75rem;">Review mode</span>{% endif %}
+        {% if not image_gen_enabled %}<span class="badge" style="font-size: 0.75rem; opacity: 0.5;">Images off</span>{% endif %}
+    </div>
     {% if draft_count > 0 %}
     <p class="create-subtitle" style="margin-top: 0.5rem;">
         <strong>{{ draft_count }}</strong> draft{{ 's' if draft_count != 1 else '' }} awaiting review

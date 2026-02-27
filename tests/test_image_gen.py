@@ -137,6 +137,7 @@ class TestImageGenerator:
         call_kwargs = mock_bedrock.invoke_model.call_args[1]
         assert call_kwargs["modelId"] == "amazon.titan-image-generator-v2:0"
         body = json.loads(call_kwargs["body"])
+        assert body["taskType"] == "TEXT_IMAGE"
         assert body["textToImageParams"]["text"] == "beautiful landscape"
         assert body["imageGenerationConfig"]["width"] == 1024
         assert body["imageGenerationConfig"]["height"] == 1024

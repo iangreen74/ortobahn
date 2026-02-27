@@ -55,12 +55,13 @@ class ImageGenerator:
 
         body = json.dumps(
             {
+                "taskType": "TEXT_IMAGE",
                 "textToImageParams": {"text": prompt},
                 "imageGenerationConfig": {
                     "numberOfImages": 1,
                     "width": 1024,
                     "height": 1024,
-                    "quality": "standard",
+                    "cfgScale": 8.0,
                 },
             }
         )

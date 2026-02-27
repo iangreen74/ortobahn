@@ -1,0 +1,32 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Images{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <h1>Images</h1>
+    <p class="subtitle">AI-generated images for <strong>{{ client.name }}</strong></p>
+  </div>
+
+  {% if not image_gen_enabled %}
+  <div class="flash-msg warning">
+    Image generation is disabled. <a href="/my/settings">Enable in Settings</a> to generate AI images for your posts.
+  </div>
+  {% endif %}
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <small style="opacity:0.6;">{{ total_images }} image{{ 's' if total_images != 1 else '' }} generated</small>
+    {% if image_gen_enabled %}
+    <span class="badge completed" style="font-size:0.75rem;">AI Images enabled</span>
+    {% else %}
+    <span class="badge" style="font-size:0.75rem;opacity:0.5;">AI Images disabled</span>
+    {% endif %}
+  </div>
+
+  <div id="images-grid"
+       hx-get="/my/api/partials/images-gallery"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <p style="text-align:center;opacity:0.5;">Loading images...</p>
+  </div>
+</div>
+{% endblock %}

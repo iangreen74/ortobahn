@@ -170,6 +170,19 @@ class TestAuthenticatedPages:
         assert resp.status_code == 200
         assert "Calendar" in resp.text
 
+    def test_images_renders_200(self, tmp_path):
+        """Images gallery page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/images")
+        assert resp.status_code == 200
+        assert "Images" in resp.text
+
+    def test_images_gallery_partial_200(self, tmp_path):
+        """Images gallery HTMX partial must return 200."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/api/partials/images-gallery", headers={"hx-request": "true"})
+        assert resp.status_code == 200
+
     def test_search_empty_returns_200(self, tmp_path):
         """Search with empty query must return empty 200."""
         _app, client, _cid = _create_authenticated_client(tmp_path)

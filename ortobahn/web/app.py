@@ -401,6 +401,7 @@ def create_app() -> FastAPI:
         tenant_calendar,
         tenant_content,
         tenant_dashboard,
+        tenant_images,
         tenant_insights,
         tenant_polling,
         tenant_posts,
@@ -425,6 +426,7 @@ def create_app() -> FastAPI:
     app.include_router(tenant_articles.router)
     app.include_router(tenant_billing.router)
     app.include_router(tenant_calendar.router)
+    app.include_router(tenant_images.router)
     app.include_router(tenant_polling.router)
     app.include_router(tenant_insights.router)
     app.include_router(tenant_search.router)

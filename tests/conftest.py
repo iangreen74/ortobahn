@@ -37,14 +37,32 @@ def test_settings():
     )
 
 
-def _pg_cleanup(db: Database) -> None:
-    """Truncate all tables between tests when running against PostgreSQL."""
+def _pg_reset(db: Database) -> None:
+    """Truncate all data tables and re-seed the default client for PostgreSQL.
+
+    Called *before* each test so every test starts with a clean DB + default client.
+    """
     tables = db.fetchall("SELECT tablename FROM pg_tables WHERE schemaname='public'")
     for t in tables:
         name = t["tablename"]
         if name == "schema_version":
             continue
         db.execute(f'TRUNCATE TABLE "{name}" CASCADE', commit=True)
+    # Re-seed the default client (migration 1 seeds it, but truncation removed it)
+    db.execute(
+        """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO NOTHING""",
+        (
+            "default",
+            "Ortobahn",
+            "Autonomous AI marketing engine",
+            "AI/Technology",
+            "tech-savvy professionals, founders, AI enthusiasts",
+            "authoritative but approachable",
+        ),
+        commit=True,
+    )
 
 
 @pytest.fixture
@@ -56,8 +74,8 @@ def test_db(tmp_path):
         from ortobahn.migrations import run_migrations
 
         run_migrations(db)
+        _pg_reset(db)
         yield db
-        _pg_cleanup(db)
         db.close()
     else:
         db = Database(tmp_path / "test.db")

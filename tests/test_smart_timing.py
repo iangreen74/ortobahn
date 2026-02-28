@@ -31,7 +31,6 @@ def _seed_client(test_db):
 @pytest.fixture()
 def _seed_posts(test_db, _seed_client):
     """Seed enough published posts at different hours for timing analysis."""
-    from datetime import datetime, timezone
 
     for i in range(10):
         hour = 9 + (i % 4)  # hours 9, 10, 11, 12 repeating

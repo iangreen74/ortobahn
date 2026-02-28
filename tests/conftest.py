@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,12 +37,41 @@ def test_settings():
     )
 
 
+def _pg_cleanup(db: Database) -> None:
+    """Truncate all tables between tests when running against PostgreSQL."""
+    tables = db.fetchall("SELECT tablename FROM pg_tables WHERE schemaname='public'")
+    for t in tables:
+        name = t["tablename"]
+        if name == "schema_version":
+            continue
+        db.execute(f'TRUNCATE TABLE "{name}" CASCADE', commit=True)
+
+
 @pytest.fixture
 def test_db(tmp_path):
-    """Fresh SQLite DB for each test."""
-    db = Database(tmp_path / "test.db")
-    yield db
-    db.close()
+    """Fresh DB for each test. Uses PostgreSQL when DATABASE_URL is set."""
+    database_url = os.environ.get("DATABASE_URL", "")
+    if database_url:
+        db = Database(database_url=database_url)
+        from ortobahn.migrations import run_migrations
+
+        run_migrations(db)
+        yield db
+        _pg_cleanup(db)
+        db.close()
+    else:
+        db = Database(tmp_path / "test.db")
+        yield db
+        db.close()
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip sqlite_only tests when running against PostgreSQL."""
+    if os.environ.get("DATABASE_URL"):
+        skip_sqlite = pytest.mark.skip(reason="SQLite-specific, skipped on PostgreSQL")
+        for item in items:
+            if "sqlite_only" in item.keywords:
+                item.add_marker(skip_sqlite)
 
 
 @pytest.fixture

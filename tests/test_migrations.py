@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ortobahn.db import Database
 from ortobahn.migrations import (
     EXPECTED_SCHEMA,
@@ -217,6 +219,7 @@ class TestValidateSchema:
         problems = validate_schema(test_db)
         assert any("stripe_events.event_type" in p for p in problems)
 
+    @pytest.mark.sqlite_only
     def test_validate_schema_expected_tables_complete(self, test_db):
         """Every table in EXPECTED_SCHEMA should exist in a migrated DB."""
         for table in EXPECTED_SCHEMA:

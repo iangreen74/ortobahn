@@ -90,6 +90,37 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
+  # PostgreSQL integration tests — catches dialect-specific bugs before prod
+  test-postgres:
+    runs-on: self-hosted
+    container: python:3.12-slim
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ortobahn_test
+          POSTGRES_PASSWORD: ortobahn_test
+          POSTGRES_DB: ortobahn_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq git > /dev/null
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: /root/.cache/pip
+          key: pip-pg-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-pg-3.12-
+      - run: pip install -e ".[dev,web]" --quiet
+      - name: Run tests against PostgreSQL
+        env:
+          DATABASE_URL: postgresql://ortobahn_test:ortobahn_test@postgres:5432/ortobahn_test
+        run: pytest -v --tb=short -x -m "not network" --no-cov
+
   # Multi-version compatibility — only on PRs, not every push
   test-compat:
     runs-on: self-hosted

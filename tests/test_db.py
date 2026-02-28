@@ -2,8 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 
 class TestDatabaseTables:
+    @pytest.mark.sqlite_only
     def test_tables_created(self, test_db):
         rows = test_db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row["name"] for row in rows]

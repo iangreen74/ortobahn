@@ -33,7 +33,7 @@ class SmartTimingOptimizer:
 
     def __init__(self, db: Database) -> None:
         self.db = db
-        self._is_postgres = getattr(db, "backend", "sqlite") == "postgres"
+        self._is_postgres = getattr(db, "backend", "sqlite") == "postgresql"
 
     def _hour_extract_sql(self) -> str:
         """Return SQL fragment to extract hour from published_at."""

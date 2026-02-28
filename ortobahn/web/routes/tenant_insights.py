@@ -22,6 +22,7 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     Queries the database directly -- no LLM call needed for speed.
     """
     insights: list[dict] = []
+    is_pg = getattr(db, "backend", "sqlite") == "postgresql"
 
     # Metrics live in a separate table; join to get engagement data
     _MJ = (
@@ -29,20 +30,28 @@ def _generate_insights(db, client_id: str) -> list[dict]:
         " AND m.id = (SELECT m2.id FROM metrics m2 WHERE m2.post_id = p.id ORDER BY m2.measured_at DESC LIMIT 1)"
     )
 
+    # Backend-agnostic SQL fragments for day-of-week and hour extraction
+    if is_pg:
+        _dow_expr = "EXTRACT(DOW FROM p.published_at::timestamp)::integer"
+        _hour_expr = "EXTRACT(HOUR FROM p.published_at::timestamp)::integer"
+    else:
+        _dow_expr = "CAST(strftime('%%w', p.published_at) AS INTEGER)"
+        _hour_expr = "CAST(strftime('%%H', p.published_at) AS INTEGER)"
+
     # ------------------------------------------------------------------
     # 1. Best posting day analysis
     # ------------------------------------------------------------------
     try:
         day_stats = db.fetchall(
-            "SELECT CASE CAST(strftime('%%w', p.published_at) AS INTEGER)"
+            f"SELECT CASE {_dow_expr}"
             "  WHEN 0 THEN 'Sunday' WHEN 1 THEN 'Monday' WHEN 2 THEN 'Tuesday'"
             "  WHEN 3 THEN 'Wednesday' WHEN 4 THEN 'Thursday'"
             "  WHEN 5 THEN 'Friday' WHEN 6 THEN 'Saturday' END as day_name,"
             " COUNT(*) as cnt,"
             " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
             " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
-            " GROUP BY strftime('%%w', p.published_at)"
-            " HAVING cnt >= 2"
+            f" GROUP BY {_dow_expr}"
+            " HAVING COUNT(*) >= 2"
             " ORDER BY avg_eng DESC",
             (client_id,),
         )
@@ -67,19 +76,19 @@ def _generate_insights(db, client_id: str) -> list[dict]:
                         }
                     )
     except Exception:
-        pass  # strftime not available on PostgreSQL
+        pass
 
     # ------------------------------------------------------------------
     # 2. Best posting hour analysis
     # ------------------------------------------------------------------
     try:
         hour_stats = db.fetchall(
-            "SELECT CAST(strftime('%%H', p.published_at) AS INTEGER) as hour,"
+            f"SELECT {_hour_expr} as hour,"
             " COUNT(*) as cnt,"
             " AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
             " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=? AND p.published_at IS NOT NULL"
-            " GROUP BY strftime('%%H', p.published_at)"
-            " HAVING cnt >= 2"
+            f" GROUP BY {_hour_expr}"
+            " HAVING COUNT(*) >= 2"
             " ORDER BY avg_eng DESC",
             (client_id,),
         )
@@ -100,7 +109,7 @@ def _generate_insights(db, client_id: str) -> list[dict]:
                     }
                 )
     except Exception:
-        pass  # strftime not available on PostgreSQL
+        pass
 
     # ------------------------------------------------------------------
     # 3. Content type / platform comparison
@@ -185,16 +194,21 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     # ------------------------------------------------------------------
     # 5. Posting cadence health
     # ------------------------------------------------------------------
+    from datetime import datetime, timedelta, timezone
+
+    _now = datetime.now(timezone.utc)
+    _7d_ago = (_now - timedelta(days=7)).isoformat()
+    _14d_ago = (_now - timedelta(days=14)).isoformat()
+
     recent_count_row = db.fetchone(
         "SELECT COUNT(*) as cnt FROM posts WHERE status='published' AND client_id=?"
-        " AND published_at >= datetime('now', '-7 days')",
-        (client_id,),
+        " AND published_at >= ?",
+        (client_id, _7d_ago),
     )
     prev_count_row = db.fetchone(
         "SELECT COUNT(*) as cnt FROM posts WHERE status='published' AND client_id=?"
-        " AND published_at >= datetime('now', '-14 days')"
-        " AND published_at < datetime('now', '-7 days')",
-        (client_id,),
+        " AND published_at >= ? AND published_at < ?",
+        (client_id, _14d_ago, _7d_ago),
     )
     recent_cnt = recent_count_row["cnt"] if recent_count_row else 0
     prev_cnt = prev_count_row["cnt"] if prev_count_row else 0
@@ -243,15 +257,14 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     recent_eng_row = db.fetchone(
         "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
         " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=?"
-        " AND p.published_at >= datetime('now', '-7 days')",
-        (client_id,),
+        " AND p.published_at >= ?",
+        (client_id, _7d_ago),
     )
     prev_eng_row = db.fetchone(
         "SELECT AVG(COALESCE(m.like_count,0)+COALESCE(m.repost_count,0)+COALESCE(m.reply_count,0)) as avg_eng"
         " FROM posts p" + _MJ + " WHERE p.status='published' AND p.client_id=?"
-        " AND p.published_at >= datetime('now', '-14 days')"
-        " AND p.published_at < datetime('now', '-7 days')",
-        (client_id,),
+        " AND p.published_at >= ? AND p.published_at < ?",
+        (client_id, _14d_ago, _7d_ago),
     )
     recent_eng = (recent_eng_row["avg_eng"] or 0) if recent_eng_row else 0
     prev_eng = (prev_eng_row["avg_eng"] or 0) if prev_eng_row else 0

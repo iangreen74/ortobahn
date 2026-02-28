@@ -361,6 +361,7 @@ class TestHealthCheck:
 
 
 class TestSQLiteUnaffected:
+    @pytest.mark.sqlite_only
     def test_sqlite_operations_work(self, tmp_path):
         """Full CRUD cycle on SQLite to confirm no regressions."""
         db = Database(db_path=tmp_path / "test.db")

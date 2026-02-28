@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from ortobahn.db import Database
@@ -200,9 +202,10 @@ class TestFlakiness:
             tracker.record_results(f"run-{i}", results)
 
         # Manually backdate all results to 30 days ago
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
         tracker_db.execute(
-            "UPDATE test_results SET created_at = datetime('now', '-30 days') WHERE test_name = ?",
-            ("tests/test_x.py::test_old",),
+            "UPDATE test_results SET created_at = ? WHERE test_name = ?",
+            (old_ts, "tests/test_x.py::test_old"),
             commit=True,
         )
 

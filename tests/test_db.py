@@ -465,11 +465,13 @@ class TestAccessLogs:
     def test_cleanup_access_logs(self, test_db):
         # Insert a log with a timestamp in the past
         import uuid
+        from datetime import timedelta, timezone
 
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
         test_db.execute(
             "INSERT INTO access_logs (id, timestamp, method, path, status_code, source_ip, user_agent) "
-            "VALUES (?, datetime('now', '-10 days'), ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), "GET", "/.env", 404, "1.2.3.4", "curl/7.64"),
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), old_ts, "GET", "/.env", 404, "1.2.3.4", "curl/7.64"),
             commit=True,
         )
 

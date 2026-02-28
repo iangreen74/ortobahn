@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 
 class MemoryMixin:
@@ -249,18 +250,20 @@ class MemoryMixin:
 
     def get_suspicious_access_logs(self, hours: int = 24) -> list[dict]:
         """Get suspicious access log entries from the last N hours."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
         return self.fetchall(
             "SELECT method, path, status_code, source_ip, user_agent, timestamp FROM access_logs "
             "WHERE (path LIKE '%%.env%%' OR path LIKE '%%/admin%%' OR path LIKE '%%/wp-%%' OR path LIKE '%%/phpmyadmin%%' OR status_code = 403) "
-            "AND timestamp >= datetime('now', ? || ' hours') ORDER BY timestamp DESC LIMIT 100",
-            (str(-hours),),
+            "AND timestamp >= ? ORDER BY timestamp DESC LIMIT 100",
+            (cutoff,),
         )
 
     def cleanup_access_logs(self, days: int = 7) -> int:
         """Remove access logs older than N days. Returns count deleted."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         result = self.execute(
-            "DELETE FROM access_logs WHERE timestamp < datetime('now', ? || ' days')",
-            (str(-days),),
+            "DELETE FROM access_logs WHERE timestamp < ?",
+            (cutoff,),
             commit=True,
         )
         return result.rowcount if hasattr(result, "rowcount") else 0
@@ -477,6 +480,7 @@ class MemoryMixin:
 
     def get_flaky_tests(self, window_days: int = 14, min_runs: int = 3) -> list[dict]:
         """Find tests with both pass and fail outcomes within the window."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).strftime("%Y-%m-%d %H:%M:%S")
         return self.fetchall(
             """SELECT
                 test_name,
@@ -485,13 +489,13 @@ class MemoryMixin:
                 SUM(CASE WHEN outcome IN ('failed', 'error') THEN 1 ELSE 0 END) as failures,
                 SUM(CASE WHEN outcome = 'passed' THEN 1 ELSE 0 END) as passes
             FROM test_results
-            WHERE created_at >= datetime('now', ? || ' days')
+            WHERE created_at >= ?
             GROUP BY test_name
             HAVING total_runs >= ?
                 AND failures > 0
                 AND passes > 0
             ORDER BY CAST(failures AS REAL) / total_runs DESC""",
-            (str(-window_days), min_runs),
+            (cutoff, min_runs),
         )
 
     # --- CI Errors (Structured Error Tracking) ---

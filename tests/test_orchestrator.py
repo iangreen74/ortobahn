@@ -286,9 +286,11 @@ class TestSubscriptionGuard:
             patch("ortobahn.orchestrator.fetch_feeds", return_value=[]),
         ):
             pipeline = Pipeline(settings, dry_run=True)
+            future_trial = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
             pipeline.db.execute(
                 "UPDATE clients SET internal=0, subscription_status='trialing', "
-                "trial_ends_at=datetime('now', '+7 days') WHERE id='default'",
+                "trial_ends_at=? WHERE id='default'",
+                (future_trial,),
                 commit=True,
             )
             result = pipeline.run_cycle()
@@ -322,9 +324,11 @@ class TestTrialExpiry:
         settings = _make_settings(tmp_path)
         pipeline = Pipeline(settings, dry_run=True)
         # Set trial that already expired
+        expired_trial = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pipeline.db.execute(
             "UPDATE clients SET internal=0, subscription_status='trialing', "
-            "trial_ends_at=datetime('now', '-1 day') WHERE id='default'",
+            "trial_ends_at=? WHERE id='default'",
+            (expired_trial,),
             commit=True,
         )
 

@@ -52,6 +52,12 @@ class SREAgent(BaseAgent):
             else:
                 platform_health[platform] = "no_data"
 
+        # Output volume: count published posts in last 48h vs pipeline runs
+        published_48h = sum(1 for p in posts if p.get("status") == "published")
+        draft_count = sum(1 for p in posts if p.get("status") == "draft")
+        completed_runs = sum(1 for r in recent_runs if r.get("status") == "completed")
+        output_ratio = published_48h / completed_runs if completed_runs > 0 else 0
+
         # Build context for LLM analysis
         avg_conf = f"{sum(confidences) / len(confidences):.2f}" if confidences else "N/A"
         min_conf = f"{min(confidences):.2f}" if confidences else "N/A"
@@ -63,6 +69,13 @@ Failed runs: {failed_runs}
 Success rate: {success_rate:.1%}
 Total tokens used: {total_tokens:,}
 Estimated cost: ${estimated_cost:.4f}
+
+## Output Volume (CRITICAL — check this carefully)
+Published posts (recent): {published_48h}
+Drafts awaiting review: {draft_count}
+Completed pipeline runs: {completed_runs}
+Posts per run ratio: {output_ratio:.1f}
+WARNING: If published posts is 0 but pipeline runs > 0, the platform is BROKEN and health_status MUST be "critical".
 
 ## Confidence Scores
 Recent posts: {len(confidences)}
@@ -91,7 +104,12 @@ Max confidence: {max_conf}
             report.alerts = [SREAlert(**a) for a in analysis.get("alerts", [])]
             report.recommendations = analysis.get("recommendations", [])
         except (json.JSONDecodeError, KeyError, TypeError):
-            report.health_status = "healthy" if success_rate > 0.8 else "degraded"
+            if completed_runs > 2 and published_48h == 0 and (draft_count > 0 or len(posts) > 0):
+                report.health_status = "critical"
+            elif success_rate > 0.8:
+                report.health_status = "healthy"
+            else:
+                report.health_status = "degraded"
 
         # Send Slack alert if health is degraded/critical (with deduplication)
         slack_url = kwargs.get("slack_webhook_url", "")

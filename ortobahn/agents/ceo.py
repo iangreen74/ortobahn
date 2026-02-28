@@ -110,6 +110,18 @@ class CEOAgent(BaseAgent):
     ) -> CEOReport:
         client_id = client.id if client else "default"
 
+        # Resolve client's configured target platforms
+        client_platforms = [Platform.BLUESKY]  # safe default
+        if client:
+            try:
+                client_platforms = [
+                    Platform(p.strip())
+                    for p in (client.target_platforms or "bluesky").split(",")
+                    if p.strip()
+                ]
+            except (ValueError, AttributeError):
+                pass
+
         # Check for existing valid strategy scoped to client
         existing = self.db.get_active_strategy(client_id=client_id)
         if existing:
@@ -121,6 +133,7 @@ class CEOAgent(BaseAgent):
                 posting_frequency=existing["posting_frequency"],
                 valid_until=to_datetime(existing["valid_until"]),
                 client_id=client_id,
+                target_platforms=client_platforms,
             )
             self.log_decision(
                 run_id=run_id,
@@ -143,7 +156,7 @@ class CEOAgent(BaseAgent):
                 client_competitive_positioning=client.competitive_positioning or "Not specified",
                 client_content_pillars=client.content_pillars or "Not specified",
                 client_company_story=client.company_story or "Not specified",
-                available_platforms=", ".join(p.value for p in Platform if p != Platform.BLUESKY),
+                available_platforms=", ".join(p.value for p in client_platforms),
             )
         else:
             system_prompt = None

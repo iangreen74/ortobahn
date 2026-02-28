@@ -603,7 +603,7 @@ class Pipeline:
 
             # 1.2 Analytics
             logger.info("[2/14] Analytics Agent analyzing past performance...")
-            analytics_report = self.analytics.run(run_id)
+            analytics_report = self.analytics.run(run_id, client_id=client_id)
             logger.info(f"  -> {analytics_report.total_posts} posts analyzed")
 
             # 1.2a Smart Timing: update preferred posting hours from engagement data
@@ -716,7 +716,9 @@ class Pipeline:
                 shared_insights=shared_insights_summary,
             )
             strategy = ceo_report.strategy
-            logger.info(f"  -> Themes: {strategy.themes}, Directives: {len(ceo_report.directives)}")
+            # Ensure strategy uses the client's configured platforms, not LLM defaults
+            strategy.target_platforms = publish_platforms
+            logger.info(f"  -> Themes: {strategy.themes}, Platforms: {[p.value for p in publish_platforms]}, Directives: {len(ceo_report.directives)}")
 
             # Process executive directives
             if ceo_report.directives:

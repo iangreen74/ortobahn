@@ -136,8 +136,8 @@ def cmd_schedule(args):
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    # Parse platforms
-    platforms = [Platform(p.strip()) for p in args.platforms.split(",") if p.strip()]
+    # Parse CLI platforms override (if provided)
+    cli_platforms = [Platform(p.strip()) for p in args.platforms.split(",") if p.strip()] if args.platforms else None
 
     pipeline = Pipeline(settings, dry_run=dry_run)
 
@@ -166,12 +166,7 @@ def cmd_schedule(args):
                 except Exception as e:
                     console.print(f"  [red]Watchdog failed: {e}[/red]")
 
-            # Refresh engagement metrics from all platforms (non-fatal)
-            try:
-                pipeline.analytics._refresh_metrics()
-                console.print("  [dim]Metrics refreshed[/dim]")
-            except Exception as e:
-                console.print(f"  [yellow]Metric refresh warning: {e}[/yellow]")
+            # Note: per-client metric refresh happens inside each run_cycle() call
 
             try:
                 if args.client:
@@ -301,10 +296,11 @@ def cmd_schedule(args):
                         f"(platforms due: {','.join(due_platforms)})[/dim]"
                     )
                     try:
+                        client_platforms = cli_platforms or [Platform(p) for p in target_plats]
                         override = [Platform(p) for p in due_platforms]
                         result = pipeline.run_cycle(
                             client_id=cid,
-                            target_platforms=override if platform_schedule else platforms,
+                            target_platforms=client_platforms,
                             platforms_override=override if platform_schedule else None,
                         )
                         total_published += result["posts_published"]

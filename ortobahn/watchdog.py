@@ -97,6 +97,7 @@ class Watchdog:
         findings.extend(self.probe_failure_rate_trend())
         findings.extend(self.probe_credential_expiry())
         findings.extend(self.probe_engagement_decline())
+        findings.extend(self.probe_zero_output())
         findings.extend(self.probe_deploy_metrics())
         if self.settings.watchdog_credential_check:
             findings.extend(self.probe_credential_health())
@@ -428,6 +429,84 @@ class Watchdog:
                         client_id=cid,
                     )
                 )
+        return findings
+
+    def probe_zero_output(self) -> list[Finding]:
+        """Detect clients with pipeline runs but zero posts published recently.
+
+        Catches the silent-failure scenario where the pipeline completes
+        but produces no publishable content.
+        """
+        findings = []
+        now = datetime.now(timezone.utc)
+        lookback_hours = 48  # Check last 48 hours
+        cutoff = (now - timedelta(hours=lookback_hours)).isoformat()
+
+        clients = self.db.fetchall("SELECT id, name, posting_interval_hours FROM clients WHERE active=1")
+        for client in clients:
+            cid = client["id"]
+            interval = client.get("posting_interval_hours") or 6
+
+            # Count pipeline runs in the window
+            runs_row = self.db.fetchone(
+                "SELECT COUNT(*) as cnt FROM pipeline_runs"
+                " WHERE client_id=? AND started_at > ? AND status='completed'",
+                (cid, cutoff),
+            )
+            run_count = runs_row["cnt"] if runs_row else 0
+            if run_count == 0:
+                continue  # No runs means no expectation of output
+
+            # Count posts published in the window
+            posts_row = self.db.fetchone(
+                "SELECT COUNT(*) as cnt FROM posts"
+                " WHERE client_id=? AND published_at > ? AND status='published'",
+                (cid, cutoff),
+            )
+            post_count = posts_row["cnt"] if posts_row else 0
+
+            # Count drafts created (to distinguish "no output" from "drafts not published")
+            drafts_row = self.db.fetchone(
+                "SELECT COUNT(*) as cnt FROM posts"
+                " WHERE client_id=? AND created_at > ? AND status='draft'",
+                (cid, cutoff),
+            )
+            draft_count = drafts_row["cnt"] if drafts_row else 0
+
+            # Alert if runs happened but zero posts published
+            expected_min = max(1, lookback_hours // interval)
+            if post_count == 0 and run_count >= 2:
+                detail = (
+                    f"Client {client['name']}: {run_count} pipeline runs in last {lookback_hours}h "
+                    f"but 0 posts published"
+                )
+                if draft_count > 0:
+                    detail += f" ({draft_count} drafts sitting in review queue)"
+                findings.append(
+                    Finding(
+                        probe="zero_output",
+                        severity="critical",
+                        detail=detail,
+                        client_id=cid,
+                        auto_fixable=False,
+                    )
+                )
+            elif post_count > 0 and post_count < expected_min // 2 and run_count >= 3:
+                # Severely underperforming — publishing way less than expected
+                findings.append(
+                    Finding(
+                        probe="zero_output",
+                        severity="warning",
+                        detail=(
+                            f"Client {client['name']}: only {post_count} posts published "
+                            f"from {run_count} pipeline runs in last {lookback_hours}h "
+                            f"(expected ~{expected_min})"
+                        ),
+                        client_id=cid,
+                        auto_fixable=False,
+                    )
+                )
+
         return findings
 
     def probe_deploy_metrics(self) -> list[Finding]:

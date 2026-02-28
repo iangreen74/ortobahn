@@ -34,28 +34,28 @@ class AnalyticsAgent(BaseAgent):
         self.linkedin = linkedin_client
         self.reddit = reddit_client
 
-    def run(self, run_id: str) -> AnalyticsReport:
-        # Build report from DB
-        report = self.db.build_analytics_report()
+    def run(self, run_id: str, client_id: str | None = None, **kwargs) -> AnalyticsReport:
+        # Build report from DB (scoped to client)
+        report = self.db.build_analytics_report(client_id=client_id)
 
         # If we have posts, refresh metrics from all platforms
         if report.total_posts > 0 and (self.bluesky or self.twitter or self.linkedin or self.reddit):
-            self._refresh_metrics()
+            self._refresh_metrics(client_id=client_id)
 
             # Rebuild report with fresh metrics
-            report = self.db.build_analytics_report()
+            report = self.db.build_analytics_report(client_id=client_id)
 
         # If no posts yet, return empty report
         if report.total_posts == 0:
             self.log_decision(
                 run_id=run_id,
-                input_summary="No posts to analyze",
+                input_summary=f"No posts to analyze for client {client_id or 'all'}",
                 output_summary="Empty analytics report (first run)",
             )
             return report
 
         # Use LLM to generate narrative summary and recommendations
-        posts_data = self.db.get_recent_posts_with_metrics(limit=20)
+        posts_data = self.db.get_recent_posts_with_metrics(limit=20, client_id=client_id)
         user_message = f"""## Performance Data (last 7 days)
 Total posts: {report.total_posts}
 Total likes: {report.total_likes}
@@ -88,9 +88,9 @@ Avg engagement per post: {report.avg_engagement_per_post}
         )
         return report
 
-    def _refresh_metrics(self):
+    def _refresh_metrics(self, client_id: str | None = None):
         """Fetch latest metrics from all platforms for recent posts."""
-        posts = self.db.get_recent_published_posts(days=7)
+        posts = self.db.get_recent_published_posts(days=7, client_id=client_id)
         for post in posts:
             platform = post.get("platform", "generic")
             uri = post.get("platform_uri") or post.get("bluesky_uri")

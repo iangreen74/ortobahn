@@ -712,3 +712,88 @@ class TestAutoRemediation:
         client = test_db.get_client(cid)
         assert client["status"] == "credential_issue"
         assert client["status"] in ("paused", "credential_issue")
+
+
+class TestProbeZeroOutput:
+    def _insert_completed_run(self, db, client_id, hours_ago=6):
+        rid = str(uuid.uuid4())
+        started = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+        completed = (datetime.now(timezone.utc) - timedelta(hours=hours_ago - 1)).isoformat()
+        db.execute(
+            "INSERT INTO pipeline_runs (id, mode, started_at, completed_at, status, client_id) "
+            "VALUES (?, 'single', ?, ?, 'completed', ?)",
+            (rid, started, completed, client_id),
+            commit=True,
+        )
+        return rid
+
+    def _insert_post(self, db, client_id, status="draft", hours_ago=6):
+        pid = str(uuid.uuid4())
+        created = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+        published = created if status == "published" else None
+        db.execute(
+            "INSERT INTO posts (id, text, status, run_id, client_id, created_at, published_at) "
+            "VALUES (?, 'test', ?, 'run-1', ?, ?, ?)",
+            (pid, status, client_id, created, published),
+            commit=True,
+        )
+        return pid
+
+    def test_detects_zero_output_with_runs(self, test_db):
+        """Multiple completed runs but no published posts = critical."""
+        cid = "default"
+        for _ in range(3):
+            self._insert_completed_run(test_db, cid)
+        # Add drafts to show pipeline produced something
+        for _ in range(2):
+            self._insert_post(test_db, cid, status="draft")
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_zero_output()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 1
+        assert matching[0].severity == "critical"
+        assert matching[0].probe == "zero_output"
+        assert "0 posts published" in matching[0].detail
+        assert "drafts sitting" in matching[0].detail
+
+    def test_no_finding_when_posts_published(self, test_db):
+        """Normal operation: pipeline runs produce published posts."""
+        cid = "default"
+        for _ in range(3):
+            self._insert_completed_run(test_db, cid)
+        for _ in range(3):
+            self._insert_post(test_db, cid, status="published")
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_zero_output()
+
+        matching = [f for f in findings if f.client_id == cid]
+        assert len(matching) == 0
+
+    def test_no_finding_when_no_runs(self, test_db):
+        """No pipeline runs means no expectation of output."""
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_zero_output()
+
+        matching = [f for f in findings if f.client_id == "default"]
+        assert len(matching) == 0
+
+    def test_warning_on_low_output(self, test_db):
+        """Few posts from many runs triggers a warning."""
+        cid = "default"
+        # 4 runs in last 48h with interval=6h => expected_min ~8
+        for _ in range(4):
+            self._insert_completed_run(test_db, cid)
+        # Only 1 published post (less than expected_min // 2)
+        self._insert_post(test_db, cid, status="published")
+
+        watchdog = Watchdog(db=test_db, settings=_make_settings())
+        findings = watchdog.probe_zero_output()
+
+        matching = [f for f in findings if f.client_id == cid]
+        # Should get a warning about low output
+        warnings = [f for f in matching if f.severity == "warning"]
+        assert len(warnings) >= 1
+        assert "only 1 posts published" in warnings[0].detail

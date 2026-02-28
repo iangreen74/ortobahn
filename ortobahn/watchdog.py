@@ -449,8 +449,7 @@ class Watchdog:
 
             # Count pipeline runs in the window
             runs_row = self.db.fetchone(
-                "SELECT COUNT(*) as cnt FROM pipeline_runs"
-                " WHERE client_id=? AND started_at > ? AND status='completed'",
+                "SELECT COUNT(*) as cnt FROM pipeline_runs WHERE client_id=? AND started_at > ? AND status='completed'",
                 (cid, cutoff),
             )
             run_count = runs_row["cnt"] if runs_row else 0
@@ -459,16 +458,14 @@ class Watchdog:
 
             # Count posts published in the window
             posts_row = self.db.fetchone(
-                "SELECT COUNT(*) as cnt FROM posts"
-                " WHERE client_id=? AND published_at > ? AND status='published'",
+                "SELECT COUNT(*) as cnt FROM posts WHERE client_id=? AND published_at > ? AND status='published'",
                 (cid, cutoff),
             )
             post_count = posts_row["cnt"] if posts_row else 0
 
             # Count drafts created (to distinguish "no output" from "drafts not published")
             drafts_row = self.db.fetchone(
-                "SELECT COUNT(*) as cnt FROM posts"
-                " WHERE client_id=? AND created_at > ? AND status='draft'",
+                "SELECT COUNT(*) as cnt FROM posts WHERE client_id=? AND created_at > ? AND status='draft'",
                 (cid, cutoff),
             )
             draft_count = drafts_row["cnt"] if drafts_row else 0

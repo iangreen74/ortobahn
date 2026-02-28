@@ -718,7 +718,9 @@ class Pipeline:
             strategy = ceo_report.strategy
             # Ensure strategy uses the client's configured platforms, not LLM defaults
             strategy.target_platforms = publish_platforms
-            logger.info(f"  -> Themes: {strategy.themes}, Platforms: {[p.value for p in publish_platforms]}, Directives: {len(ceo_report.directives)}")
+            logger.info(
+                f"  -> Themes: {strategy.themes}, Platforms: {[p.value for p in publish_platforms]}, Directives: {len(ceo_report.directives)}"
+            )
 
             # Process executive directives
             if ceo_report.directives:

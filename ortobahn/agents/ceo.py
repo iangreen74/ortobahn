@@ -115,9 +115,7 @@ class CEOAgent(BaseAgent):
         if client:
             try:
                 client_platforms = [
-                    Platform(p.strip())
-                    for p in (client.target_platforms or "bluesky").split(",")
-                    if p.strip()
+                    Platform(p.strip()) for p in (client.target_platforms or "bluesky").split(",") if p.strip()
                 ]
             except (ValueError, AttributeError):
                 pass

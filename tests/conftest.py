@@ -22,6 +22,37 @@ def _clear_circuit_breakers():
     clear_registry()
 
 
+# Shared PG connection for cleanup — initialized once per session
+_pg_db: Database | None = None
+
+
+def _get_pg_db() -> Database | None:
+    """Return a shared PG Database for cleanup, or None if not on PG."""
+    global _pg_db
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        return None
+    if _pg_db is None:
+        _pg_db = Database(database_url=database_url)
+        from ortobahn.migrations import run_migrations
+
+        run_migrations(_pg_db)
+    return _pg_db
+
+
+@pytest.fixture(autouse=True)
+def _pg_isolate():
+    """On PostgreSQL, truncate all tables before every test for data isolation.
+
+    Tests that create their own apps (create_app()) share the PG database,
+    so we need global cleanup — not just in the test_db fixture.
+    """
+    db = _get_pg_db()
+    if db is not None:
+        _pg_reset(db)
+    yield
+
+
 @pytest.fixture
 def test_settings():
     """Settings with test values - no real API keys."""
@@ -70,13 +101,9 @@ def test_db(tmp_path):
     """Fresh DB for each test. Uses PostgreSQL when DATABASE_URL is set."""
     database_url = os.environ.get("DATABASE_URL", "")
     if database_url:
-        db = Database(database_url=database_url)
-        from ortobahn.migrations import run_migrations
-
-        run_migrations(db)
-        _pg_reset(db)
+        # Reuse the shared PG connection (already migrated + cleaned by _pg_isolate)
+        db = _get_pg_db()
         yield db
-        db.close()
     else:
         db = Database(tmp_path / "test.db")
         yield db

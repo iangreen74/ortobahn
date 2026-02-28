@@ -110,7 +110,7 @@ class TestCalendarRouteLogic:
             commit=True,
         )
         row = test_db.fetchone("SELECT scheduled_at FROM posts WHERE id=?", (pid,))
-        assert row["scheduled_at"] == "2025-03-15T14:00:00"
+        assert str(row["scheduled_at"]).replace(" ", "T") == "2025-03-15T14:00:00"
 
     def test_cannot_reschedule_published_post(self, test_db, _seed_client):
         """Published posts should not be reschedulable (business logic)."""

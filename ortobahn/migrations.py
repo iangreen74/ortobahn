@@ -1220,7 +1220,14 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
 def _get_table_columns(db: Database, table: str) -> set[str]:
     """Return the set of column names for *table*, or an empty set if the table doesn't exist."""
     try:
-        rows = db.fetchall(f"PRAGMA table_info({table})")
+        if getattr(db, "backend", "sqlite") == "postgresql":
+            rows = db.fetchall(
+                "SELECT column_name as name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=?",
+                (table,),
+            )
+        else:
+            rows = db.fetchall(f"PRAGMA table_info({table})")
         return {r["name"] for r in rows}
     except Exception:
         return set()

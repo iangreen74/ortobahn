@@ -61,7 +61,7 @@ class TestCalendarRouteLogic:
         )
         row = test_db.fetchone("SELECT scheduled_at FROM posts WHERE id=?", (pid,))
         assert row is not None
-        assert row["scheduled_at"] == "2025-03-15T10:00:00"
+        assert str(row["scheduled_at"]).replace(" ", "T") == "2025-03-15T10:00:00"
 
     def test_query_posts_by_scheduled_range(self, test_db, _seed_client):
         """Can query posts by scheduled_at date range."""

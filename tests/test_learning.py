@@ -41,8 +41,19 @@ def _insert_published_post(
            (id, text, confidence, status, client_id, run_id, strategy_id,
             platform, source_idea, published_at, content_type, ab_group, ab_pair_id)
            VALUES (?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, 'social_post', ?, ?)""",
-        (pid, text, confidence, client_id, run_id, strategy_id, platform, source_idea,
-         datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), ab_group, ab_pair_id),
+        (
+            pid,
+            text,
+            confidence,
+            client_id,
+            run_id,
+            strategy_id,
+            platform,
+            source_idea,
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ab_group,
+            ab_pair_id,
+        ),
         commit=True,
     )
     return pid

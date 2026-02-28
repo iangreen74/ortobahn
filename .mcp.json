@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ortobahn": {
+      "type": "stdio",
+      "command": "/usr/bin/python3",
+      "args": ["-m", "ortobahn.mcp_server"],
+      "env": {}
+    }
+  }
+}

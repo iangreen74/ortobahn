@@ -32,6 +32,7 @@ def _parse_dt(val: str | datetime) -> datetime:
     except (ValueError, TypeError):
         return datetime.now(timezone.utc)
 
+
 # ---------------------------------------------------------------------------
 # Insight type constants
 # ---------------------------------------------------------------------------

@@ -288,8 +288,7 @@ class TestSubscriptionGuard:
             pipeline = Pipeline(settings, dry_run=True)
             future_trial = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
             pipeline.db.execute(
-                "UPDATE clients SET internal=0, subscription_status='trialing', "
-                "trial_ends_at=? WHERE id='default'",
+                "UPDATE clients SET internal=0, subscription_status='trialing', trial_ends_at=? WHERE id='default'",
                 (future_trial,),
                 commit=True,
             )
@@ -326,8 +325,7 @@ class TestTrialExpiry:
         # Set trial that already expired
         expired_trial = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         pipeline.db.execute(
-            "UPDATE clients SET internal=0, subscription_status='trialing', "
-            "trial_ends_at=? WHERE id='default'",
+            "UPDATE clients SET internal=0, subscription_status='trialing', trial_ends_at=? WHERE id='default'",
             (expired_trial,),
             commit=True,
         )

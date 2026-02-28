@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from ortobahn.db.core import _normalize_query
 
 # ---------------------------------------------------------------------------
@@ -316,6 +318,7 @@ class TestHealthMetrics:
         # Default client exists from migrations
         assert counts["clients"] >= 1
 
+    @pytest.mark.sqlite_only
     def test_db_size_sqlite(self, test_db):
         metrics = test_db.get_health_metrics()
         assert "db_size_bytes" in metrics
@@ -328,6 +331,7 @@ class TestHealthMetrics:
         assert "pipeline_runs" in metrics["record_age"]
         assert "agent_logs" in metrics["record_age"]
 
+    @pytest.mark.sqlite_only
     def test_indexes_listed(self, test_db):
         metrics = test_db.get_health_metrics()
         assert "indexes" in metrics

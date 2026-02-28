@@ -42,7 +42,7 @@ class MetaLearning:
                       AVG(confidence) as avg_confidence
                FROM agent_memories
                WHERE active = 1 AND client_id != ?
-               GROUP BY agent_name, category, content
+               GROUP BY agent_name, category, memory_type, content
                HAVING SUM(times_reinforced) >= ? AND COUNT(DISTINCT client_id) >= ?""",
             (META_CLIENT_ID, min_reinforcements, min_clients),
         )

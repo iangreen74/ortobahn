@@ -204,9 +204,9 @@ class TestGetExperimentContext:
         )
         test_db.execute(
             "UPDATE ab_experiments SET status = 'concluded', winner = 'A', "
-            "result_summary = 'A won by 60%', concluded_at = '2025-01-01T00:00:00' "
+            "result_summary = 'A won by 60%', concluded_at = ? "
             "WHERE id = ?",
-            (past_exp["id"],),
+            ("2025-01-01 00:00:00", past_exp["id"]),
             commit=True,
         )
 
@@ -294,9 +294,9 @@ class TestGetStyleLearnings:
         )
         test_db.execute(
             "UPDATE ab_experiments SET status = 'concluded', winner = 'A', "
-            "result_summary = 'A won by 60%', concluded_at = '2025-01-01T00:00:00' "
+            "result_summary = 'A won by 60%', concluded_at = ? "
             "WHERE id = ?",
-            (exp1["id"],),
+            ("2025-01-01 00:00:00", exp1["id"]),
             commit=True,
         )
 
@@ -309,9 +309,9 @@ class TestGetStyleLearnings:
         )
         test_db.execute(
             "UPDATE ab_experiments SET status = 'concluded', winner = 'B', "
-            "result_summary = 'B won by 55%', concluded_at = '2025-01-02T00:00:00' "
+            "result_summary = 'B won by 55%', concluded_at = ? "
             "WHERE id = ?",
-            (exp2["id"],),
+            ("2025-01-02 00:00:00", exp2["id"]),
             commit=True,
         )
 

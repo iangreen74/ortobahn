@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from ortobahn.smart_timing import SmartTimingOptimizer
@@ -52,18 +54,22 @@ def _seed_posts(test_db, _seed_client):
     # Add metrics for engagement (higher engagement at hours 9 and 10)
     posts = test_db.fetchall("SELECT id, published_at FROM posts WHERE client_id='timing-test' ORDER BY published_at")
     for post in posts:
-        pa = post["published_at"] or ""
-        # Extract hour from the ISO string
+        pa = post["published_at"]
+        # Extract hour — PG returns datetime objects, SQLite returns strings
         try:
-            hour = int(pa[11:13])
-        except (ValueError, IndexError):
+            if isinstance(pa, datetime):
+                hour = pa.hour
+            else:
+                hour = int(str(pa)[11:13])
+        except (ValueError, IndexError, AttributeError):
             hour = 0
         # Hour 9 gets high engagement, hour 10 medium, others low
         engagement = {9: 50, 10: 30, 11: 5, 12: 2}.get(hour, 1)
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         test_db.execute(
             "INSERT INTO metrics (id, post_id, like_count, repost_count, reply_count, measured_at)"
-            " VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-            (f"m-{post['id']}", post["id"], engagement, engagement // 2, engagement // 5),
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (f"m-{post['id']}", post["id"], engagement, engagement // 2, engagement // 5, now),
             commit=True,
         )
 

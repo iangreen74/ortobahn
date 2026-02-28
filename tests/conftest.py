@@ -81,8 +81,8 @@ def _pg_reset(db: Database) -> None:
         db.execute(f'TRUNCATE TABLE "{name}" CASCADE', commit=True)
     # Re-seed the default client (migration 1 seeds it, but truncation removed it)
     db.execute(
-        """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice)
-           VALUES (?, ?, ?, ?, ?, ?)
+        """INSERT INTO clients (id, name, description, industry, target_audience, brand_voice, internal)
+           VALUES (?, ?, ?, ?, ?, ?, 1)
            ON CONFLICT (id) DO NOTHING""",
         (
             "default",

@@ -237,7 +237,7 @@ class MemoryStore:
         self.db.execute(
             """UPDATE agent_memories SET
                 times_reinforced = times_reinforced + 1,
-                confidence = MIN(0.95, confidence + 0.05),
+                confidence = CASE WHEN confidence + 0.05 > 0.95 THEN 0.95 ELSE confidence + 0.05 END,
                 updated_at = ?
             WHERE id = ?""",
             (now, memory_id),

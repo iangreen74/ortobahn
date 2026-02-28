@@ -336,7 +336,8 @@ class TestClientTrial:
     def test_trial_ends_approximately_14_days_from_now(self, test_db):
         cid = test_db.create_client({"name": "Timing Corp"})
         client = test_db.get_client(cid)
-        trial_end = datetime.fromisoformat(client["trial_ends_at"])
+        raw = client["trial_ends_at"]
+        trial_end = raw if isinstance(raw, datetime) else datetime.fromisoformat(raw)
         if trial_end.tzinfo is None:
             trial_end = trial_end.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)

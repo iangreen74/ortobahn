@@ -345,7 +345,8 @@ class TestHealthMetrics:
         metrics = test_db.get_health_metrics()
         assert "collected_at" in metrics
         # Should be a valid ISO datetime
-        dt = datetime.fromisoformat(metrics["collected_at"])
+        raw_dt = metrics["collected_at"]
+        dt = raw_dt if isinstance(raw_dt, datetime) else datetime.fromisoformat(raw_dt)
         assert dt.year >= 2025
 
     def test_health_metrics_with_data(self, test_db):

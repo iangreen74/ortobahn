@@ -201,8 +201,7 @@ def _generate_insights(db, client_id: str) -> list[dict]:
     _14d_ago = (_now - timedelta(days=14)).isoformat()
 
     recent_count_row = db.fetchone(
-        "SELECT COUNT(*) as cnt FROM posts WHERE status='published' AND client_id=?"
-        " AND published_at >= ?",
+        "SELECT COUNT(*) as cnt FROM posts WHERE status='published' AND client_id=? AND published_at >= ?",
         (client_id, _7d_ago),
     )
     prev_count_row = db.fetchone(

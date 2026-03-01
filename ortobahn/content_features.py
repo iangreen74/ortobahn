@@ -171,7 +171,7 @@ def build_content_brief(db: Database, client_id: str = "default", lookback_days:
         counts: dict[str, int] = defaultdict(int)
         for f in items:
             counts[f.get("length_bucket", "medium")] += 1
-        return max(counts, key=counts.get) if counts else "medium"
+        return max(counts, key=lambda k: counts[k]) if counts else "medium"
 
     # Build the brief
     parts = [f"## Content Performance Brief (auto-generated, last {lookback_days} days)"]
@@ -215,7 +215,7 @@ def build_content_brief(db: Database, client_id: str = "default", lookback_days:
         for f in items:
             if "time_of_day" in f:
                 counts[f["time_of_day"]] += 1
-        return max(counts, key=counts.get) if counts else None
+        return max(counts, key=lambda k: counts[k]) if counts else None
 
     best_time = _top_time("top_25")
     if best_time:

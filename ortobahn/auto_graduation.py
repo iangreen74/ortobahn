@@ -125,7 +125,7 @@ def evaluate_auto_graduation(db: Database, client_id: str) -> dict:
     return {"action": "graduate", "reason": reason, "details": details}
 
 
-def _apply_graduation(db, client_id, details, reason):
+def _apply_graduation(db: Database, client_id: str, details: dict, reason: str) -> None:
     db.execute(
         "UPDATE clients SET auto_publish=1, auto_graduation_status='graduated' WHERE id=?",
         (client_id,),
@@ -135,7 +135,7 @@ def _apply_graduation(db, client_id, details, reason):
     logger.info("Client %s GRADUATED to auto-publish: %s", client_id, reason)
 
 
-def _apply_regression(db, client_id, details, reason):
+def _apply_regression(db: Database, client_id: str, details: dict, reason: str) -> None:
     db.execute(
         "UPDATE clients SET auto_publish=0, auto_graduation_status='regressed' WHERE id=?",
         (client_id,),
@@ -145,7 +145,9 @@ def _apply_regression(db, client_id, details, reason):
     logger.info("Client %s REGRESSED to review mode: %s", client_id, reason)
 
 
-def _record_event(db, client_id, event_type, prev, new, details, reason):
+def _record_event(
+    db: Database, client_id: str, event_type: str, prev: int, new: int, details: dict, reason: str
+) -> None:
     db.execute(
         """INSERT INTO graduation_events
            (id, client_id, event_type, previous_auto_publish, new_auto_publish,

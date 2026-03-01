@@ -59,4 +59,4 @@ def compute_adaptive_threshold(
 
     avg_bias = sum(biases) / len(biases)
     adjusted = default + (avg_bias * ADJUSTMENT_RATE)
-    return max(MIN_THRESHOLD, min(MAX_THRESHOLD, round(adjusted, 3)))
+    return float(max(MIN_THRESHOLD, min(MAX_THRESHOLD, round(adjusted, 3))))

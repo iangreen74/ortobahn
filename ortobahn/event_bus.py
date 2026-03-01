@@ -78,7 +78,7 @@ class EventBus:
 # --- Built-in handlers ---
 
 
-def _handle_strategy_expired(db, settings, event):
+def _handle_strategy_expired(db: Database, settings: Settings, event: dict) -> str:
     """Publish insight so CEO picks it up next cycle."""
     from ortobahn.shared_insights import SharedInsightBus
 
@@ -93,7 +93,7 @@ def _handle_strategy_expired(db, settings, event):
     return "insight_published"
 
 
-def _handle_engagement_spike(db, settings, event):
+def _handle_engagement_spike(db: Database, settings: Settings, event: dict) -> str:
     """Publish content trend insight."""
     payload = (
         json.loads(event.get("payload", "{}")) if isinstance(event.get("payload"), str) else event.get("payload", {})
@@ -111,7 +111,7 @@ def _handle_engagement_spike(db, settings, event):
     return "insight_published"
 
 
-def _handle_post_failed(db, settings, event):
+def _handle_post_failed(db: Database, settings: Settings, event: dict) -> str:
     """Count recent failures, alert if threshold exceeded."""
     client_id = event["client_id"]
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()  # noqa: UP017
@@ -139,7 +139,7 @@ def _handle_post_failed(db, settings, event):
     return result
 
 
-def _handle_graduation_changed(db, settings, event):
+def _handle_graduation_changed(db: Database, settings: Settings, event: dict) -> str:
     """Notify via Slack."""
     payload = (
         json.loads(event.get("payload", "{}")) if isinstance(event.get("payload"), str) else event.get("payload", {})
@@ -158,7 +158,7 @@ def _handle_graduation_changed(db, settings, event):
     return f"notified: {new_status}"
 
 
-def _handle_threshold_shifted(db, settings, event):
+def _handle_threshold_shifted(db: Database, settings: Settings, event: dict) -> str:
     """Store observation memory for strategist."""
     payload = (
         json.loads(event.get("payload", "{}")) if isinstance(event.get("payload"), str) else event.get("payload", {})

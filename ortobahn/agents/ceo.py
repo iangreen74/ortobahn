@@ -17,6 +17,7 @@ from ortobahn.models import (
     Client,
     ExecutiveDirective,
     LegalReport,
+    MeasurableGoal,
     MemoryCategory,
     OpsReport,
     Platform,
@@ -317,6 +318,11 @@ class CEOAgent(BaseAgent):
         if shared_insights:
             parts.append(f"\n{shared_insights}")
 
+        # Inject goal progress (from GoalTracker)
+        goal_progress = kwargs.get("goal_progress", "")
+        if goal_progress:
+            parts.append(goal_progress)
+
         # Inject memory context
         memory_context = self.get_memory_context(client_id)
         if memory_context:
@@ -383,11 +389,18 @@ class CEOAgent(BaseAgent):
                 strategy = Strategy(**data["strategy"])
                 strategy.client_id = client_id
                 directives = [ExecutiveDirective(**d) for d in data.get("directives", [])]
+                goals = []
+                for g in data.get("measurable_goals", []):
+                    try:
+                        goals.append(MeasurableGoal(**g))
+                    except Exception:
+                        pass
                 return CEOReport(
                     strategy=strategy,
                     directives=directives,
                     business_assessment=data.get("business_assessment", ""),
                     risk_flags=data.get("risk_flags", []),
+                    measurable_goals=goals,
                 )
 
             # Otherwise assume it's a flat strategy

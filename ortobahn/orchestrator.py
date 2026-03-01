@@ -701,6 +701,21 @@ class Pipeline:
             # Gather cross-agent insights for CEO
             shared_insights_summary = self.insight_bus.summarize()
 
+            # Goal tracking: evaluate progress before CEO (0 LLM calls)
+            goal_context = ""
+            try:
+                from ortobahn.goal_tracker import GoalTracker
+
+                _goal_tracker = GoalTracker(self.db)
+                goal_progress = _goal_tracker.evaluate_progress(client_id)
+                goal_resolved = _goal_tracker.resolve_expired_goals(client_id)
+                goal_context = _goal_tracker.format_progress_for_ceo(goal_progress, goal_resolved)
+                if goal_progress:
+                    behind = [g for g in goal_progress if g["behind_schedule"]]
+                    logger.info(f"  -> Goals: {len(goal_progress)} active, {len(behind)} behind schedule")
+            except Exception as e:
+                logger.warning(f"  -> Goal tracking error (non-fatal): {e}")
+
             logger.info("[8/14] CEO Agent making executive decisions...")
             ceo_report = self.ceo.run(
                 run_id,
@@ -714,6 +729,7 @@ class Pipeline:
                 security_report=security_report,
                 legal_report=legal_report,
                 shared_insights=shared_insights_summary,
+                goal_progress=goal_context,
             )
             strategy = ceo_report.strategy
             # Ensure strategy uses the client's configured platforms, not LLM defaults
@@ -725,6 +741,22 @@ class Pipeline:
             # Process executive directives
             if ceo_report.directives:
                 self._process_directives(run_id, ceo_report.directives, client_id)
+
+            # Create structured goals from CEO output
+            if ceo_report.measurable_goals:
+                try:
+                    active_strat = self.db.get_active_strategy(client_id=client_id)
+                    strat_id = active_strat["id"] if active_strat else ""
+                    created_ids = _goal_tracker.create_goals_from_ceo(
+                        client_id=client_id,
+                        measurable_goals=[g.model_dump() for g in ceo_report.measurable_goals],
+                        run_id=run_id,
+                        strategy_id=strat_id,
+                    )
+                    if created_ids:
+                        logger.info(f"  -> Created {len(created_ids)} measurable goal(s)")
+                except Exception as e:
+                    logger.warning(f"  -> Goal creation error (non-fatal): {e}")
 
             # 2.1 Dynamic cadence (adjust max posts based on engagement trends)
             max_posts = self.settings.max_posts_per_cycle
@@ -818,14 +850,36 @@ class Pipeline:
                 if ab_a and ab_b:
                     logger.info(f"  -> A/B variants detected: {len(ab_a)}A / {len(ab_b)}B")
 
-            # 3.3 Publisher
+            # 3.3 Publisher — compute adaptive confidence threshold
+            try:
+                from ortobahn.adaptive_threshold import compute_adaptive_threshold
+
+                effective_threshold = compute_adaptive_threshold(
+                    self.db, client_id, default=self.settings.post_confidence_threshold
+                )
+                self.publisher.confidence_threshold = effective_threshold
+                if effective_threshold != self.settings.post_confidence_threshold:
+                    logger.info(
+                        f"  -> Adaptive threshold: {effective_threshold:.3f} "
+                        f"(default: {self.settings.post_confidence_threshold})"
+                    )
+                # Store for audit
+                self.db.execute(
+                    "UPDATE clients SET adaptive_threshold=? WHERE id=?",
+                    (effective_threshold, client_id),
+                    commit=True,
+                )
+            except Exception as e:
+                effective_threshold = self.settings.post_confidence_threshold
+                logger.warning(f"  -> Adaptive threshold error (non-fatal): {e}")
+
             posts_published = 0
             if generate_only:
                 logger.info("[11/14] Saving drafts for review (generate-only mode)...")
                 active_strategy = self.db.get_active_strategy(client_id=client_id)
                 strategy_id = active_strategy["id"] if active_strategy else None
                 for draft in drafts.posts:
-                    if draft.confidence >= self.settings.post_confidence_threshold:
+                    if draft.confidence >= effective_threshold:
                         self.db.save_post(
                             text=draft.text,
                             run_id=run_id,
@@ -1069,6 +1123,18 @@ class Pipeline:
                     logger.info(f"  Voice learning: stored {voice_results['preferences_stored']} preferences")
             except Exception as e:
                 logger.warning(f"Voice learning batch analysis failed (non-fatal): {e}")
+
+            # Auto-graduation check (non-fatal)
+            try:
+                from ortobahn.auto_graduation import evaluate_auto_graduation
+
+                grad_result = evaluate_auto_graduation(self.db, client_id)
+                if grad_result["action"] == "graduate":
+                    logger.info(f"  Auto-graduation: {client_id} -> auto-publish ({grad_result['reason']})")
+                elif grad_result["action"] == "regress":
+                    logger.warning(f"  Auto-graduation: {client_id} REGRESSED to review mode ({grad_result['reason']})")
+            except Exception as e:
+                logger.warning(f"Auto-graduation check failed (non-fatal): {e}")
 
             # Clean up old topic velocity data
             if self.topic_tracker:

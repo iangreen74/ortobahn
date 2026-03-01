@@ -166,6 +166,18 @@ def cmd_schedule(args):
                 except Exception as e:
                     console.print(f"  [red]Watchdog failed: {e}[/red]")
 
+            # Process pending events from the event bus
+            try:
+                from ortobahn.event_bus import process_pending_events
+
+                event_result = process_pending_events(db=pipeline.db, settings=settings)
+                if event_result["processed"]:
+                    console.print(
+                        f"  [dim]Events: {event_result['processed']} processed, {event_result['errors']} errors[/dim]"
+                    )
+            except Exception as e:
+                console.print(f"  [red]Event processing failed: {e}[/red]")
+
             # Note: per-client metric refresh happens inside each run_cycle() call
 
             try:

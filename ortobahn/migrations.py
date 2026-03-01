@@ -1033,6 +1033,66 @@ def _migration_040_add_image_columns(db: Database) -> None:
     _safe_add_column(db, "clients", "image_generation_enabled INTEGER DEFAULT 0")
 
 
+def _migration_041_add_autonomy_features(db: Database) -> None:
+    """Add autonomy features: adaptive threshold, auto-graduation, event bus, goal lifecycle."""
+    # Feature 1: Adaptive confidence threshold
+    _safe_add_column(db, "clients", "adaptive_threshold REAL")
+
+    # Feature 2: Auto-graduation
+    _safe_add_column(db, "clients", "auto_graduation_status TEXT DEFAULT 'manual'")
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS graduation_events (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            previous_auto_publish INTEGER NOT NULL,
+            new_auto_publish INTEGER NOT NULL,
+            voice_confidence REAL,
+            approval_rate REAL,
+            review_count INTEGER,
+            adaptive_threshold REAL,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_graduation_events_client ON graduation_events(client_id, created_at)",
+        commit=True,
+    )
+
+    # Feature 4: Internal event bus
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS agent_events (
+            id TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            processed_at TEXT,
+            handler_agent TEXT,
+            handler_result TEXT
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_agent_events_pending ON agent_events(processed_at, event_type)",
+        commit=True,
+    )
+
+    # Feature 5: Goal lifecycle columns on existing agent_goals table
+    _safe_add_column(db, "agent_goals", "goal_type TEXT DEFAULT 'engagement_growth'")
+    _safe_add_column(db, "agent_goals", "deadline TEXT")
+    _safe_add_column(db, "agent_goals", "status TEXT DEFAULT 'active'")
+    _safe_add_column(db, "agent_goals", "created_by_run_id TEXT")
+    _safe_add_column(db, "agent_goals", "achieved_at TEXT")
+    _safe_add_column(db, "agent_goals", "strategy_id TEXT")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_goals_status ON agent_goals(client_id, status)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1074,6 +1134,7 @@ MIGRATIONS = {
     38: _migration_038_add_email_digest,
     39: _migration_039_add_article_schedule,
     40: _migration_040_add_image_columns,
+    41: _migration_041_add_autonomy_features,
 }
 
 
@@ -1163,6 +1224,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "digest_day",
         "digest_hour",
         "image_generation_enabled",
+        "adaptive_threshold",
+        "auto_graduation_status",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],
@@ -1177,7 +1240,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     "agent_memories": ["id", "agent_name"],
     "confidence_calibration": ["id", "post_id"],
     "ab_experiments": ["id", "client_id"],
-    "agent_goals": ["id", "agent_name"],
+    "agent_goals": ["id", "agent_name", "status", "deadline"],
     "reflection_reports": ["id", "run_id"],
     # Migration 011
     "ci_fix_attempts": ["id", "run_id"],
@@ -1212,6 +1275,9 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     "post_insights": ["id", "post_id", "client_id", "insight_text", "factors", "confidence"],
     # Migration 038
     "digest_history": ["id", "client_id", "sent_at", "period_start", "period_end"],
+    # Migration 041
+    "graduation_events": ["id", "client_id", "event_type"],
+    "agent_events": ["id", "event_type", "client_id"],
     # Internal
     "schema_version": ["version"],
 }

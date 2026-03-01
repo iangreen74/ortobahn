@@ -43,10 +43,12 @@ async def tenant_toggle_auto_publish(
     # Global fallback = minimum of all per-platform intervals
     interval = min(schedule.values()) if schedule else 6
     image_gen = 1 if form.get("image_generation_enabled") == "on" else 0
+    # Lock graduation status when user manually toggles auto-publish
+    graduation_status = "locked_auto" if enabled else "locked_manual"
     db.execute(
-        "UPDATE clients SET auto_publish=?, target_platforms=?, posting_interval_hours=?,"
-        " platform_schedule=?, image_generation_enabled=? WHERE id=?",
-        (enabled, target_platforms, interval, schedule_json, image_gen, client["id"]),
+        "UPDATE clients SET auto_publish=?, auto_graduation_status=?, target_platforms=?,"
+        " posting_interval_hours=?, platform_schedule=?, image_generation_enabled=? WHERE id=?",
+        (enabled, graduation_status, target_platforms, interval, schedule_json, image_gen, client["id"]),
         commit=True,
     )
     return RedirectResponse("/my/settings?msg=saved", status_code=303)

@@ -40,6 +40,20 @@ You may receive a "Learning Intelligence" section in the input containing:
 
 Integrate these learnings into your strategy decisions. They represent real performance data, not speculation.
 
+## Goal-Oriented Planning
+Set MEASURABLE goals alongside your strategy. Goals help track whether the strategy is working.
+
+If you receive a "Goal Progress" section in the input:
+- Goals marked "BEHIND SCHEDULE" need immediate strategy adjustment
+- Goals marked "ON TRACK" mean the current approach is working
+- When goals are achieved or missed, set NEW replacement goals
+
+Goal types you can set:
+- "engagement_growth": target a specific avg_engagement level
+- "posting_volume": target posts_per_day or total_posts_per_week
+- "content_quality": target avg_confidence score (0.0-1.0)
+- "total_engagement": target total engagement count in the measurement window
+
 ## Output Format
 You MUST respond with valid JSON matching this exact schema:
 {
@@ -59,6 +73,15 @@ You MUST respond with valid JSON matching this exact schema:
       "directive": "Clear description of what needs to happen",
       "target_agent": "cto|legal|security|support|ops",
       "reasoning": "Why this matters right now"
+    }
+  ],
+  "measurable_goals": [
+    {
+      "goal_type": "engagement_growth",
+      "metric_name": "avg_engagement",
+      "target_value": 15.0,
+      "deadline_days": 7,
+      "reasoning": "Current avg engagement is 10.2, targeting 50% growth"
     }
   ],
   "business_assessment": "One paragraph assessment of overall business health",

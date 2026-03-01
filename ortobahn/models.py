@@ -383,15 +383,45 @@ class ABExperiment(BaseModel):
     min_pairs_required: int = 5
 
 
+class GoalType(str, Enum):
+    ENGAGEMENT_GROWTH = "engagement_growth"
+    POSTING_VOLUME = "posting_volume"
+    CONTENT_QUALITY = "content_quality"
+    TOTAL_ENGAGEMENT = "total_engagement"
+
+
+class GoalStatus(str, Enum):
+    ACTIVE = "active"
+    ACHIEVED = "achieved"
+    MISSED = "missed"
+    ARCHIVED = "archived"
+
+
+class MeasurableGoal(BaseModel):
+    """Structured goal output from CEO agent."""
+
+    goal_type: str = "engagement_growth"
+    metric_name: str = "avg_engagement"
+    target_value: float = 0.0
+    deadline_days: int = 7
+    reasoning: str = ""
+
+
 class AgentGoal(BaseModel):
     id: str = ""
     agent_name: str
     client_id: str = "default"
+    goal_type: str = "engagement_growth"
     metric_name: str
     target_value: float
     current_value: float = 0.0
     trend: str = "stable"
     measurement_window_days: int = 7
+    deadline: str | None = None
+    status: str = "active"
+    created_by_run_id: str = ""
+    achieved_at: str | None = None
+    strategy_id: str = ""
 
 
 # --- CI/CD Self-Healing models ---
@@ -526,6 +556,7 @@ class CEOReport(BaseModel):
     directives: list[ExecutiveDirective] = Field(default_factory=list)
     business_assessment: str = ""
     risk_flags: list[str] = Field(default_factory=list)
+    measurable_goals: list[MeasurableGoal] = Field(default_factory=list)
 
 
 # --- Legal Agent output ---

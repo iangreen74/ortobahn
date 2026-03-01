@@ -110,6 +110,8 @@ class ClientsMixin:
             "auto_publish_articles",
             "voice_confidence",
             "article_schedule",
+            "adaptive_threshold",
+            "auto_graduation_status",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:

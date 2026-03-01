@@ -117,6 +117,16 @@ class CreatorAgent(BaseAgent):
         except Exception:
             pass  # Non-fatal — voice learning is additive
 
+        # Inject structured content performance brief (0 LLM calls)
+        try:
+            from ortobahn.content_features import build_content_brief
+
+            content_brief = build_content_brief(self.db, client_id)
+            if content_brief:
+                parts.append(f"\n{content_brief}")
+        except Exception:
+            pass  # Non-fatal — content features are additive
+
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)
         drafts = parse_json_response(response.text, DraftPosts)

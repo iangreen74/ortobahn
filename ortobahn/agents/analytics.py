@@ -111,9 +111,9 @@ Avg engagement per post: {report.avg_engagement_per_post}
                     metrics = self.twitter.get_post_metrics(platform_id)
                     self.db.save_metrics(
                         post_id=post["id"],
-                        like_count=metrics.like_count,
-                        repost_count=metrics.retweet_count,
-                        reply_count=metrics.reply_count,
+                        like_count=metrics.get("like_count", 0),
+                        repost_count=metrics.get("retweet_count", 0),
+                        reply_count=metrics.get("reply_count", 0),
                     )
                 elif platform == "linkedin" and self.linkedin and platform_id:
                     metrics = self.linkedin.get_post_metrics(platform_id)

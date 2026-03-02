@@ -347,6 +347,21 @@ def cmd_schedule(args):
                             console.print(f"  [yellow]CTO: {cto_result.status} - {cto_result.error[:80]}[/yellow]")
                     except Exception as e:
                         console.print(f"  [red]CTO agent failed: {e}[/red]")
+                # Send digest emails for clients that are due
+                try:
+                    from ortobahn.digest import WeeklyDigest
+
+                    digest = WeeklyDigest(db=pipeline.db)
+                    due_clients = digest.get_clients_due_for_digest()
+                    for dc in due_clients:
+                        try:
+                            digest.send_digest(dc["id"])
+                            console.print(f"  [green]Digest sent to {dc.get('name', dc['id'])}[/green]")
+                        except Exception as e:
+                            console.print(f"  [red]Digest failed for {dc.get('name', dc['id'])}: {e}[/red]")
+                except Exception as e:
+                    console.print(f"  [red]Digest check failed: {e}[/red]")
+
                 # Article generation check — independent schedule per client
                 for client in clients_to_check:
                     cid = client["id"]

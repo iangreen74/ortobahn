@@ -123,8 +123,8 @@ class TwitterClient:
         logger.info(f"Posted to Twitter: {text[:50]}...")
         return tweet_url, tweet_id
 
-    def get_post_metrics(self, tweet_id: str) -> TweetMetrics:
-        """Get engagement metrics for a tweet."""
+    def get_post_metrics(self, tweet_id: str) -> dict:
+        """Get engagement metrics for a tweet. Returns a dict for interface consistency."""
         client = self._get_client()
         try:
             response = self._call_with_breaker(
@@ -134,18 +134,18 @@ class TwitterClient:
             )
             if response.data and response.data.public_metrics:
                 m = response.data.public_metrics
-                return TweetMetrics(
-                    tweet_id=tweet_id,
-                    like_count=m.get("like_count", 0),
-                    retweet_count=m.get("retweet_count", 0),
-                    reply_count=m.get("reply_count", 0),
-                    impression_count=m.get("impression_count", 0),
-                )
+                return {
+                    "tweet_id": tweet_id,
+                    "like_count": m.get("like_count", 0),
+                    "retweet_count": m.get("retweet_count", 0),
+                    "reply_count": m.get("reply_count", 0),
+                    "impression_count": m.get("impression_count", 0),
+                }
         except CircuitOpenError:
             raise
         except Exception as e:
             logger.warning(f"Failed to get Twitter metrics for {tweet_id}: {e}")
-        return TweetMetrics(tweet_id=tweet_id)
+        return {"tweet_id": tweet_id, "like_count": 0, "retweet_count": 0, "reply_count": 0, "impression_count": 0}
 
     def verify_post_exists(self, tweet_id: str) -> bool | None:
         """Verify that a tweet actually exists on Twitter.

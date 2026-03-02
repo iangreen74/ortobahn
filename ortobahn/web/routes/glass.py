@@ -341,7 +341,14 @@ async def glass_posts(request: Request):
         # Build link to the actual post
         link = ""
         if p.get("bluesky_uri"):
-            link = f' <a href="https://bsky.app/profile/{_escape(p["bluesky_uri"])}" target="_blank" rel="noopener">view &rarr;</a>'
+            bsky_uri = p["bluesky_uri"]
+            # Parse AT URI: at://did:plc:xxx/app.bsky.feed.post/rkey
+            parts = bsky_uri.split("/")
+            if len(parts) >= 5 and parts[0] == "at:":
+                did = parts[2]
+                rkey = parts[4]
+                bsky_url = f"https://bsky.app/profile/{_escape(did)}/post/{_escape(rkey)}"
+                link = f' <a href="{bsky_url}" target="_blank" rel="noopener">view &rarr;</a>'
 
         cards.append(
             '<div class="glass-post-card">'

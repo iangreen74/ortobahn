@@ -42,10 +42,10 @@ class TestTwitterClient:
 
         client = TwitterClient("key", "secret", "token", "token_secret")
         metrics = client.get_post_metrics("123")
-        assert metrics.like_count == 10
-        assert metrics.retweet_count == 3
-        assert metrics.reply_count == 1
-        assert metrics.impression_count == 500
+        assert metrics["like_count"] == 10
+        assert metrics["retweet_count"] == 3
+        assert metrics["reply_count"] == 1
+        assert metrics["impression_count"] == 500
 
     @patch("tweepy.Client")
     def test_get_metrics_failure_returns_empty(self, mock_tweepy_cls):
@@ -57,8 +57,8 @@ class TestTwitterClient:
 
         client = TwitterClient("key", "secret", "token", "token_secret")
         metrics = client.get_post_metrics("123")
-        assert metrics.like_count == 0
-        assert metrics.retweet_count == 0
+        assert metrics["like_count"] == 0
+        assert metrics["retweet_count"] == 0
 
     @patch("tweepy.Client")
     def test_lazy_auth(self, mock_tweepy_cls):

@@ -11,6 +11,7 @@ from ortobahn.agents.article_writer import ArticleWriterAgent
 from ortobahn.agents.ceo import CEOAgent
 from ortobahn.agents.cfo import CFOAgent
 from ortobahn.agents.cifix import CIFixAgent
+from ortobahn.agents.community import CommunityAgent
 from ortobahn.agents.creator import CreatorAgent
 from ortobahn.agents.cto import CTOAgent
 from ortobahn.agents.engagement import EngagementAgent
@@ -192,6 +193,21 @@ class Pipeline:
                 reddit_client=self.reddit,
                 relevance_threshold=settings.listening_relevance_threshold,
                 max_conversations=settings.listening_max_conversations,
+                use_bedrock=_bedrock,
+                bedrock_region=_region,
+            )
+            if settings.listening_enabled
+            else None
+        )
+        self.community = (
+            CommunityAgent(
+                self.db,
+                _api_key,
+                _model,
+                bluesky_client=self.bluesky,
+                twitter_client=self.twitter,
+                reddit_client=self.reddit,
+                linkedin_client=self.linkedin,
                 use_bedrock=_bedrock,
                 bedrock_region=_region,
             )
@@ -700,6 +716,23 @@ class Pipeline:
                     except Exception as e:
                         logger.warning(f"  -> Listener agent error (non-fatal): {e}")
                         errors.append(f"listener: {e}")
+
+            # 1.5b Community Intelligence
+            if self.community:
+                client_listening = client_data.get("listening_enabled") if client_data else False
+                if client_listening:
+                    logger.info("[4.6/14] Community Agent analyzing...")
+                    try:
+                        community_result = self.community.run(run_id, client_id=client_id)
+                        logger.info(
+                            f"  -> Accounts discovered={community_result.accounts_discovered}, "
+                            f"updated={community_result.accounts_updated}, "
+                            f"threads={community_result.threads_created}+{community_result.threads_updated}, "
+                            f"insights={community_result.insights_published}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"  -> Community agent error (non-fatal): {e}")
+                        errors.append(f"community: {e}")
 
             # 1.6 Performance insights (prompt tuner)
             from ortobahn.prompt_tuner import get_performance_insights

@@ -12,12 +12,12 @@ logger = logging.getLogger("ortobahn.migrations")
 
 
 def _safe_add_column(db: Database, table: str, column_def: str) -> None:
-    """Add a column if it doesn't already exist. Silently ignores duplicates."""
+    """Add a column if it doesn't already exist. Silently ignores duplicates and missing tables."""
     try:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}", commit=True)
     except Exception as e:
         err = str(e).lower()
-        if "duplicate column" in err or "already exists" in err:
+        if "duplicate column" in err or "already exists" in err or "no such table" in err:
             pass
         else:
             raise
@@ -1209,6 +1209,75 @@ def _migration_043_add_proactive_engagement(db: Database) -> None:
     )
 
 
+def _migration_044_add_community_intelligence(db: Database) -> None:
+    """Add community intelligence: tracked accounts, activity, conversation threads."""
+    # Tracked accounts (influencers, competitors, prospects)
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS tracked_accounts (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL,
+            account_handle TEXT NOT NULL,
+            account_type TEXT NOT NULL DEFAULT 'influencer',
+            follower_count INTEGER NOT NULL DEFAULT 0,
+            relevance_score REAL NOT NULL DEFAULT 0.5,
+            notes TEXT NOT NULL DEFAULT '',
+            auto_discovered INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            last_checked_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(client_id, platform, account_handle)
+        )""",
+        commit=True,
+    )
+
+    # Account activity snapshots
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS account_activity (
+            id TEXT PRIMARY KEY,
+            tracked_account_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            post_count_7d INTEGER NOT NULL DEFAULT 0,
+            avg_engagement_7d REAL NOT NULL DEFAULT 0.0,
+            top_topics TEXT NOT NULL DEFAULT '[]',
+            sentiment_trend TEXT NOT NULL DEFAULT 'neutral',
+            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_account_activity_account "
+        "ON account_activity(tracked_account_id, recorded_at DESC)",
+        commit=True,
+    )
+
+    # Conversation threads (group related conversations)
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS conversation_threads (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL,
+            root_conversation_id TEXT NOT NULL,
+            thread_depth INTEGER NOT NULL DEFAULT 1,
+            participant_count INTEGER NOT NULL DEFAULT 1,
+            total_engagement INTEGER NOT NULL DEFAULT 0,
+            topic_summary TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conv_threads_client "
+        "ON conversation_threads(client_id, status, last_activity_at DESC)",
+        commit=True,
+    )
+
+    # Link conversations to threads
+    _safe_add_column(db, "discovered_conversations", "thread_id TEXT DEFAULT ''")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1253,6 +1322,7 @@ MIGRATIONS = {
     41: _migration_041_add_autonomy_features,
     42: _migration_042_add_social_listening,
     43: _migration_043_add_proactive_engagement,
+    44: _migration_044_add_community_intelligence,
 }
 
 
@@ -1426,6 +1496,10 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     # Migration 043
     "engagement_outcomes": ["id", "reply_id", "client_id", "platform", "outcome_score"],
     "engagement_rate_limits": ["id", "client_id", "platform", "period", "max_count", "current_count"],
+    # Migration 044
+    "tracked_accounts": ["id", "client_id", "platform", "account_handle", "account_type", "active"],
+    "account_activity": ["id", "tracked_account_id", "client_id", "post_count_7d"],
+    "conversation_threads": ["id", "client_id", "platform", "root_conversation_id", "status"],
     # Internal
     "schema_version": ["version"],
 }

@@ -149,5 +149,3 @@ def _test_substack(creds: dict) -> dict:
     )
     client._authenticate()
     return {"status": "valid", "message": f"Connected to {subdomain}.substack.com"}
-
-

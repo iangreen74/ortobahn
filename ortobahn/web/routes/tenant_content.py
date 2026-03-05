@@ -101,8 +101,8 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
                 if violations:
                     v_items = "".join(
                         f'<li style="color:{"var(--color-red)" if v.get("severity") == "block" else "var(--color-orange)"};">'
-                        f'<strong>[{_escape(v.get("severity", "warn"))}]</strong> '
-                        f'{_escape(v.get("explanation", v.get("rule_id", "")))}</li>'
+                        f"<strong>[{_escape(v.get('severity', 'warn'))}]</strong> "
+                        f"{_escape(v.get('explanation', v.get('rule_id', '')))}</li>"
                         for v in violations
                     )
                     gr_html = (

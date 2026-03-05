@@ -203,67 +203,96 @@
 {% endif %}
 
 <article>
-    <header>Bluesky {% if "bluesky" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>Bluesky {% if "bluesky" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/bluesky/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/bluesky">
         <label for="bs_handle">Handle</label>
-        <input type="text" id="bs_handle" name="handle" placeholder="you.bsky.social"
+        <input type="text" id="bs_handle" name="handle" placeholder="you.bsky.social" required
                pattern="^[^@\s]+\.[^@\s]+"
                title="Enter your Bluesky handle (e.g. you.bsky.social), not an email address">
         <label for="bs_password">App Password</label>
-        <input type="password" id="bs_password" name="app_password" placeholder="xxxx-xxxx-xxxx-xxxx">
-        <button type="submit" class="outline">Save Bluesky</button>
+        <input type="password" id="bs_password" name="app_password" placeholder="xxxx-xxxx-xxxx-xxxx" required>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save Bluesky</button>
+            {% if "bluesky" in connected_platforms %}
+            <form method="post" action="/my/credentials/bluesky/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 
 <article>
-    <header>Twitter / X {% if "twitter" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>Twitter / X {% if "twitter" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/twitter/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/twitter">
         <div class="grid">
             <div>
                 <label for="tw_api_key">API Key</label>
-                <input type="password" id="tw_api_key" name="api_key">
+                <input type="password" id="tw_api_key" name="api_key" required>
             </div>
             <div>
                 <label for="tw_api_secret">API Secret</label>
-                <input type="password" id="tw_api_secret" name="api_secret">
+                <input type="password" id="tw_api_secret" name="api_secret" required>
             </div>
         </div>
         <div class="grid">
             <div>
                 <label for="tw_access_token">Access Token</label>
-                <input type="password" id="tw_access_token" name="access_token">
+                <input type="password" id="tw_access_token" name="access_token" required>
             </div>
             <div>
                 <label for="tw_access_token_secret">Access Token Secret</label>
-                <input type="password" id="tw_access_token_secret" name="access_token_secret">
+                <input type="password" id="tw_access_token_secret" name="access_token_secret" required>
             </div>
         </div>
-        <button type="submit" class="outline">Save Twitter</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save Twitter</button>
+            {% if "twitter" in connected_platforms %}
+            <form method="post" action="/my/credentials/twitter/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 
 <article>
-    <header>LinkedIn {% if "linkedin" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>LinkedIn {% if "linkedin" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/linkedin/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/linkedin">
         <label for="li_access_token">Access Token</label>
-        <input type="password" id="li_access_token" name="access_token">
+        <input type="password" id="li_access_token" name="access_token" required>
         <label for="li_person_urn">Person URN</label>
-        <input type="text" id="li_person_urn" name="person_urn" placeholder="urn:li:person:...">
-        <button type="submit" class="outline">Save LinkedIn</button>
+        <input type="text" id="li_person_urn" name="person_urn" placeholder="urn:li:person:..." required>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save LinkedIn</button>
+            {% if "linkedin" in connected_platforms %}
+            <form method="post" action="/my/credentials/linkedin/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 
 <article>
-    <header>Reddit {% if "reddit" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>Reddit {% if "reddit" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/reddit/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/reddit">
         <div class="grid">
             <div>
                 <label for="reddit_client_id">Client ID</label>
-                <input type="password" id="reddit_client_id" name="client_id">
+                <input type="password" id="reddit_client_id" name="client_id" required>
             </div>
             <div>
                 <label for="reddit_client_secret">Client Secret</label>
-                <input type="password" id="reddit_client_secret" name="client_secret">
+                <input type="password" id="reddit_client_secret" name="client_secret" required>
             </div>
         </div>
         <div class="grid">
@@ -279,31 +308,56 @@
         <label for="reddit_subreddit">Default Subreddit</label>
         <input type="text" id="reddit_subreddit" name="default_subreddit" placeholder="yoursubreddit">
         <small>Posts will be submitted to this subreddit by default.</small>
-        <button type="submit" class="outline">Save Reddit</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save Reddit</button>
+            {% if "reddit" in connected_platforms %}
+            <form method="post" action="/my/credentials/reddit/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 
 <article>
-    <header>Medium {% if "medium" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>Medium {% if "medium" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/medium/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/medium">
         <label for="med_token">Integration Token</label>
-        <input type="password" id="med_token" name="integration_token" placeholder="Your Medium integration token">
+        <input type="password" id="med_token" name="integration_token" placeholder="Your Medium integration token" required>
         <small>Generate at <a href="https://medium.com/me/settings/security" target="_blank" rel="noopener">medium.com/me/settings/security</a></small>
-        <button type="submit" class="outline">Save Medium</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save Medium</button>
+            {% if "medium" in connected_platforms %}
+            <form method="post" action="/my/credentials/medium/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 
 <article>
-    <header>Substack {% if "substack" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}</header>
+    <header>Substack {% if "substack" in connected_platforms %}<span class="badge completed">connected</span>{% endif %}
+        <span hx-get="/my/api/credentials/substack/status" hx-trigger="load" hx-swap="innerHTML" style="margin-left:0.5rem"></span>
+    </header>
     <form method="post" action="/my/credentials/substack">
         <label for="sub_subdomain">Subdomain</label>
-        <input type="text" id="sub_subdomain" name="subdomain" placeholder="yourname">
+        <input type="text" id="sub_subdomain" name="subdomain" placeholder="yourname" required>
         <small>Your Substack subdomain (e.g. "yourname" for yourname.substack.com)</small>
         <label for="sub_email">Email</label>
         <input type="email" id="sub_email" name="email" placeholder="you@example.com">
         <label for="sub_password">Password</label>
         <input type="password" id="sub_password" name="password">
-        <button type="submit" class="outline">Save Substack</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="submit" class="outline">Save Substack</button>
+            {% if "substack" in connected_platforms %}
+            <form method="post" action="/my/credentials/substack/test" style="margin:0;display:contents">
+                <button type="submit" class="outline secondary" style="padding:0.4rem 0.8rem;font-size:0.85rem">Re-test</button>
+            </form>
+            {% endif %}
+        </div>
     </form>
 </article>
 

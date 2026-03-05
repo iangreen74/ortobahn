@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ortobahn.auth import AuthClient
 from ortobahn.credentials import save_platform_credentials
@@ -175,13 +175,14 @@ async def tenant_settings_update(request: Request, client: AuthClient):
 async def tenant_save_credentials(
     request: Request,
     platform: str,
+    background_tasks: BackgroundTasks,
     client: AuthClient,
 ):
     db = request.app.state.db
     secret_key = request.app.state.settings.secret_key
 
     form = await request.form()
-    creds = {k: v for k, v in form.items() if k != "platform" and v}
+    creds = {k: v for k, v in form.items() if k != "platform" and k != "_csrf" and v}
 
     # Validate Bluesky handle format
     if platform == "bluesky" and "handle" in creds:
@@ -192,12 +193,91 @@ async def tenant_save_credentials(
 
     save_platform_credentials(db, client["id"], platform, creds, secret_key)
 
+    # Mark as testing and trigger async validation
+    from ortobahn.credential_validator import _save_status
+
+    _save_status(db, client["id"], platform, {"status": "testing", "message": "Verifying credentials..."})
+
+    def _do_validate():
+        from ortobahn.credential_validator import validate_credentials
+        from ortobahn.db import Database
+
+        vdb = Database(request.app.state.settings.db_path)
+        try:
+            validate_credentials(vdb, client["id"], platform, secret_key)
+        finally:
+            vdb.close()
+
+    background_tasks.add_task(_do_validate)
+
     # Re-activate client if they were paused due to credential issues
     if client.get("status") == "credential_issue" and creds:
         db.update_client(client["id"], {"status": "active"})
         logger.info(f"Client {client['id']} re-activated after credential update")
 
     return RedirectResponse("/my/settings?msg=saved", status_code=303)
+
+
+@router.post("/credentials/{platform}/test")
+async def tenant_test_credentials(
+    request: Request,
+    platform: str,
+    background_tasks: BackgroundTasks,
+    client: AuthClient,
+):
+    """Re-test stored credentials without re-entering them."""
+    db = request.app.state.db
+    secret_key = request.app.state.settings.secret_key
+
+    from ortobahn.credential_validator import _save_status
+
+    _save_status(db, client["id"], platform, {"status": "testing", "message": "Verifying credentials..."})
+
+    def _do_validate():
+        from ortobahn.credential_validator import validate_credentials
+        from ortobahn.db import Database
+
+        vdb = Database(request.app.state.settings.db_path)
+        try:
+            validate_credentials(vdb, client["id"], platform, secret_key)
+        finally:
+            vdb.close()
+
+    background_tasks.add_task(_do_validate)
+    return RedirectResponse("/my/settings?msg=testing", status_code=303)
+
+
+@router.get("/api/credentials/{platform}/status")
+async def tenant_credential_status(request: Request, platform: str, client: AuthClient):
+    """HTMX-polled credential validation status."""
+    db = request.app.state.db
+    row = db.fetchone(
+        "SELECT credential_status, credential_status_message, credential_tested_at "
+        "FROM platform_credentials WHERE client_id=? AND platform=?",
+        (client["id"], platform),
+    )
+    if not row:
+        return HTMLResponse("")
+
+    status = row.get("credential_status", "untested")
+    msg = row.get("credential_status_message", "")
+
+    if status == "valid":
+        html = f'<span class="badge completed" title="{msg}">&#10003; verified</span>'
+    elif status == "invalid":
+        html = f'<span class="badge failed" title="{msg}">&#10007; {msg[:60]}</span>'
+    elif status == "testing":
+        html = '<span class="badge running" aria-busy="true">testing...</span>'
+    elif status == "error":
+        html = f'<span class="badge failed" title="{msg}">&#9888; {msg[:60]}</span>'
+    else:
+        html = '<span class="badge">untested</span>'
+
+    # Keep polling while testing
+    if status == "testing":
+        html = f'<span hx-get="/my/api/credentials/{platform}/status" hx-trigger="load delay:2s" hx-swap="outerHTML">{html}</span>'
+
+    return HTMLResponse(html)
 
 
 @router.post("/settings/digest")

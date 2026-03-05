@@ -1302,6 +1302,13 @@ def _migration_045_add_listening_analytics(db: Database) -> None:
     )
 
 
+def _migration_046_add_credential_validation(db: Database) -> None:
+    """Add credential validation status columns to platform_credentials."""
+    _safe_add_column(db, "platform_credentials", "credential_status TEXT DEFAULT 'untested'")
+    _safe_add_column(db, "platform_credentials", "credential_status_message TEXT DEFAULT ''")
+    _safe_add_column(db, "platform_credentials", "credential_tested_at TIMESTAMP")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1348,6 +1355,7 @@ MIGRATIONS = {
     43: _migration_043_add_proactive_engagement,
     44: _migration_044_add_community_intelligence,
     45: _migration_045_add_listening_analytics,
+    46: _migration_046_add_credential_validation,
 }
 
 
@@ -1445,7 +1453,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],
-    "platform_credentials": ["id", "client_id", "platform", "last_rotated_at"],
+    "platform_credentials": ["id", "client_id", "platform", "last_rotated_at", "credential_status"],
     # Migration 008
     "stripe_events": ["id", "event_type"],
     # Migration 009

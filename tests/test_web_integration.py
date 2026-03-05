@@ -254,3 +254,9 @@ class TestAuthenticatedPages:
         resp = client.get("/my/engagement")
         assert resp.status_code == 200
         assert "Engagement" in resp.text
+
+    def test_credential_status_returns_200(self, tmp_path):
+        """Credential status endpoint returns 200 for any platform."""
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/api/credentials/bluesky/status")
+        assert resp.status_code == 200

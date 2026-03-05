@@ -1162,6 +1162,53 @@ def _migration_042_add_social_listening(db: Database) -> None:
     _safe_add_column(db, "clients", "proactive_engagement_enabled INTEGER NOT NULL DEFAULT 0")
 
 
+def _migration_043_add_proactive_engagement(db: Database) -> None:
+    """Expand engagement for proactive replies: outcome tracking, rate limits, conversation links."""
+    # Add columns to engagement_replies for proactive engagement
+    _safe_add_column(db, "engagement_replies", "engagement_type TEXT NOT NULL DEFAULT 'reactive'")
+    _safe_add_column(db, "engagement_replies", "conversation_id TEXT DEFAULT ''")
+    _safe_add_column(db, "engagement_replies", "reasoning TEXT DEFAULT ''")
+
+    # Engagement outcomes: track reply effectiveness
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS engagement_outcomes (
+            id TEXT PRIMARY KEY,
+            reply_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL DEFAULT 'bluesky',
+            reply_uri TEXT NOT NULL DEFAULT '',
+            target_author TEXT NOT NULL DEFAULT '',
+            like_count INTEGER NOT NULL DEFAULT 0,
+            reply_count INTEGER NOT NULL DEFAULT 0,
+            target_responded INTEGER NOT NULL DEFAULT 0,
+            target_followed INTEGER NOT NULL DEFAULT 0,
+            outcome_score REAL NOT NULL DEFAULT 0.0,
+            checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engagement_outcomes_client ON engagement_outcomes(client_id, created_at DESC)",
+        commit=True,
+    )
+
+    # Rate limits: per-client per-platform hourly/daily caps
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS engagement_rate_limits (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL,
+            period TEXT NOT NULL,
+            max_count INTEGER NOT NULL DEFAULT 10,
+            current_count INTEGER NOT NULL DEFAULT 0,
+            period_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(client_id, platform, period)
+        )""",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1205,6 +1252,7 @@ MIGRATIONS = {
     40: _migration_040_add_image_columns,
     41: _migration_041_add_autonomy_features,
     42: _migration_042_add_social_listening,
+    43: _migration_043_add_proactive_engagement,
 }
 
 
@@ -1375,6 +1423,9 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "active",
         "cooldown_minutes",
     ],
+    # Migration 043
+    "engagement_outcomes": ["id", "reply_id", "client_id", "platform", "outcome_score"],
+    "engagement_rate_limits": ["id", "client_id", "platform", "period", "max_count", "current_count"],
     # Internal
     "schema_version": ["version"],
 }

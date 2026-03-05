@@ -1020,23 +1020,46 @@ class Pipeline:
                 except Exception as e:
                     logger.warning(f"  -> Series advancement error (non-fatal): {e}")
 
-            # 3.4 Engagement Agent (autonomous replies)
+            # 3.4 Engagement Agent (autonomous replies — reactive + proactive)
             if self.engagement:
                 logger.info("[11.5/14] Engagement Agent monitoring conversations...")
                 try:
-                    # Update bluesky client for tenant
+                    # Update platform clients for tenant
                     self.engagement.bluesky = self.publisher.bluesky
+                    self.engagement.twitter = self.publisher.twitter
+                    self.engagement.linkedin = self.publisher.linkedin
+                    self.engagement.reddit = self.publisher.reddit
                     engagement_result = self.engagement.run(
                         run_id,
                         client_id=client_id,
                         dry_run=self.dry_run,
                     )
                     logger.info(
-                        f"  -> Checked {engagement_result.notifications_checked} notifications, "
-                        f"posted {engagement_result.replies_posted} replies"
+                        f"  -> Reactive: {engagement_result.notifications_checked} notifications, "
+                        f"{engagement_result.replies_posted} posted. "
+                        f"Proactive: {engagement_result.proactive_evaluated} evaluated, "
+                        f"{engagement_result.proactive_posted} posted"
                     )
                 except Exception as e:
                     logger.warning(f"  -> Engagement agent error (non-fatal): {e}")
+
+            # 3.4a Engagement Outcome Tracker (check reply effectiveness)
+            if self.engagement and not self.dry_run:
+                try:
+                    from ortobahn.engagement_outcomes import EngagementOutcomeTracker
+
+                    outcome_tracker = EngagementOutcomeTracker(
+                        self.db,
+                        bluesky_client=self.publisher.bluesky,
+                        twitter_client=self.publisher.twitter,
+                        reddit_client=self.publisher.reddit,
+                        linkedin_client=self.publisher.linkedin,
+                    )
+                    outcomes = outcome_tracker.check_recent_replies(client_id)
+                    if outcomes:
+                        logger.info(f"  -> Tracked {outcomes} engagement outcomes")
+                except Exception as e:
+                    logger.warning(f"  -> Outcome tracker error (non-fatal): {e}")
 
             # 3.5 Post Feedback Loop (real-time engagement check)
             if self.post_feedback and not generate_only:

@@ -165,6 +165,18 @@ def _ordered_responses():
     ]
 
 
+def _ordered_responses_strategy_valid():
+    """Responses when strategy is already valid (dept agents skipped)."""
+    return [
+        # SRE, Support, Security, Legal skipped
+        CEO_JSON,
+        STRATEGIST_JSON,
+        CREATOR_JSON,
+        CFO_JSON,
+        OPS_JSON,
+    ]
+
+
 def _fake_call_llm_factory(responses):
     """Create a side_effect callable that cycles through *responses*."""
     counter = {"n": 0}
@@ -715,7 +727,7 @@ class TestRunCycleFullPipeline:
         with (
             patch(
                 "ortobahn.agents.base.call_llm",
-                side_effect=_fake_call_llm_factory(_ordered_responses() + _ordered_responses()),
+                side_effect=_fake_call_llm_factory(_ordered_responses() + _ordered_responses_strategy_valid()),
             ),
             patch("ortobahn.orchestrator.get_trending_headlines", return_value=[]),
             patch("ortobahn.orchestrator.get_trending_searches", return_value=[]),

@@ -44,6 +44,7 @@ class StrategistAgent(BaseAgent):
         strategy: Strategy,
         trending: list[TrendingTopic] | None = None,
         client: Client | None = None,
+        insights_context: str = "",
     ) -> ContentPlan:
         # Format prompt with client context
         if client:
@@ -90,6 +91,10 @@ class StrategistAgent(BaseAgent):
         memory_context = self.get_memory_context(client_id)
         if memory_context:
             parts.append(f"\n## Agent Memory\n{memory_context}")
+
+        # Inject cross-agent insights (CONTENT_TREND, CLIENT_HEALTH)
+        if insights_context:
+            parts.append(f"\n{insights_context}")
 
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)

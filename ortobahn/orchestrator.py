@@ -566,21 +566,31 @@ class Pipeline:
             else:
                 self.db.update_pipeline_phase(run_id, "intelligence")
 
-            # 1.0 SRE Agent (system health check)
-            logger.info("[1/14] SRE Agent checking system health...")
-            sre_report = self.sre.run(run_id, slack_webhook_url=self.settings.slack_webhook_url)
-            logger.info(f"  -> Health: {sre_report.health_status}, Alerts: {len(sre_report.alerts)}")
+            # Check if CEO will need fresh department reports (strategy still valid?)
+            _strategy_valid = bool(self.db.get_active_strategy(client_id=client_id))
 
-            # Publish SRE insights to shared bus
-            if sre_report.health_status != "healthy":
-                self.insight_bus.publish(
-                    source_agent="sre",
-                    insight_type=PLATFORM_ISSUE,
-                    content=f"System health: {sre_report.health_status}. "
-                    + "; ".join(a.message for a in sre_report.alerts[:5]),
-                    confidence=0.8,
-                    metadata={"health_status": sre_report.health_status, "alert_count": len(sre_report.alerts)},
-                )
+            # 1.0 SRE Agent (system health check) — skip if strategy valid
+            sre_report = None
+            if _strategy_valid:
+                logger.info("  Strategy still valid — skipping department agents (SRE/Support/Security/Legal)")
+            else:
+                logger.info("[1/14] SRE Agent checking system health...")
+                sre_report = self.sre.run(run_id, slack_webhook_url=self.settings.slack_webhook_url)
+                logger.info(f"  -> Health: {sre_report.health_status}, Alerts: {len(sre_report.alerts)}")
+
+                # Publish SRE insights to shared bus
+                if sre_report.health_status != "healthy":
+                    self.insight_bus.publish(
+                        source_agent="sre",
+                        insight_type=PLATFORM_ISSUE,
+                        content=f"System health: {sre_report.health_status}. "
+                        + "; ".join(a.message for a in sre_report.alerts[:5]),
+                        confidence=0.8,
+                        metadata={
+                            "health_status": sre_report.health_status,
+                            "alert_count": len(sre_report.alerts),
+                        },
+                    )
 
             # 1.1 CI Fix Agent (self-healing CI/CD)
             if self.cifix:
@@ -659,32 +669,35 @@ class Pipeline:
 
             performance_insights = get_performance_insights(self.db, client_id=client_id)
 
-            # 1.6 Support Agent (moved before CEO so report feeds into executive decisions)
-            logger.info("[5/14] Support Agent checking client health...")
-            support_report = self.support.run(run_id)
-            logger.info(f"  -> Tickets: {len(support_report.tickets)}, At-risk: {len(support_report.at_risk_clients)}")
-
-            # 1.7 Security Agent
-            logger.info("[6/14] Security Agent assessing threats...")
-            try:
-                security_report = self.security.run(run_id)
+            # 1.6–1.8 Department agents — skip if strategy still valid
+            support_report = None
+            security_report = None
+            legal_report = None
+            if not _strategy_valid:
+                logger.info("[5/14] Support Agent checking client health...")
+                support_report = self.support.run(run_id)
                 logger.info(
-                    f"  -> Threat level: {security_report.threat_level}, Threats: {len(security_report.threats_detected)}"
+                    f"  -> Tickets: {len(support_report.tickets)}, At-risk: {len(support_report.at_risk_clients)}"
                 )
-            except Exception as e:
-                logger.warning(f"  -> Security agent error (non-fatal): {e}")
-                security_report = None
 
-            # 1.8 Legal Agent
-            logger.info("[7/14] Legal Agent reviewing compliance...")
-            try:
-                legal_report = self.legal.run(run_id, client=client)
-                logger.info(
-                    f"  -> Docs: {len(legal_report.documents_generated)}, Gaps: {len(legal_report.compliance_gaps)}"
-                )
-            except Exception as e:
-                logger.warning(f"  -> Legal agent error (non-fatal): {e}")
-                legal_report = None
+                logger.info("[6/14] Security Agent assessing threats...")
+                try:
+                    security_report = self.security.run(run_id)
+                    logger.info(
+                        f"  -> Threat level: {security_report.threat_level}, "
+                        f"Threats: {len(security_report.threats_detected)}"
+                    )
+                except Exception as e:
+                    logger.warning(f"  -> Security agent error (non-fatal): {e}")
+
+                logger.info("[7/14] Legal Agent reviewing compliance...")
+                try:
+                    legal_report = self.legal.run(run_id, client=client)
+                    logger.info(
+                        f"  -> Docs: {len(legal_report.documents_generated)}, Gaps: {len(legal_report.compliance_gaps)}"
+                    )
+                except Exception as e:
+                    logger.warning(f"  -> Legal agent error (non-fatal): {e}")
 
             if not _skip_intelligence:
                 self.db.complete_pipeline_phase(run_id, "intelligence")
@@ -781,8 +794,22 @@ class Pipeline:
                 self.db.update_pipeline_phase(run_id, "execution")
 
             # 3.1 Strategist
+            # Gather cross-agent insights for Strategist (CONTENT_TREND, CLIENT_HEALTH)
+            strategist_insights = ""
+            try:
+                _strat_ins = self.insight_bus.get_insights_for_agent("strategist", limit=5)
+                if _strat_ins:
+                    _lines = ["## Cross-Agent Insights"]
+                    for _ins in _strat_ins:
+                        _lines.append(f"- [{_ins['insight_type']}] {_ins['content']}")
+                    strategist_insights = "\n".join(_lines)
+            except Exception:
+                pass
+
             logger.info("[9/14] Strategist Agent planning content...")
-            content_plan = self.strategist.run(run_id, strategy=strategy, trending=trending, client=client)
+            content_plan = self.strategist.run(
+                run_id, strategy=strategy, trending=trending, client=client, insights_context=strategist_insights
+            )
             content_plan.posts = content_plan.posts[:max_posts]
             logger.info(f"  -> {len(content_plan.posts)} post ideas")
 
@@ -807,6 +834,18 @@ class Pipeline:
                 logger.warning("  -> Calibration adapter error (non-fatal): %s", e)
 
             # 3.2 Creator
+            # Gather cross-agent insights for Creator (CONTENT_TREND)
+            creator_insights = ""
+            try:
+                _creator_ins = self.insight_bus.get_insights_for_agent("creator", limit=5)
+                if _creator_ins:
+                    _lines = ["## Cross-Agent Insights"]
+                    for _ins in _creator_ins:
+                        _lines.append(f"- [{_ins['insight_type']}] {_ins['content']}")
+                    creator_insights = "\n".join(_lines)
+            except Exception:
+                pass
+
             logger.info("[10/14] Creator Agent writing posts...")
             drafts = self.creator.run(
                 run_id,
@@ -820,6 +859,7 @@ class Pipeline:
                 if calibration_context
                 else style_context,
                 series_context=series_context,
+                insights_context=creator_insights,
             )
             logger.info(f"  -> {len(drafts.posts)} drafts written")
 

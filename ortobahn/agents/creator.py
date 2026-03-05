@@ -56,6 +56,7 @@ class CreatorAgent(BaseAgent):
         critique_threshold: float = 0.8,
         style_context: str = "",
         series_context: str = "",
+        insights_context: str = "",
     ) -> DraftPosts:
         platforms = target_platforms or [Platform.GENERIC]
 
@@ -126,6 +127,10 @@ class CreatorAgent(BaseAgent):
                 parts.append(f"\n{content_brief}")
         except Exception:
             pass  # Non-fatal — content features are additive
+
+        # Inject cross-agent insights (CONTENT_TREND)
+        if insights_context:
+            parts.append(f"\n{insights_context}")
 
         user_message = "\n".join(parts)
         response = self.call_llm(user_message, system_prompt=system_prompt)

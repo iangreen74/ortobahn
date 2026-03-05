@@ -48,6 +48,10 @@ dev = [
     "types-Markdown>=3.5",
     "mcp[cli]>=1.0",
 ]
+e2e = [
+    "playwright>=1.40",
+    "pytest-playwright>=0.4",
+]
 mcp = [
     "mcp[cli]>=1.0",
 ]

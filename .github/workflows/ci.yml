@@ -120,6 +120,22 @@ jobs:
           DATABASE_URL: postgresql://ortobahn_test:ortobahn_test@postgres:5432/ortobahn_test
         run: pytest -v --tb=short -m "not network" --no-cov
 
+  # E2E browser tests — Playwright against real server
+  e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Advisory — E2E flakiness shouldn't block deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,web,e2e]"
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+      - name: Run E2E tests
+        run: pytest e2e/ -v --tb=short --browser chromium
+
   # Multi-version compatibility — only on PRs, not every push
   test-compat:
     runs-on: self-hosted

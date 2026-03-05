@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from ortobahn.config import Settings
 from ortobahn.db import Database
+from tests.conftest import csrf_form_data
 
 
 def _create_test_app(tmp_path):
@@ -118,7 +119,7 @@ def _create_authenticated_client(tmp_path):
 
     test_client = TestClient(app)
     test_client.cookies.set("session", token)
-    return app, test_client, client_id
+    return app, test_client, client_id, token, settings.secret_key
 
 
 class TestAuthenticatedPages:
@@ -130,122 +131,126 @@ class TestAuthenticatedPages:
 
     def test_analytics_renders_200(self, tmp_path):
         """Analytics page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/analytics")
         assert resp.status_code == 200
         assert "Analytics" in resp.text
 
     def test_articles_renders_200(self, tmp_path):
         """Articles page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/articles")
         assert resp.status_code == 200
         assert "Articles" in resp.text
 
     def test_settings_renders_200(self, tmp_path):
         """Settings page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/settings")
         assert resp.status_code == 200
         assert "Settings" in resp.text
 
     def test_dashboard_renders_200(self, tmp_path):
         """Dashboard page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/dashboard")
         assert resp.status_code == 200
 
     def test_generate_article_redirects(self, tmp_path):
         """Generate Article button must POST and redirect, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
-        resp = client.post("/my/generate-article", follow_redirects=False)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
+        resp = client.post(
+            "/my/generate-article",
+            data=csrf_form_data(_tok, _sk),
+            follow_redirects=False,
+        )
         assert resp.status_code == 303
         assert "/my/articles" in resp.headers["location"]
         assert "msg=" in resp.headers["location"]
 
     def test_calendar_renders_200(self, tmp_path):
         """Calendar page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/calendar")
         assert resp.status_code == 200
         assert "Calendar" in resp.text
 
     def test_images_renders_200(self, tmp_path):
         """Images gallery page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/images")
         assert resp.status_code == 200
         assert "Images" in resp.text
 
     def test_images_gallery_partial_200(self, tmp_path):
         """Images gallery HTMX partial must return 200."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/api/partials/images-gallery", headers={"hx-request": "true"})
         assert resp.status_code == 200
 
     def test_search_empty_returns_200(self, tmp_path):
         """Search with empty query must return empty 200."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/search")
         assert resp.status_code == 200
 
     def test_search_with_query_returns_200(self, tmp_path):
         """Search with a query must return 200 with results."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/search?q=settings")
         assert resp.status_code == 200
         assert "Settings" in resp.text
 
     def test_pipeline_pulse_returns_200(self, tmp_path):
         """Pipeline pulse endpoint must return 200."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/api/pipeline-pulse")
         assert resp.status_code == 200
 
     def test_review_count_returns_200(self, tmp_path):
         """Review count badge endpoint must return 200."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/api/review-count")
         assert resp.status_code == 200
 
     def test_review_queue_renders_200(self, tmp_path):
         """Review Queue page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/review")
         assert resp.status_code == 200
         assert "Review Queue" in resp.text
 
     def test_posts_page_renders_200(self, tmp_path):
         """Posts page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/posts")
         assert resp.status_code == 200
         assert "Posts" in resp.text
 
     def test_activity_page_renders_200(self, tmp_path):
         """Activity page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/activity")
         assert resp.status_code == 200
         assert "Activity" in resp.text
 
     def test_performance_page_renders_200(self, tmp_path):
         """Performance page must render (redirects from analytics)."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/performance")
         assert resp.status_code == 200
         assert "Analytics" in resp.text
 
     def test_listening_page_renders_200(self, tmp_path):
         """Listening page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/listening")
         assert resp.status_code == 200
         assert "Listening" in resp.text
 
     def test_engagement_page_renders_200(self, tmp_path):
         """Engagement queue page must render, not 500."""
-        _app, client, _cid = _create_authenticated_client(tmp_path)
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/engagement")
         assert resp.status_code == 200
         assert "Engagement" in resp.text

@@ -19,6 +19,7 @@ from ortobahn.cognito import CognitoClient
 from ortobahn.config import load_settings
 from ortobahn.constants import PROTECTED_CLIENT_IDS
 from ortobahn.db import Database, create_database
+from ortobahn.web.csrf import generate_csrf_token, validate_csrf_token
 from ortobahn.web.rate_limit import RateLimitMiddleware
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -180,6 +181,49 @@ def create_app() -> FastAPI:
     @app.exception_handler(_LoginRedirect)
     async def _redirect_to_login(request: Request, exc: _LoginRedirect):
         return RedirectResponse(f"/api/auth/login?next={exc.next_url}")
+
+    @app.middleware("http")
+    async def csrf_middleware(request: Request, call_next):
+        """CSRF protection for tenant POST routes.
+
+        Generates a token per session and stores on request.state for templates.
+        Validates the token on POST requests to /my/* via header or form field.
+        """
+        secret_key = request.app.state.settings.secret_key
+        session_token = request.cookies.get("session", "")
+        if session_token:
+            request.state.csrf_token = generate_csrf_token(secret_key, session_token)
+        else:
+            request.state.csrf_token = ""
+
+        if request.method == "POST" and request.url.path.startswith("/my/"):
+            # Skip CSRF for API key auth (programmatic access)
+            if request.headers.get("x-api-key"):
+                return await call_next(request)
+
+            if session_token:
+                # Check header first (HTMX / fetch), then parse raw body for form field.
+                # We parse the raw body manually instead of calling request.form()
+                # to avoid consuming the body stream (which would break downstream handlers).
+                csrf_token = request.headers.get("x-csrf-token", "")
+                if not csrf_token:
+                    content_type = request.headers.get("content-type", "")
+                    if "application/x-www-form-urlencoded" in content_type:
+                        from urllib.parse import parse_qs
+
+                        body = await request.body()
+                        parsed = parse_qs(body.decode("utf-8", errors="replace"))
+                        csrf_values = parsed.get("_csrf", [])
+                        csrf_token = csrf_values[0] if csrf_values else ""
+
+                if not validate_csrf_token(csrf_token, secret_key, session_token):
+                    return HTMLResponse(
+                        "<h1>403 Forbidden</h1><p>CSRF validation failed. "
+                        '<a href="javascript:history.back()">Go back</a> and try again.</p>',
+                        status_code=403,
+                    )
+
+        return await call_next(request)
 
     @app.middleware("http")
     async def security_headers_middleware(request: Request, call_next):

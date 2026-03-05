@@ -9,6 +9,12 @@
     Article generation requires an Anthropic API key. Please contact support.
     {% elif request.query_params.get('detail') == 'no_subscription' %}
     An active subscription is required to generate articles. <a href="/my/subscribe">Subscribe now</a>
+    {% elif request.query_params.get('detail') == 'frequency' %}
+    Next article available in {{ request.query_params.get('days', '?') }} day(s) ({{ request.query_params.get('freq', 'weekly') }} schedule).
+    <form method="post" action="/my/generate-article" style="display:inline;margin:0">
+        <input type="hidden" name="_override" value="1">
+        <button type="submit" class="outline" style="padding:0.25rem 0.75rem;font-size:0.85rem;">Generate anyway</button>
+    </form>
     {% else %}
     Something went wrong. Please try again.
     {% endif %}

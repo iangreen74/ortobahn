@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -208,6 +209,30 @@ async def tenant_generate_article(request: Request, background_tasks: Background
     if not client.get("article_enabled"):
         db.execute("UPDATE clients SET article_enabled=1 WHERE id=?", (client["id"],), commit=True)
         client = db.get_client(client["id"]) or client
+
+    # Article frequency guard — check if enough time has passed since last article
+    form = await request.form()
+    override = form.get("_override") == "1"
+    if not override:
+        freq = client.get("article_frequency") or "weekly"
+        freq_days = {"weekly": 7, "biweekly": 14, "monthly": 30}.get(freq, 7)
+        last_article = db.fetchone(
+            "SELECT created_at FROM articles WHERE client_id=? ORDER BY created_at DESC LIMIT 1",
+            (client["id"],),
+        )
+        if last_article and last_article.get("created_at"):
+            from ortobahn.db import to_datetime
+
+            last_dt = to_datetime(last_article["created_at"])
+            if last_dt:
+                next_eligible = last_dt + timedelta(days=freq_days)
+                now = datetime.now(timezone.utc)
+                if now < next_eligible:
+                    days_left = (next_eligible - now).days + 1
+                    return RedirectResponse(
+                        f"/my/articles?msg=error&detail=frequency&days={days_left}&freq={freq}",
+                        status_code=303,
+                    )
 
     if not settings.anthropic_api_key:
         return RedirectResponse("/my/articles?msg=error&detail=no_api_key", status_code=303)

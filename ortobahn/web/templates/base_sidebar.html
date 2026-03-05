@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="csrf-token" content="{{ request.state.csrf_token }}">
 </head>
 <body class="has-sidebar">
     <aside class="sidebar" id="sidebar">
@@ -185,6 +186,25 @@
             sidebar.classList.remove('open');
         }
     });
+    /* CSRF: inject hidden field into all POST forms */
+    (function() {
+        var token = document.querySelector('meta[name="csrf-token"]');
+        if (!token) return;
+        var val = token.getAttribute('content');
+        if (!val) return;
+        document.querySelectorAll('form[method="post"]').forEach(function(form) {
+            if (form.querySelector('input[name="_csrf"]')) return;
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = '_csrf';
+            input.value = val;
+            form.appendChild(input);
+        });
+        /* HTMX: send CSRF token as header on all requests */
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            evt.detail.headers['X-CSRF-Token'] = val;
+        });
+    })();
     </script>
 </body>
 </html>

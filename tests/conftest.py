@@ -10,6 +10,7 @@ import pytest
 from ortobahn.config import Settings
 from ortobahn.db import Database
 from ortobahn.llm import LLMResponse
+from ortobahn.web.csrf import generate_csrf_token
 
 
 @pytest.fixture(autouse=True)
@@ -159,6 +160,15 @@ def auth_headers(test_api_key):
     """Headers dict with a valid API key for authenticated requests."""
     raw_key, _ = test_api_key
     return {"X-API-Key": raw_key}
+
+
+def csrf_form_data(session_token: str, secret_key: str, data: dict | None = None) -> dict:
+    """Build form data dict with a valid CSRF token included."""
+    token = generate_csrf_token(secret_key, session_token)
+    result = {"_csrf": token}
+    if data:
+        result.update(data)
+    return result
 
 
 @pytest.fixture

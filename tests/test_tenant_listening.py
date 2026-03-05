@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 
 from ortobahn.config import Settings
 from ortobahn.db import Database
+from tests.conftest import csrf_form_data
 
 
 def _make_authenticated(tmp_path):
@@ -30,23 +31,27 @@ def _make_authenticated(tmp_path):
 
     test_client = TestClient(app)
     test_client.cookies.set("session", token)
-    return app, test_client, client_id, db
+    return app, test_client, client_id, db, token, settings.secret_key
+
+
+def _csrf(token, secret_key, data=None):
+    return csrf_form_data(token, secret_key, data)
 
 
 class TestTenantListening:
     def test_listening_page_renders(self, tmp_path):
         """Listening page renders 200."""
-        _app, client, _cid, _db = _make_authenticated(tmp_path)
+        _app, client, _cid, _db, _t, _s = _make_authenticated(tmp_path)
         resp = client.get("/my/listening")
         assert resp.status_code == 200
         assert "Listening" in resp.text
 
     def test_add_rule(self, tmp_path):
         """Adding a listening rule works."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/listening/rules",
-            data={"platform": "bluesky", "rule_type": "keyword", "value": "test_keyword", "priority": "2"},
+            data=_csrf(tok, sk, {"platform": "bluesky", "rule_type": "keyword", "value": "test_keyword", "priority": "2"}),
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -59,10 +64,10 @@ class TestTenantListening:
 
     def test_add_rule_empty_rejected(self, tmp_path):
         """Empty value is rejected."""
-        _app, client, _cid, _db = _make_authenticated(tmp_path)
+        _app, client, _cid, _db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/listening/rules",
-            data={"platform": "bluesky", "rule_type": "keyword", "value": "", "priority": "3"},
+            data=_csrf(tok, sk, {"platform": "bluesky", "rule_type": "keyword", "value": "", "priority": "3"}),
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -70,7 +75,7 @@ class TestTenantListening:
 
     def test_delete_rule(self, tmp_path):
         """Deleting a rule deactivates it."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         rule_id = str(uuid.uuid4())
         db.execute(
             "INSERT INTO listening_rules (id, client_id, platform, rule_type, value, priority, active) "
@@ -78,17 +83,17 @@ class TestTenantListening:
             (rule_id, cid),
             commit=True,
         )
-        resp = client.post(f"/my/listening/rules/{rule_id}/delete", follow_redirects=False)
+        resp = client.post(f"/my/listening/rules/{rule_id}/delete", data=_csrf(tok, sk), follow_redirects=False)
         assert resp.status_code == 303
         rule = db.fetchone("SELECT active FROM listening_rules WHERE id=?", (rule_id,))
         assert rule["active"] == 0
 
     def test_add_account(self, tmp_path):
         """Adding a tracked account works."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/listening/accounts",
-            data={"platform": "twitter", "handle": "competitor.x", "account_type": "competitor"},
+            data=_csrf(tok, sk, {"platform": "twitter", "handle": "competitor.x", "account_type": "competitor"}),
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -101,7 +106,7 @@ class TestTenantListening:
 
     def test_duplicate_account_rejected(self, tmp_path):
         """Duplicate tracked account is rejected."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         db.execute(
             "INSERT INTO tracked_accounts (id, client_id, platform, account_handle, account_type, active) "
             "VALUES (?, ?, 'twitter', 'dup.x', 'influencer', 1)",
@@ -110,7 +115,7 @@ class TestTenantListening:
         )
         resp = client.post(
             "/my/listening/accounts",
-            data={"platform": "twitter", "handle": "dup.x", "account_type": "influencer"},
+            data=_csrf(tok, sk, {"platform": "twitter", "handle": "dup.x", "account_type": "influencer"}),
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -120,14 +125,14 @@ class TestTenantListening:
 class TestTenantEngagementQueue:
     def test_engagement_page_renders(self, tmp_path):
         """Engagement page renders 200."""
-        _app, client, _cid, _db = _make_authenticated(tmp_path)
+        _app, client, _cid, _db, _t, _s = _make_authenticated(tmp_path)
         resp = client.get("/my/engagement")
         assert resp.status_code == 200
         assert "Engagement" in resp.text
 
     def test_skip_conversation(self, tmp_path):
         """Skipping a queued conversation works."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         conv_id = str(uuid.uuid4())
         db.execute(
             """INSERT INTO discovered_conversations
@@ -139,7 +144,7 @@ class TestTenantEngagementQueue:
             (conv_id, cid),
             commit=True,
         )
-        resp = client.post(f"/my/engagement/{conv_id}/skip", follow_redirects=False)
+        resp = client.post(f"/my/engagement/{conv_id}/skip", data=_csrf(tok, sk), follow_redirects=False)
         assert resp.status_code == 303
         conv = db.fetchone("SELECT status FROM discovered_conversations WHERE id=?", (conv_id,))
         assert conv["status"] == "skipped"
@@ -148,14 +153,14 @@ class TestTenantEngagementQueue:
 class TestListeningSettings:
     def test_listening_settings_toggle(self, tmp_path):
         """Listening settings toggle works."""
-        _app, client, cid, db = _make_authenticated(tmp_path)
+        _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/settings/listening",
-            data={
+            data=_csrf(tok, sk, {
                 "listening_enabled": "on",
                 "proactive_engagement_enabled": "on",
                 "listening_max_conversations_per_cycle": "100",
-            },
+            }),
             follow_redirects=False,
         )
         assert resp.status_code == 303

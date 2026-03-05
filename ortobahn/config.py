@@ -155,6 +155,17 @@ class Settings:
     engagement_max_replies: int = 3
     engagement_confidence_threshold: float = 0.75
 
+    # Social listening
+    listening_enabled: bool = False
+    listening_max_conversations: int = 50
+    listening_relevance_threshold: float = 0.6
+    listening_twitter_daily_budget: int = 100
+
+    # Proactive engagement
+    proactive_engagement_enabled: bool = False
+    proactive_engagement_max_per_cycle: int = 5
+    proactive_engagement_confidence_threshold: float = 0.80
+
     # Style evolution (A/B testing)
     style_evolution_enabled: bool = True
 
@@ -377,6 +388,16 @@ def load_settings() -> Settings:
         engagement_enabled=os.environ.get("ENGAGEMENT_ENABLED", "true").lower() in ("true", "1", "yes"),
         engagement_max_replies=int(os.environ.get("ENGAGEMENT_MAX_REPLIES", "3")),
         engagement_confidence_threshold=float(os.environ.get("ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.75")),
+        listening_enabled=os.environ.get("LISTENING_ENABLED", "false").lower() in ("true", "1", "yes"),
+        listening_max_conversations=int(os.environ.get("LISTENING_MAX_CONVERSATIONS", "50")),
+        listening_relevance_threshold=float(os.environ.get("LISTENING_RELEVANCE_THRESHOLD", "0.6")),
+        listening_twitter_daily_budget=int(os.environ.get("LISTENING_TWITTER_DAILY_BUDGET", "100")),
+        proactive_engagement_enabled=os.environ.get("PROACTIVE_ENGAGEMENT_ENABLED", "false").lower()
+        in ("true", "1", "yes"),
+        proactive_engagement_max_per_cycle=int(os.environ.get("PROACTIVE_ENGAGEMENT_MAX_PER_CYCLE", "5")),
+        proactive_engagement_confidence_threshold=float(
+            os.environ.get("PROACTIVE_ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.80")
+        ),
         style_evolution_enabled=os.environ.get("STYLE_EVOLUTION_ENABLED", "true").lower() in ("true", "1", "yes"),
         predictive_timing_enabled=os.environ.get("PREDICTIVE_TIMING_ENABLED", "true").lower() in ("true", "1", "yes"),
         serialization_enabled=os.environ.get("SERIALIZATION_ENABLED", "true").lower() in ("true", "1", "yes"),

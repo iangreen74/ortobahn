@@ -1093,6 +1093,75 @@ def _migration_041_add_autonomy_features(db: Database) -> None:
     )
 
 
+def _migration_042_add_social_listening(db: Database) -> None:
+    """Add social listening: discovered conversations, listening rules, client columns."""
+    # Discovered conversations from platform searches
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS discovered_conversations (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_query TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            external_uri TEXT NOT NULL,
+            author_handle TEXT NOT NULL,
+            author_display_name TEXT NOT NULL DEFAULT '',
+            text_content TEXT NOT NULL,
+            parent_external_id TEXT,
+            engagement_score INTEGER NOT NULL DEFAULT 0,
+            relevance_score REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'new',
+            discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            evaluated_at TIMESTAMP,
+            expires_at TIMESTAMP,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_disc_conv_client_status "
+        "ON discovered_conversations(client_id, status, discovered_at DESC)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_disc_conv_platform ON discovered_conversations(platform, discovered_at DESC)",
+        commit=True,
+    )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_disc_conv_dedup "
+        "ON discovered_conversations(client_id, platform, external_id)",
+        commit=True,
+    )
+
+    # Per-client listening rules
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS listening_rules (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            platform TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 3,
+            active INTEGER NOT NULL DEFAULT 1,
+            max_results_per_scan INTEGER NOT NULL DEFAULT 20,
+            cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+            last_scanned_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_listening_rules_client ON listening_rules(client_id, active, platform)",
+        commit=True,
+    )
+
+    # Client columns for listening feature flags
+    _safe_add_column(db, "clients", "listening_enabled INTEGER NOT NULL DEFAULT 0")
+    _safe_add_column(db, "clients", "listening_max_conversations_per_cycle INTEGER NOT NULL DEFAULT 50")
+    _safe_add_column(db, "clients", "proactive_engagement_enabled INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1135,6 +1204,7 @@ MIGRATIONS = {
     39: _migration_039_add_article_schedule,
     40: _migration_040_add_image_columns,
     41: _migration_041_add_autonomy_features,
+    42: _migration_042_add_social_listening,
 }
 
 
@@ -1226,6 +1296,9 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "image_generation_enabled",
         "adaptive_threshold",
         "auto_graduation_status",
+        "listening_enabled",
+        "listening_max_conversations_per_cycle",
+        "proactive_engagement_enabled",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],
@@ -1278,6 +1351,30 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     # Migration 041
     "graduation_events": ["id", "client_id", "event_type"],
     "agent_events": ["id", "event_type", "client_id"],
+    # Migration 042
+    "discovered_conversations": [
+        "id",
+        "client_id",
+        "platform",
+        "source_type",
+        "source_query",
+        "external_id",
+        "external_uri",
+        "author_handle",
+        "text_content",
+        "relevance_score",
+        "status",
+    ],
+    "listening_rules": [
+        "id",
+        "client_id",
+        "platform",
+        "rule_type",
+        "value",
+        "priority",
+        "active",
+        "cooldown_minutes",
+    ],
     # Internal
     "schema_version": ["version"],
 }

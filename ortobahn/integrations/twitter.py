@@ -167,6 +167,70 @@ class TwitterClient:
             logger.warning(f"Failed to verify tweet {tweet_id}: {e}")
             return None
 
+    def search_recent(
+        self,
+        query: str,
+        max_results: int = 25,
+        sort_order: str = "relevancy",
+    ) -> list[dict]:
+        """Search recent tweets (7-day window).  Requires Twitter Basic tier ($200/mo).
+
+        Each call consumes from the 500K monthly tweet-read quota.
+        """
+        client = self._get_client()
+        try:
+            response = self._call_with_breaker(
+                client.search_recent_tweets,
+                query=query,
+                max_results=min(max_results, 100),
+                sort_order=sort_order,
+                tweet_fields=["public_metrics", "created_at", "author_id", "conversation_id"],
+                user_fields=["username", "name"],
+                expansions=["author_id"],
+            )
+            users = {}
+            if response.includes and response.includes.get("users"):
+                for u in response.includes["users"]:
+                    users[u.id] = {"username": u.username, "name": u.name}
+
+            results = []
+            for tweet in response.data or []:
+                m = tweet.public_metrics or {}
+                author = users.get(tweet.author_id, {})
+                results.append(
+                    {
+                        "tweet_id": str(tweet.id),
+                        "url": f"https://x.com/i/status/{tweet.id}",
+                        "text": tweet.text,
+                        "author_handle": author.get("username", ""),
+                        "author_display_name": author.get("name", ""),
+                        "like_count": m.get("like_count", 0),
+                        "retweet_count": m.get("retweet_count", 0),
+                        "reply_count": m.get("reply_count", 0),
+                        "created_at": str(tweet.created_at) if tweet.created_at else "",
+                        "conversation_id": str(tweet.conversation_id) if tweet.conversation_id else "",
+                    }
+                )
+            return results
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            logger.warning("Twitter search_recent failed for %r: %s", query, e)
+            return []
+
+    def reply_to_tweet(self, tweet_id: str, text: str) -> tuple[str, str]:
+        """Reply to a tweet. Returns (reply_url, reply_id)."""
+        client = self._get_client()
+        response = self._call_with_breaker(
+            client.create_tweet,
+            text=text,
+            in_reply_to_tweet_id=tweet_id,
+        )
+        reply_id = str(response.data["id"])
+        reply_url = f"https://x.com/i/status/{reply_id}"
+        logger.info("Replied to tweet %s", tweet_id)
+        return reply_url, reply_id
+
     def get_profile(self) -> dict:
         """Get our profile info (follower count, etc)."""
         client = self._get_client()

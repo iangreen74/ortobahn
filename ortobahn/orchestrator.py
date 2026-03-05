@@ -16,6 +16,7 @@ from ortobahn.agents.cto import CTOAgent
 from ortobahn.agents.engagement import EngagementAgent
 from ortobahn.agents.insight_generator import InsightGeneratorAgent
 from ortobahn.agents.legal import LegalAgent
+from ortobahn.agents.listener import ListenerAgent
 from ortobahn.agents.marketing import MarketingAgent
 from ortobahn.agents.ops import OpsAgent
 from ortobahn.agents.publisher import PublisherAgent
@@ -179,6 +180,22 @@ class Pipeline:
                 bedrock_region=_region,
             )
             if settings.engagement_enabled
+            else None
+        )
+        self.listener = (
+            ListenerAgent(
+                self.db,
+                _api_key,
+                _model,
+                bluesky_client=self.bluesky,
+                twitter_client=self.twitter,
+                reddit_client=self.reddit,
+                relevance_threshold=settings.listening_relevance_threshold,
+                max_conversations=settings.listening_max_conversations,
+                use_bedrock=_bedrock,
+                bedrock_region=_region,
+            )
+            if settings.listening_enabled
             else None
         )
         self.topic_tracker = TopicVelocityTracker(self.db) if settings.predictive_timing_enabled else None
@@ -489,6 +506,10 @@ class Pipeline:
             self.analytics.linkedin = tenant_clients["linkedin"] or self.linkedin
             self.publisher.reddit = tenant_clients.get("reddit") or self.reddit
             self.analytics.reddit = tenant_clients.get("reddit") or self.reddit
+            if self.listener:
+                self.listener.bluesky = tenant_clients["bluesky"] or self.bluesky
+                self.listener.twitter = tenant_clients["twitter"] or self.twitter
+                self.listener.reddit = tenant_clients.get("reddit") or self.reddit
 
         logger.info(f"=== Pipeline cycle {run_id[:8]} started (client={client_id}) ===")
 
@@ -664,7 +685,23 @@ class Pipeline:
                         )
                     logger.info(f"  -> {len(emerging)} emerging topics detected")
 
-            # 1.5 Performance insights (prompt tuner)
+            # 1.5 Social Listener: scan platforms for relevant conversations
+            if self.listener:
+                client_listening = client_data.get("listening_enabled") if client_data else False
+                if client_listening:
+                    logger.info("[4.5/14] Listener Agent scanning platforms...")
+                    try:
+                        listener_result = self.listener.run(run_id, client_id=client_id)
+                        logger.info(
+                            f"  -> Discovered {listener_result.conversations_discovered}, "
+                            f"queued {listener_result.conversations_queued}, "
+                            f"expired {listener_result.conversations_expired}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"  -> Listener agent error (non-fatal): {e}")
+                        errors.append(f"listener: {e}")
+
+            # 1.6 Performance insights (prompt tuner)
             from ortobahn.prompt_tuner import get_performance_insights
 
             performance_insights = get_performance_insights(self.db, client_id=client_id)

@@ -17,7 +17,7 @@ from ortobahn.migrations import (
 
 class TestSchemaVersion:
     def test_version_after_init(self, test_db):
-        assert _get_schema_version(test_db) == 41
+        assert _get_schema_version(test_db) == 42
 
     def test_set_and_get_version(self, test_db):
         _set_schema_version(test_db, 5)
@@ -30,7 +30,7 @@ class TestSchemaVersion:
     def test_get_schema_version_returns_correct_value(self, tmp_path):
         """get_schema_version() returns the latest migration number on a fresh DB."""
         db = Database(tmp_path / "ver.db")
-        assert get_schema_version(db) == 41
+        assert get_schema_version(db) == 42
         db.close()
 
 
@@ -166,7 +166,7 @@ class TestMigrations:
     def test_idempotent(self, test_db):
         v1 = _get_schema_version(test_db)
         v2 = run_migrations(test_db)
-        assert v1 == v2 == 41
+        assert v1 == v2 == 42
 
     def test_database_constructor_runs_migrations(self, tmp_path):
         db = Database(tmp_path / "test.db")

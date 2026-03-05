@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from ortobahn.db import Database
 
 VAULTSCALER_CLIENT = {
@@ -205,6 +207,59 @@ def seed_vaultscaler_credentials(db: Database, settings) -> None:
             )
 
 
+LISTENING_RULES = {
+    "ortobahn": [
+        {"platform": "bluesky", "rule_type": "keyword", "value": "autonomous marketing", "priority": 1},
+        {"platform": "bluesky", "rule_type": "keyword", "value": "AI marketing agent", "priority": 2},
+        {"platform": "bluesky", "rule_type": "keyword", "value": "social media automation", "priority": 3},
+        {"platform": "reddit", "rule_type": "subreddit", "value": "marketing", "priority": 2},
+        {"platform": "reddit", "rule_type": "subreddit", "value": "artificial", "priority": 3},
+        {"platform": "reddit", "rule_type": "keyword", "value": "AI marketing tool", "priority": 2},
+    ],
+    "vaultscaler": [
+        {"platform": "bluesky", "rule_type": "keyword", "value": "autonomous engineering", "priority": 1},
+        {"platform": "bluesky", "rule_type": "keyword", "value": "AI coding agent", "priority": 2},
+        {"platform": "bluesky", "rule_type": "keyword", "value": "GPU orchestration", "priority": 3},
+        {"platform": "reddit", "rule_type": "subreddit", "value": "devops", "priority": 2},
+        {"platform": "reddit", "rule_type": "subreddit", "value": "MachineLearning", "priority": 3},
+        {"platform": "reddit", "rule_type": "keyword", "value": "autonomous software development", "priority": 2},
+    ],
+}
+
+
+def seed_listening_rules(db: Database, client_id: str) -> int:
+    """Seed default listening rules for a client. Returns count created."""
+    rules = LISTENING_RULES.get(client_id, [])
+    if not rules:
+        return 0
+
+    created = 0
+    for rule in rules:
+        # Check if rule already exists (dedup by client + platform + value)
+        existing = db.fetchone(
+            "SELECT id FROM listening_rules WHERE client_id=? AND platform=? AND value=?",
+            (client_id, rule["platform"], rule["value"]),
+        )
+        if existing:
+            continue
+
+        db.execute(
+            """INSERT INTO listening_rules (id, client_id, platform, rule_type, value, priority, active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)""",
+            (
+                str(uuid.uuid4()),
+                client_id,
+                rule["platform"],
+                rule["rule_type"],
+                rule["value"],
+                rule.get("priority", 3),
+            ),
+            commit=True,
+        )
+        created += 1
+    return created
+
+
 CTO_BACKLOG_TASKS = [
     {
         "title": "Add health check endpoint for ALB",
@@ -293,4 +348,7 @@ def seed_all(db: Database, settings=None) -> list[str]:
         seed_vaultscaler_credentials(db, settings)
         seed_ortobahn_credentials(db, settings)
     seed_cto_backlog(db)
+    # Seed listening rules for internal clients
+    for cid in ids:
+        seed_listening_rules(db, cid)
     return ids

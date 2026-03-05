@@ -138,6 +138,125 @@ class RedditClient:
                 self._breaker.record_failure()
             return False
 
+    def search_subreddit(
+        self,
+        subreddit: str,
+        query: str = "",
+        sort: str = "hot",
+        time_filter: str = "day",
+        limit: int = 25,
+    ) -> list[dict]:
+        """Search within a subreddit or browse hot/new/top/rising.
+
+        If query is empty, browses by sort order.  Free via PRAW.
+        """
+        self._check_breaker()
+        try:
+            reddit = self._get_reddit()
+            sub = reddit.subreddit(subreddit)
+            if query:
+                submissions = sub.search(query, sort=sort, time_filter=time_filter, limit=limit)
+            elif sort == "new":
+                submissions = sub.new(limit=limit)
+            elif sort == "top":
+                submissions = sub.top(time_filter=time_filter, limit=limit)
+            elif sort == "rising":
+                submissions = sub.rising(limit=limit)
+            else:
+                submissions = sub.hot(limit=limit)
+
+            results = []
+            for s in submissions:
+                results.append(
+                    {
+                        "post_id": str(s.id),
+                        "url": f"https://reddit.com{s.permalink}",
+                        "title": s.title,
+                        "text": s.selftext[:2000] if s.selftext else "",
+                        "author": str(s.author) if s.author else "[deleted]",
+                        "subreddit": str(s.subreddit),
+                        "score": s.score,
+                        "num_comments": s.num_comments,
+                        "created_utc": s.created_utc,
+                        "is_self": s.is_self,
+                    }
+                )
+            self._breaker.record_success()
+            return results
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            logger.warning("Reddit search_subreddit failed for r/%s: %s", subreddit, e)
+            return []
+
+    def get_comments(self, post_id: str, limit: int = 20, sort: str = "best") -> list[dict]:
+        """Get top-level comments on a Reddit post."""
+        self._check_breaker()
+        try:
+            reddit = self._get_reddit()
+            submission = reddit.submission(id=post_id)
+            submission.comment_sort = sort
+            submission.comments.replace_more(limit=0)
+            results = []
+            for comment in submission.comments[:limit]:
+                results.append(
+                    {
+                        "comment_id": str(comment.id),
+                        "author": str(comment.author) if comment.author else "[deleted]",
+                        "text": comment.body[:2000],
+                        "score": comment.score,
+                        "created_utc": comment.created_utc,
+                        "parent_id": str(comment.parent_id),
+                    }
+                )
+            self._breaker.record_success()
+            return results
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            logger.warning("Reddit get_comments failed for %s: %s", post_id, e)
+            return []
+
+    def reply_to_post(self, post_id: str, text: str) -> tuple[str, str]:
+        """Reply to a Reddit post. Returns (comment_url, comment_id)."""
+        self._check_breaker()
+        try:
+            reddit = self._get_reddit()
+            submission = reddit.submission(id=post_id)
+            comment = submission.reply(text)
+            url = f"https://reddit.com{comment.permalink}"
+            logger.info("Replied to Reddit post %s", post_id)
+            self._breaker.record_success()
+            return url, str(comment.id)
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+
+    def reply_to_comment(self, comment_id: str, text: str) -> tuple[str, str]:
+        """Reply to a Reddit comment. Returns (comment_url, comment_id)."""
+        self._check_breaker()
+        try:
+            reddit = self._get_reddit()
+            comment = reddit.comment(id=comment_id)
+            reply = comment.reply(text)
+            url = f"https://reddit.com{reply.permalink}"
+            logger.info("Replied to Reddit comment %s", comment_id)
+            self._breaker.record_success()
+            return url, str(reply.id)
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            raise
+
     def get_profile(self) -> dict:
         """Get the authenticated user's profile info."""
         reddit = self._get_reddit()

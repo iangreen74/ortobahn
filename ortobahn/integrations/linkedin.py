@@ -241,6 +241,39 @@ class LinkedInClient:
             return None
 
     @_handle_auth_error
+    def comment_on_post(self, post_urn: str, text: str) -> str | None:
+        """Comment on a LinkedIn post. Returns comment URN or None.
+
+        LinkedIn has NO search API — we can only comment on posts we already
+        know about (e.g. our own posts, or posts discovered via other means).
+        Requires w_member_social or w_organization_social permission.
+        """
+        self._check_breaker()
+        try:
+            payload = {
+                "actor": self.person_urn,
+                "message": {"text": text},
+            }
+            resp = httpx.post(
+                f"{LINKEDIN_API_BASE}/socialActions/{post_urn}/comments",
+                headers=self._headers,
+                json=payload,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            comment_urn = resp.json().get("id", "")
+            logger.info("Commented on LinkedIn post %s", post_urn[:30])
+            self._breaker.record_success()
+            return comment_urn
+        except CircuitOpenError:
+            raise
+        except Exception as e:
+            if not _is_auth_error(e):
+                self._breaker.record_failure()
+            logger.warning("Failed to comment on LinkedIn post %s: %s", post_urn[:30], e)
+            return None
+
+    @_handle_auth_error
     def get_profile(self) -> dict:
         """Get basic profile info from /v2/me.
 

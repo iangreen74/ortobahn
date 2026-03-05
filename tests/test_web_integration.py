@@ -235,3 +235,17 @@ class TestAuthenticatedPages:
         resp = client.get("/my/performance")
         assert resp.status_code == 200
         assert "Analytics" in resp.text
+
+    def test_listening_page_renders_200(self, tmp_path):
+        """Listening page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/listening")
+        assert resp.status_code == 200
+        assert "Listening" in resp.text
+
+    def test_engagement_page_renders_200(self, tmp_path):
+        """Engagement queue page must render, not 500."""
+        _app, client, _cid = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/engagement")
+        assert resp.status_code == 200
+        assert "Engagement" in resp.text

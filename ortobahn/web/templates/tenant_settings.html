@@ -332,4 +332,31 @@
         </tbody>
     </table>
 </article>
+
+<h2 id="listening">Social Listening & Proactive Engagement</h2>
+<article>
+    <form method="post" action="/my/settings/listening">
+        <label>
+            <input type="checkbox" name="listening_enabled" value="on"
+                   {% if client.listening_enabled %}checked{% endif %}>
+            Enable social listening
+        </label>
+        <small>Scan platforms for relevant conversations using your listening rules.</small>
+
+        <label>
+            <input type="checkbox" name="proactive_engagement_enabled" value="on"
+                   {% if client.proactive_engagement_enabled %}checked{% endif %}>
+            Enable proactive engagement
+        </label>
+        <small>Automatically reply to discovered conversations that match your brand. Requires listening enabled.</small>
+
+        <label for="max_convs">Max conversations per cycle</label>
+        <input type="number" id="max_convs" name="listening_max_conversations_per_cycle"
+               value="{{ client.listening_max_conversations_per_cycle or 50 }}"
+               min="10" max="200" step="10">
+        <small>Maximum number of conversations to evaluate per pipeline run.</small>
+
+        <button type="submit" class="outline">Save Listening Settings</button>
+    </form>
+</article>
 {% endblock %}

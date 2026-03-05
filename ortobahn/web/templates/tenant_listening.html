@@ -1,0 +1,207 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Listening{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Social Listening</h1>
+    <p class="subtitle">Discovered conversations and monitoring rules for <strong>{{ client.name }}</strong></p>
+</div>
+
+{% if request.query_params.get('msg') == 'rule_added' %}
+<div class="flash-msg success">Listening rule added.</div>
+{% elif request.query_params.get('msg') == 'rule_deleted' %}
+<div class="flash-msg success">Rule removed.</div>
+{% elif request.query_params.get('msg') == 'account_added' %}
+<div class="flash-msg success">Account added to tracking.</div>
+{% elif request.query_params.get('msg') == 'account_removed' %}
+<div class="flash-msg success">Account removed.</div>
+{% elif request.query_params.get('error') == 'duplicate_account' %}
+<div class="flash-msg error">Account already tracked.</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:1rem;margin-bottom:2rem;">
+    <article style="text-align:center;padding:1rem;">
+        <small>Discovered</small>
+        <div style="font-size:1.5rem;font-weight:bold;">{{ stats.total_discovered }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Queued</small>
+        <div style="font-size:1.5rem;font-weight:bold;color:#ffb74d;">{{ stats.queued }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Replied</small>
+        <div style="font-size:1.5rem;font-weight:bold;color:#4caf50;">{{ stats.replied }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Rules</small>
+        <div style="font-size:1.5rem;font-weight:bold;">{{ stats.rules_count }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Tracked</small>
+        <div style="font-size:1.5rem;font-weight:bold;">{{ stats.accounts_count }}</div>
+    </article>
+</div>
+
+<h2>Listening Rules</h2>
+<article>
+    {% if rules %}
+    <table>
+        <thead>
+            <tr><th>Platform</th><th>Type</th><th>Value</th><th>Priority</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for rule in rules %}
+            <tr>
+                <td><span class="badge">{{ rule.platform }}</span></td>
+                <td>{{ rule.rule_type }}</td>
+                <td><code>{{ rule.value }}</code></td>
+                <td>{{ rule.priority }}</td>
+                <td>
+                    <form method="post" action="/my/listening/rules/{{ rule.id }}/delete" style="margin:0;">
+                        <button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.75rem;">Remove</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No listening rules configured. Add rules below to start discovering conversations.</p>
+    {% endif %}
+
+    <details>
+        <summary>Add Rule</summary>
+        <form method="post" action="/my/listening/rules" style="margin-top:1rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 2fr 1fr auto;gap:0.5rem;align-items:end;">
+                <div>
+                    <label for="platform">Platform</label>
+                    <select name="platform" id="platform">
+                        <option value="bluesky">Bluesky</option>
+                        <option value="reddit">Reddit</option>
+                        <option value="twitter">Twitter</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="rule_type">Type</label>
+                    <select name="rule_type" id="rule_type">
+                        <option value="keyword">Keyword</option>
+                        <option value="hashtag">Hashtag</option>
+                        <option value="subreddit">Subreddit</option>
+                        <option value="author">Author</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="value">Value</label>
+                    <input type="text" name="value" id="value" placeholder="e.g., AI automation" required>
+                </div>
+                <div>
+                    <label for="priority">Priority</label>
+                    <select name="priority" id="priority">
+                        <option value="1">1 (High)</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3 (Normal)</option>
+                        <option value="4">4</option>
+                        <option value="5">5 (Low)</option>
+                    </select>
+                </div>
+                <button type="submit" style="margin-bottom:0;">Add</button>
+            </div>
+        </form>
+    </details>
+</article>
+
+<h2>Tracked Accounts</h2>
+<article>
+    {% if accounts %}
+    <table>
+        <thead>
+            <tr><th>Handle</th><th>Platform</th><th>Type</th><th>Source</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for acct in accounts %}
+            <tr>
+                <td><code>{{ acct.account_handle }}</code></td>
+                <td><span class="badge">{{ acct.platform }}</span></td>
+                <td>{{ acct.account_type }}</td>
+                <td>{% if acct.auto_discovered %}<span class="badge running">auto</span>{% else %}manual{% endif %}</td>
+                <td>
+                    <form method="post" action="/my/listening/accounts/{{ acct.id }}/delete" style="margin:0;">
+                        <button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.75rem;">Remove</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No tracked accounts. Accounts are auto-discovered from frequent conversation authors, or add them manually below.</p>
+    {% endif %}
+
+    <details>
+        <summary>Add Account</summary>
+        <form method="post" action="/my/listening/accounts" style="margin-top:1rem;">
+            <div style="display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:0.5rem;align-items:end;">
+                <div>
+                    <label for="acct_platform">Platform</label>
+                    <select name="platform" id="acct_platform">
+                        <option value="bluesky">Bluesky</option>
+                        <option value="twitter">Twitter</option>
+                        <option value="reddit">Reddit</option>
+                        <option value="linkedin">LinkedIn</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="handle">Handle</label>
+                    <input type="text" name="handle" id="handle" placeholder="e.g., user.bsky.social" required>
+                </div>
+                <div>
+                    <label for="account_type">Type</label>
+                    <select name="account_type" id="account_type">
+                        <option value="influencer">Influencer</option>
+                        <option value="competitor">Competitor</option>
+                        <option value="industry_leader">Industry Leader</option>
+                        <option value="prospect">Prospect</option>
+                    </select>
+                </div>
+                <button type="submit" style="margin-bottom:0;">Add</button>
+            </div>
+        </form>
+    </details>
+</article>
+
+<h2>Recent Discoveries</h2>
+{% if conversations %}
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr><th>Platform</th><th>Author</th><th>Text</th><th>Relevance</th><th>Status</th><th>Discovered</th></tr>
+        </thead>
+        <tbody>
+        {% for conv in conversations %}
+            <tr>
+                <td><span class="badge">{{ conv.platform }}</span></td>
+                <td><code>{{ conv.author_handle }}</code></td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ conv.text_content[:100] }}</td>
+                <td>{{ "%.2f"|format(conv.relevance_score or 0) }}</td>
+                <td>
+                    {% if conv.status == 'replied' %}<span class="badge completed">replied</span>
+                    {% elif conv.status == 'queued' %}<span class="badge running">queued</span>
+                    {% elif conv.status == 'evaluated' %}<span class="badge draft">evaluated</span>
+                    {% elif conv.status == 'skipped' %}<span class="badge failed">skipped</span>
+                    {% else %}<span class="badge">{{ conv.status }}</span>{% endif %}
+                </td>
+                <td><time datetime="{{ conv.discovered_at }}">{{ conv.discovered_at }}</time></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<article>
+    <div class="empty-state">
+        <p>No conversations discovered yet. Add listening rules and enable listening in <a href="/my/settings">Settings</a>.</p>
+    </div>
+</article>
+{% endif %}
+
+{% endblock %}

@@ -1278,6 +1278,30 @@ def _migration_044_add_community_intelligence(db: Database) -> None:
     _safe_add_column(db, "discovered_conversations", "thread_id TEXT DEFAULT ''")
 
 
+def _migration_045_add_listening_analytics(db: Database) -> None:
+    """Add listening analytics table for daily aggregation."""
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS listening_analytics (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL DEFAULT 'default',
+            date TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            conversations_discovered INTEGER NOT NULL DEFAULT 0,
+            conversations_replied INTEGER NOT NULL DEFAULT 0,
+            avg_relevance_score REAL NOT NULL DEFAULT 0.0,
+            engagement_success_rate REAL NOT NULL DEFAULT 0.0,
+            top_keywords TEXT NOT NULL DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(client_id, date, platform)
+        )""",
+        commit=True,
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_listening_analytics_client ON listening_analytics(client_id, date DESC)",
+        commit=True,
+    )
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1323,6 +1347,7 @@ MIGRATIONS = {
     42: _migration_042_add_social_listening,
     43: _migration_043_add_proactive_engagement,
     44: _migration_044_add_community_intelligence,
+    45: _migration_045_add_listening_analytics,
 }
 
 
@@ -1500,6 +1525,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
     "tracked_accounts": ["id", "client_id", "platform", "account_handle", "account_type", "active"],
     "account_activity": ["id", "tracked_account_id", "client_id", "post_count_7d"],
     "conversation_threads": ["id", "client_id", "platform", "root_conversation_id", "status"],
+    # Migration 045
+    "listening_analytics": ["id", "client_id", "date", "platform", "conversations_discovered"],
     # Internal
     "schema_version": ["version"],
 }

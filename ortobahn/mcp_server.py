@@ -466,6 +466,92 @@ def trigger_pipeline(client_id: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Listening & Engagement
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@mcp.tool()
+def list_discovered_conversations(client_id: str | None = None, limit: int = 30) -> str:
+    """List recently discovered conversations from social listening.
+
+    Shows platform, author, text snippet, relevance score, and status.
+    """
+    try:
+        db = _get_db()
+        query = "SELECT * FROM discovered_conversations"
+        params: list = []
+        if client_id:
+            query += " WHERE client_id=?"
+            params.append(client_id)
+        query += " ORDER BY discovered_at DESC LIMIT ?"
+        params.append(limit)
+        rows = db.fetchall(query, tuple(params))
+        if not rows:
+            return "No discovered conversations."
+        lines = [f"Discovered Conversations ({len(rows)} shown):"]
+        for r in rows:
+            text = (r.get("text_content") or "")[:80]
+            lines.append(
+                f"  [{r['platform']}] @{r['author_handle']} "
+                f"(rel={r.get('relevance_score', 0):.2f}, status={r['status']}): {text}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def get_listening_rules(client_id: str) -> str:
+    """List active listening rules for a client.
+
+    Shows platform, rule type, value, and priority.
+    """
+    try:
+        db = _get_db()
+        rows = db.fetchall(
+            "SELECT * FROM listening_rules WHERE client_id=? AND active=1 ORDER BY priority ASC",
+            (client_id,),
+        )
+        if not rows:
+            return f"No active listening rules for {client_id}."
+        lines = [f"Listening Rules for {client_id} ({len(rows)}):"]
+        for r in rows:
+            lines.append(f"  [{r['platform']}] {r['rule_type']}: {r['value']} (priority={r['priority']})")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def get_engagement_queue(client_id: str | None = None) -> str:
+    """List conversations queued for proactive engagement.
+
+    Shows platform, author, relevance, and engagement score.
+    """
+    try:
+        db = _get_db()
+        query = "SELECT * FROM discovered_conversations WHERE status='queued'"
+        params: list = []
+        if client_id:
+            query += " AND client_id=?"
+            params.append(client_id)
+        query += " ORDER BY relevance_score DESC LIMIT 30"
+        rows = db.fetchall(query, tuple(params))
+        if not rows:
+            return "No conversations in engagement queue."
+        lines = [f"Engagement Queue ({len(rows)} items):"]
+        for r in rows:
+            text = (r.get("text_content") or "")[:60]
+            lines.append(
+                f"  [{r['platform']}] @{r['author_handle']} "
+                f"(rel={r.get('relevance_score', 0):.2f}, eng={r.get('engagement_score', 0)}): {text}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Entry point
 # ═══════════════════════════════════════════════════════════════════════
 

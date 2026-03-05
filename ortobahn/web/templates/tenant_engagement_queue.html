@@ -1,0 +1,135 @@
+{% extends "base_sidebar.html" %}
+{% block title %}Ortobahn - Engagement{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Engagement Queue</h1>
+    <p class="subtitle">Manage proactive engagement for <strong>{{ client.name }}</strong></p>
+</div>
+
+{% if request.query_params.get('msg') == 'approved' %}
+<div class="flash-msg success">Conversation approved for engagement.</div>
+{% elif request.query_params.get('msg') == 'skipped' %}
+<div class="flash-msg success">Conversation skipped.</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:1rem;margin-bottom:2rem;">
+    <article style="text-align:center;padding:1rem;">
+        <small>Queued</small>
+        <div style="font-size:1.5rem;font-weight:bold;color:#ffb74d;">{{ stats.queued_count }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Total Replies</small>
+        <div style="font-size:1.5rem;font-weight:bold;">{{ stats.total_replies }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Proactive</small>
+        <div style="font-size:1.5rem;font-weight:bold;color:#6366f1;">{{ stats.proactive_replies }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Avg Confidence</small>
+        <div style="font-size:1.5rem;font-weight:bold;">{{ stats.avg_confidence }}</div>
+    </article>
+    <article style="text-align:center;padding:1rem;">
+        <small>Avg Outcome</small>
+        <div style="font-size:1.5rem;font-weight:bold;color:#00d4aa;">{{ stats.avg_outcome_score }}</div>
+    </article>
+</div>
+
+<h2>Pending Queue</h2>
+{% if queued %}
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr><th>Platform</th><th>Author</th><th>Text</th><th>Relevance</th><th>Engagement</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% for conv in queued %}
+            <tr>
+                <td><span class="badge">{{ conv.platform }}</span></td>
+                <td><code>{{ conv.author_handle }}</code></td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ conv.text_content[:100] }}</td>
+                <td>{{ "%.2f"|format(conv.relevance_score or 0) }}</td>
+                <td>{{ conv.engagement_score or 0 }}</td>
+                <td style="white-space:nowrap;">
+                    <form method="post" action="/my/engagement/{{ conv.id }}/skip" style="display:inline;margin:0;">
+                        <button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.75rem;">Skip</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<article>
+    <div class="empty-state">
+        <p>No conversations queued. Enable listening to discover conversations for engagement.</p>
+    </div>
+</article>
+{% endif %}
+
+<h2>Recent Replies</h2>
+{% if replies %}
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr><th>Type</th><th>Platform</th><th>Reply</th><th>Confidence</th><th>Status</th><th>Posted</th></tr>
+        </thead>
+        <tbody>
+        {% for reply in replies %}
+            <tr>
+                <td>
+                    {% if reply.engagement_type == 'proactive' %}
+                    <span class="badge" style="background:#6366f1;">proactive</span>
+                    {% else %}
+                    <span class="badge">reactive</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge">{{ reply.platform or 'bluesky' }}</span></td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ reply.reply_text[:100] }}</td>
+                <td>{{ "%.2f"|format(reply.confidence or 0) }}</td>
+                <td>
+                    {% if reply.status == 'posted' %}<span class="badge completed">posted</span>
+                    {% elif reply.status == 'skipped' %}<span class="badge failed">skipped</span>
+                    {% elif reply.status == 'dry_run' %}<span class="badge draft">dry_run</span>
+                    {% else %}<span class="badge">{{ reply.status }}</span>{% endif %}
+                </td>
+                <td><time datetime="{{ reply.created_at }}">{{ reply.created_at }}</time></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<article>
+    <div class="empty-state">
+        <p>No engagement replies yet.</p>
+    </div>
+</article>
+{% endif %}
+
+{% if outcomes %}
+<h2>Engagement Outcomes</h2>
+<div style="overflow-x:auto;">
+    <table>
+        <thead>
+            <tr><th>Platform</th><th>Likes</th><th>Replies</th><th>Target Responded</th><th>Score</th><th>Checked</th></tr>
+        </thead>
+        <tbody>
+        {% for o in outcomes %}
+            <tr>
+                <td><span class="badge">{{ o.platform }}</span></td>
+                <td>{{ o.like_count or 0 }}</td>
+                <td>{{ o.reply_count or 0 }}</td>
+                <td>{% if o.target_responded %}<span class="badge completed">yes</span>{% else %}no{% endif %}</td>
+                <td>{{ "%.2f"|format(o.outcome_score or 0) }}</td>
+                <td><time datetime="{{ o.checked_at or o.created_at }}">{{ o.checked_at or o.created_at }}</time></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}

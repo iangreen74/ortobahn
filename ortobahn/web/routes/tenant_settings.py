@@ -233,3 +233,21 @@ async def tenant_engagement_settings(request: Request, client: AuthClient):
         mode = "auto"
     db.update_client(client["id"], {"engagement_mode": mode})
     return RedirectResponse("/my/settings?msg=saved", status_code=303)
+
+
+@router.post("/settings/listening")
+async def tenant_listening_settings(request: Request, client: AuthClient):
+    """Update listening and proactive engagement settings."""
+    db = request.app.state.db
+    form = await request.form()
+    listening = 1 if form.get("listening_enabled") == "on" else 0
+    proactive = 1 if form.get("proactive_engagement_enabled") == "on" else 0
+    max_convs = int(str(form.get("listening_max_conversations_per_cycle", "50")))
+    max_convs = max(10, min(200, max_convs))
+    db.execute(
+        "UPDATE clients SET listening_enabled=?, proactive_engagement_enabled=?,"
+        " listening_max_conversations_per_cycle=? WHERE id=?",
+        (listening, proactive, max_convs, client["id"]),
+        commit=True,
+    )
+    return RedirectResponse("/my/settings?msg=saved", status_code=303)

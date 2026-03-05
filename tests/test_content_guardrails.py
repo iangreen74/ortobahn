@@ -159,9 +159,7 @@ class TestEvaluateDraft:
     @patch("ortobahn.content_guardrails.call_llm")
     def test_llm_failure_returns_clean(self, mock_llm):
         mock_llm.side_effect = RuntimeError("API down")
-        draft = DraftPost(
-            text="Normal post", source_idea="t", reasoning="r", confidence=0.8
-        )
+        draft = DraftPost(text="Normal post", source_idea="t", reasoning="r", confidence=0.8)
         result = evaluate_draft(draft)
         assert result.clean
         assert result.violations == []
@@ -213,9 +211,7 @@ class TestSaveGuardrailResult:
             clean=False,
         )
         save_guardrail_result(test_db, pid, result)
-        row = test_db.fetchone(
-            "SELECT guardrail_violations, guardrail_checked_at FROM posts WHERE id=?", (pid,)
-        )
+        row = test_db.fetchone("SELECT guardrail_violations, guardrail_checked_at FROM posts WHERE id=?", (pid,))
         assert row["guardrail_checked_at"] is not None
         violations = json.loads(row["guardrail_violations"])
         assert len(violations["violations"]) == 1
@@ -238,14 +234,10 @@ class TestNeedsRecheck:
         assert not needs_recheck({"guardrail_checked_at": "2024-01-01T00:00:00", "edited_at": None})
 
     def test_edit_after_check(self):
-        assert needs_recheck(
-            {"guardrail_checked_at": "2024-01-01T00:00:00", "edited_at": "2024-01-02T00:00:00"}
-        )
+        assert needs_recheck({"guardrail_checked_at": "2024-01-01T00:00:00", "edited_at": "2024-01-02T00:00:00"})
 
     def test_check_after_edit(self):
-        assert not needs_recheck(
-            {"guardrail_checked_at": "2024-01-02T00:00:00", "edited_at": "2024-01-01T00:00:00"}
-        )
+        assert not needs_recheck({"guardrail_checked_at": "2024-01-02T00:00:00", "edited_at": "2024-01-01T00:00:00"})
 
 
 class TestMigration047:

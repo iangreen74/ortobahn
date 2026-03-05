@@ -1060,9 +1060,7 @@ class Pipeline:
                     try:
                         from ortobahn.content_guardrails import save_guardrail_result
 
-                        run_posts = self.db.fetchall(
-                            "SELECT id FROM posts WHERE run_id = ?", (run_id,)
-                        )
+                        run_posts = self.db.fetchall("SELECT id FROM posts WHERE run_id = ?", (run_id,))
                         for i, draft in enumerate(drafts.posts):
                             gr = guardrail_results.get(id(draft))
                             if gr and gr.violations and i < len(run_posts):

@@ -148,12 +148,7 @@ def evaluate_draft(
     """
     rules_text = _build_rules_text(custom_guardrails)
 
-    user_msg = (
-        f"## Post to evaluate\n"
-        f"Platform: {draft.platform.value}\n"
-        f"Text: {draft.text}\n\n"
-        f"## Rules\n{rules_text}"
-    )
+    user_msg = f"## Post to evaluate\nPlatform: {draft.platform.value}\nText: {draft.text}\n\n## Rules\n{rules_text}"
 
     try:
         response = call_llm(user_msg, system_prompt=_EVAL_SYSTEM, max_tokens=500)

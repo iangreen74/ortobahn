@@ -118,6 +118,10 @@ async def tenant_settings_update(request: Request, client: AuthClient):
                 "rss_feeds": form.get("rss_feeds", ""),
             },
         )
+    elif section == "guardrails":
+        from ortobahn.content_guardrails import save_custom_guardrails
+
+        save_custom_guardrails(db, client["id"], str(form.get("custom_guardrails", "")))
     elif section == "article_settings":
         # Build article_platforms from individual checkboxes
         platforms = []

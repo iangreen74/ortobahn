@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
@@ -90,6 +91,29 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
                 f'<img src="{_escape(image_url)}" alt="Generated image" '
                 f'style="max-width:200px;max-height:150px;border-radius:0.5rem;margin:0.5rem 0;">'
             )
+        # Guardrail violation banner
+        gr_html = ""
+        raw_gr = d.get("guardrail_violations")
+        if raw_gr:
+            try:
+                gr_data = json.loads(raw_gr)
+                violations = gr_data.get("violations", [])
+                if violations:
+                    v_items = "".join(
+                        f'<li style="color:{"var(--color-red)" if v.get("severity") == "block" else "var(--color-orange)"};">'
+                        f'<strong>[{_escape(v.get("severity", "warn"))}]</strong> '
+                        f'{_escape(v.get("explanation", v.get("rule_id", "")))}</li>'
+                        for v in violations
+                    )
+                    gr_html = (
+                        '<div style="background:rgba(239,83,80,0.1);border:1px solid var(--color-red);'
+                        'border-radius:0.5rem;padding:0.5rem 0.75rem;margin:0.5rem 0;">'
+                        '<small style="color:var(--color-red);font-weight:600;">Guardrail violations:</small>'
+                        f'<ul style="margin:0.25rem 0 0 1rem;padding:0;font-size:0.85rem;">{v_items}</ul></div>'
+                    )
+            except Exception:
+                pass
+
         parts.append(
             f'<div class="draft-card">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
@@ -99,6 +123,7 @@ async def tenant_drafts_partial(request: Request, client: AuthClient):
             f'<time datetime="{created_at}" style="font-size:0.75em;color:var(--text-tertiary);">{created_at[:16]}</time>'
             f"</span>"
             f"</div>"
+            f"{gr_html}"
             f"{image_html}"
             f'<p id="text-{pid}" style="margin:0.5rem 0;white-space:pre-wrap;">{text}</p>'
             f'<form id="edit-form-{pid}" method="post" action="/my/drafts/{pid}/edit" style="display:none;margin:0.5rem 0;">'

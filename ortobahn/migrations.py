@@ -1309,6 +1309,13 @@ def _migration_046_add_credential_validation(db: Database) -> None:
     _safe_add_column(db, "platform_credentials", "credential_tested_at TIMESTAMP")
 
 
+def _migration_047_add_content_guardrails(db: Database) -> None:
+    """Add content guardrails columns to posts and clients."""
+    _safe_add_column(db, "posts", "guardrail_violations TEXT")
+    _safe_add_column(db, "posts", "guardrail_checked_at TIMESTAMP")
+    _safe_add_column(db, "clients", "custom_guardrails TEXT DEFAULT ''")
+
+
 MIGRATIONS = {
     1: _migration_001_add_clients_and_platform,
     2: _migration_002_add_platform_uri,
@@ -1356,6 +1363,7 @@ MIGRATIONS = {
     44: _migration_044_add_community_intelligence,
     45: _migration_045_add_listening_analytics,
     46: _migration_046_add_credential_validation,
+    47: _migration_047_add_content_guardrails,
 }
 
 
@@ -1407,6 +1415,8 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "repurpose_type",
         "image_url",
         "image_prompt",
+        "guardrail_violations",
+        "guardrail_checked_at",
     ],
     "metrics": ["id", "post_id"],
     "agent_logs": ["id", "cache_creation_input_tokens", "cache_read_input_tokens"],
@@ -1450,6 +1460,7 @@ EXPECTED_SCHEMA: dict[str, list[str]] = {
         "listening_enabled",
         "listening_max_conversations_per_cycle",
         "proactive_engagement_enabled",
+        "custom_guardrails",
     ],
     # Migration 007
     "api_keys": ["id", "client_id", "key_hash"],

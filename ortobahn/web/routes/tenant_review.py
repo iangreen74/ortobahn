@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -22,6 +23,18 @@ async def tenant_review(request: Request, client: AuthClient):
     client_id = client["id"]
 
     drafts = db.get_drafts_for_review(client_id=client_id)
+
+    # Parse guardrail violations for template display
+    for d in drafts:
+        raw = d.get("guardrail_violations")
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                d["_guardrail_parsed"] = parsed.get("violations", [])
+            except Exception:
+                d["_guardrail_parsed"] = []
+        else:
+            d["_guardrail_parsed"] = []
 
     engagement_drafts = db.fetchall(
         "SELECT id, notification_text, reply_text, confidence, platform, created_at"

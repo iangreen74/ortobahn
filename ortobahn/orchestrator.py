@@ -960,6 +960,30 @@ class Pipeline:
                 if ab_a and ab_b:
                     logger.info(f"  -> A/B variants detected: {len(ab_a)}A / {len(ab_b)}B")
 
+            # 3.2c Content guardrails — evaluate drafts before publish/save
+            guardrail_results = {}
+            try:
+                from ortobahn.content_guardrails import evaluate_drafts, get_custom_guardrails
+
+                custom_rules = get_custom_guardrails(self.db, client_id)
+                gr_results = evaluate_drafts(drafts.posts, custom_guardrails=custom_rules)
+                blocked_count = 0
+                warned_count = 0
+                for draft, gr in zip(drafts.posts, gr_results, strict=False):
+                    guardrail_results[id(draft)] = gr
+                    if gr.has_blocks:
+                        # Block-severity: force to review regardless of auto-publish
+                        draft.confidence = min(draft.confidence, 0.0)
+                        blocked_count += 1
+                    elif gr.has_warnings:
+                        # Warn-severity: reduce confidence to force review
+                        draft.confidence = min(draft.confidence, 0.50)
+                        warned_count += 1
+                if blocked_count or warned_count:
+                    logger.info(f"  -> Guardrails: {blocked_count} blocked, {warned_count} warned")
+            except Exception as e:
+                logger.warning(f"  -> Guardrail evaluation error (non-fatal): {e}")
+
             # 3.3 Publisher — compute adaptive confidence threshold
             try:
                 from ortobahn.adaptive_threshold import compute_adaptive_threshold
@@ -990,7 +1014,7 @@ class Pipeline:
                 strategy_id = active_strategy["id"] if active_strategy else None
                 for draft in drafts.posts:
                     if draft.confidence >= effective_threshold:
-                        self.db.save_post(
+                        post_id = self.db.save_post(
                             text=draft.text,
                             run_id=run_id,
                             strategy_id=strategy_id,
@@ -1006,6 +1030,15 @@ class Pipeline:
                             image_url=draft.image_url,
                             image_prompt=draft.image_prompt,
                         )
+                        # Persist guardrail result on saved post
+                        gr = guardrail_results.get(id(draft))
+                        if gr and gr.violations:
+                            try:
+                                from ortobahn.content_guardrails import save_guardrail_result
+
+                                save_guardrail_result(self.db, post_id, gr)
+                            except Exception:
+                                pass
                 logger.info(f"  -> {len(drafts.posts)} drafts saved for review")
             else:
                 logger.info("[11/14] Publisher Agent posting...")
@@ -1021,6 +1054,21 @@ class Pipeline:
                 )
                 posts_published = sum(1 for p in published.posts if p.status == "published")
                 logger.info(f"  -> {posts_published} posts published")
+
+                # Persist guardrail results for published posts
+                if guardrail_results:
+                    try:
+                        from ortobahn.content_guardrails import save_guardrail_result
+
+                        run_posts = self.db.fetchall(
+                            "SELECT id FROM posts WHERE run_id = ?", (run_id,)
+                        )
+                        for i, draft in enumerate(drafts.posts):
+                            gr = guardrail_results.get(id(draft))
+                            if gr and gr.violations and i < len(run_posts):
+                                save_guardrail_result(self.db, run_posts[i]["id"], gr)
+                    except Exception:
+                        pass
 
             # 3.3a Style evolution: tag A/B pairs in saved posts
             if self.style_evolution and style_context:

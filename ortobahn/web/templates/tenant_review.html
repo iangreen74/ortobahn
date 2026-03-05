@@ -25,6 +25,18 @@
             {% endif %}
         </span>
     </div>
+    {% if d.guardrail_violations %}
+    <div style="background:rgba(239,83,80,0.1);border:1px solid var(--color-red);border-radius:0.5rem;padding:0.5rem 0.75rem;margin:0.5rem 0;">
+        <small style="color:var(--color-red);font-weight:600;">Guardrail violations:</small>
+        <ul style="margin:0.25rem 0 0 1rem;padding:0;font-size:0.85rem;">
+        {% for v in d._guardrail_parsed %}
+            <li style="color:{% if v.severity == 'block' %}var(--color-red){% else %}var(--color-orange){% endif %};">
+                <strong>[{{ v.severity }}]</strong> {{ v.explanation or v.rule_id }}
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
     {% if d.image_url %}
     <img src="{{ d.image_url }}" alt="Generated image" style="max-width:200px;max-height:150px;border-radius:0.5rem;margin:0.5rem 0;">
     {% endif %}

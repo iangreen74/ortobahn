@@ -113,6 +113,21 @@
     </form>
 </article>
 
+<h2 id="guardrails">Content Guardrails</h2>
+<article>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem;">
+        All content is automatically checked against platform terms-of-service rules.
+        Add your own custom rules below to enforce brand-specific policies.
+    </p>
+    <form method="post" action="/my/settings">
+        <input type="hidden" name="_section" value="guardrails">
+        <label for="custom_guardrails">Custom Guardrails</label>
+        <textarea id="custom_guardrails" name="custom_guardrails" rows="5" maxlength="1000" placeholder="One rule per line, e.g.:&#10;Never mention competitor products by name&#10;Do not discuss pricing or discounts&#10;Avoid political or religious topics">{{ client.custom_guardrails or '' }}</textarea>
+        <small>One rule per line. Max 1000 characters. Posts violating these rules will be flagged for review.</small>
+        <button type="submit" class="outline">Save Guardrails</button>
+    </form>
+</article>
+
 <h2 id="automation">Automation</h2>
 <article>
     <form method="post" action="/my/auto-publish">

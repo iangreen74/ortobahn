@@ -260,3 +260,11 @@ class TestAuthenticatedPages:
         _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
         resp = client.get("/my/api/credentials/bluesky/status")
         assert resp.status_code == 200
+
+    def test_settings_has_guardrails_section(self, tmp_path):
+        """Settings page must include Content Guardrails section."""
+        _app, client, _cid, _tok, _sk = _create_authenticated_client(tmp_path)
+        resp = client.get("/my/settings")
+        assert resp.status_code == 200
+        assert "Content Guardrails" in resp.text
+        assert "custom_guardrails" in resp.text

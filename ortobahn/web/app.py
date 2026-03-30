@@ -1,494 +1,127 @@
-"""FastAPI web application factory."""
-
-from __future__ import annotations
-
-import logging
 import os
 import time
-import uuid
-from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Optional
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from flask import Flask, request, jsonify
+import base64
+import json
 
-from ortobahn.auth import _LoginRedirect
-from ortobahn.cognito import CognitoClient
-from ortobahn.config import load_settings
-from ortobahn.constants import PROTECTED_CLIENT_IDS
-from ortobahn.db import Database, create_database
-from ortobahn.web.csrf import generate_csrf_token, validate_csrf_token
-from ortobahn.web.rate_limit import RateLimitMiddleware
+app = Flask(__name__)
 
-TEMPLATES_DIR = Path(__file__).parent / "templates"
-STATIC_DIR = Path(__file__).parent / "static"
-
-_start_time = time.time()
+# Configuration from environment variables
+CLOUDFRONT_DOMAIN = os.getenv("CLOUDFRONT_DOMAIN", "")
+CLOUDFRONT_KEY_PAIR_ID = os.getenv("CLOUDFRONT_KEY_PAIR_ID", "")
+CLOUDFRONT_PRIVATE_KEY_PATH = os.getenv("CLOUDFRONT_PRIVATE_KEY_PATH", "")
 
 
-def get_db(request: Request) -> Database:
-    """Get database from app state."""
-    return request.app.state.db
-
-
-def create_app() -> FastAPI:
-    app = FastAPI(title="Ortobahn", description="Autonomous AI marketing engine")
-
-    settings = load_settings()
-    app.state.settings = settings
-    app.state.db = create_database(settings)
-    app.state.templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
-    if settings.cognito_user_pool_id and settings.cognito_client_id:
-        app.state.cognito = CognitoClient(
-            settings.cognito_user_pool_id,
-            settings.cognito_client_id,
-            settings.cognito_region,
+def load_private_key():
+    """Load CloudFront private key from file."""
+    if not CLOUDFRONT_PRIVATE_KEY_PATH or not os.path.exists(CLOUDFRONT_PRIVATE_KEY_PATH):
+        return None
+    
+    with open(CLOUDFRONT_PRIVATE_KEY_PATH, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
         )
-    else:
-        app.state.cognito = None
+    return private_key
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "https://ortobahn.com",
-            "https://www.ortobahn.com",
-            "https://ortobahn.vaultscaler.com",
-            "https://app.ortobahn.com",
-            "http://localhost:8000",
-        ],
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["*"],
+
+def rsa_signer(message: bytes) -> bytes:
+    """Sign message with RSA private key."""
+    private_key = load_private_key()
+    if not private_key:
+        raise ValueError("CloudFront private key not configured")
+    
+    return private_key.sign(message, padding.PKCS1v15(), hashes.SHA1())
+
+
+def generate_signed_url(object_key: str, expiration_minutes: int = 60) -> Optional[str]:
+    """Generate CloudFront signed URL for private S3 object.
+    
+    Args:
+        object_key: S3 object key (path)
+        expiration_minutes: URL expiration time in minutes
+        
+    Returns:
+        Signed CloudFront URL or None if configuration is missing
+    """
+    if not all([CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_PAIR_ID, CLOUDFRONT_PRIVATE_KEY_PATH]):
+        return None
+    
+    # Generate expiration timestamp
+    expire_date = datetime.utcnow() + timedelta(minutes=expiration_minutes)
+    expire_timestamp = int(time.mktime(expire_date.timetuple()))
+    
+    # Construct URL
+    cloudfront_url = f"https://{CLOUDFRONT_DOMAIN}/{object_key}"
+    
+    # Create policy
+    policy = {
+        "Statement": [{
+            "Resource": cloudfront_url,
+            "Condition": {
+                "DateLessThan": {"AWS:EpochTime": expire_timestamp}
+            }
+        }]
+    }
+    
+    # Encode policy
+    policy_json = json.dumps(policy, separators=(',', ':'))
+    policy_64 = base64.b64encode(policy_json.encode('utf-8')).decode('utf-8')
+    policy_64 = policy_64.replace('+', '-').replace('=', '_').replace('/', '~')
+    
+    # Sign policy
+    signature = rsa_signer(policy_json.encode('utf-8'))
+    signature_64 = base64.b64encode(signature).decode('utf-8')
+    signature_64 = signature_64.replace('+', '-').replace('=', '_').replace('/', '~')
+    
+    # Build signed URL
+    signed_url = (
+        f"{cloudfront_url}?"
+        f"Policy={policy_64}&"
+        f"Signature={signature_64}&"
+        f"Key-Pair-Id={CLOUDFRONT_KEY_PAIR_ID}"
     )
+    
+    return signed_url
 
-    app.add_middleware(
-        RateLimitMiddleware,
-        enabled=settings.rate_limit_enabled,
-        default_rpm=settings.rate_limit_default,
-        window_seconds=settings.rate_limit_window_seconds,
-    )
 
-    @app.get("/health")
-    async def health():
-        """Health check endpoint for ALB and synthetic monitoring."""
-        db_ok = True
-        try:
-            db = app.state.db
-            db.fetchone("SELECT 1 AS ok")
-        except Exception:
-            db_ok = False
+@app.route("/api/images/signed-url", methods=["POST"])
+def get_signed_url():
+    """Generate signed URL for image access."""
+    data = request.get_json()
+    
+    if not data or "object_key" not in data:
+        return jsonify({"error": "object_key required"}), 400
+    
+    object_key = data["object_key"]
+    expiration_minutes = data.get("expiration_minutes", 60)
+    
+    try:
+        signed_url = generate_signed_url(object_key, expiration_minutes)
+        
+        if not signed_url:
+            return jsonify({"error": "CloudFront not configured"}), 500
+        
+        return jsonify({
+            "signed_url": signed_url,
+            "expires_in_minutes": expiration_minutes
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-        result: dict = {
-            "status": "healthy" if db_ok else "degraded",
-            "db": db_ok,
-            "uptime_seconds": int(time.time() - _start_time),
-        }
-        deploy_sha = os.environ.get("DEPLOY_SHA", "")
-        if deploy_sha:
-            result["sha"] = deploy_sha
-        environment = os.environ.get("ENVIRONMENT", "production")
-        result["environment"] = environment
-        return result
 
-    @app.post("/api/deploy/register")
-    async def register_deploy(request: Request):
-        """Record a deployment for tracking. Called by CI/CD pipeline."""
-        deploy_key = os.environ.get("ORTOBAHN_SECRET_KEY", "")
-        auth_header = request.headers.get("authorization", "")
-        if not deploy_key or auth_header != f"Bearer {deploy_key}":
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    return jsonify({"status": "healthy"})
 
-        body = await request.json()
-        sha = body.get("sha", "")
-        environment = body.get("environment", "production")
-        if not sha:
-            return JSONResponse({"error": "sha required"}, status_code=400)
 
-        db = app.state.db
-        current = db.get_current_deploy(environment)
-        previous_sha = current["sha"] if current else None
-        deploy_id = db.record_deploy(sha=sha, environment=environment, previous_sha=previous_sha)
-        return {"deploy_id": deploy_id, "sha": sha, "previous_sha": previous_sha}
-
-    @app.post("/api/internal/cleanup-clients")
-    async def cleanup_clients(request: Request):
-        """Deactivate all clients except vaultscaler and default. Called by CI/CD."""
-        auth = request.headers.get("authorization", "")
-        expected = f"Bearer {request.app.state.settings.secret_key}"
-        if auth != expected:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        db = app.state.db
-        keep = PROTECTED_CLIENT_IDS
-        all_clients = db.fetchall("SELECT id, name, active FROM clients ORDER BY name")
-
-        deactivated = []
-        for c in all_clients:
-            if c["id"] in keep or not c.get("active", 1):
-                continue
-            db.execute("UPDATE clients SET active=0 WHERE id=?", (c["id"],), commit=True)
-            deactivated.append({"id": c["id"], "name": c["name"]})
-
-        return {"deactivated": deactivated, "kept": list(keep)}
-
-    @app.post("/api/internal/pipeline-dry-run")
-    async def pipeline_dry_run(request: Request):
-        """Run a single pipeline cycle in dry-run mode for smoke testing."""
-        import asyncio
-
-        from ortobahn.orchestrator import Pipeline
-
-        # Auth: require ORTOBAHN_SECRET_KEY as Bearer token
-        auth = request.headers.get("authorization", "")
-        expected = f"Bearer {request.app.state.settings.secret_key}"
-        if auth != expected:
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-
-        settings = request.app.state.settings
-        db = request.app.state.db
-
-        # Get default client for dry run
-        default_client = db.get_client("default")
-        if not default_client:
-            return JSONResponse({"detail": "Default client not found"}, status_code=500)
-
-        try:
-            pipeline = Pipeline(settings, dry_run=True)
-            # Run in thread executor since pipeline is sync
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: pipeline.run_cycle(client_id="default", generate_only=True)
-            )
-            return JSONResponse(
-                {
-                    "success": True,
-                    "drafts_generated": result.get("total_drafts", 0) if isinstance(result, dict) else 0,
-                    "errors": result.get("errors", []) if isinstance(result, dict) else [],
-                }
-            )
-        except Exception as e:
-            return JSONResponse(
-                {
-                    "success": False,
-                    "drafts_generated": 0,
-                    "errors": [str(e)],
-                }
-            )
-
-    @app.exception_handler(_LoginRedirect)
-    async def _redirect_to_login(request: Request, exc: _LoginRedirect):
-        return RedirectResponse(f"/api/auth/login?next={exc.next_url}")
-
-    @app.middleware("http")
-    async def csrf_middleware(request: Request, call_next):
-        """CSRF protection for tenant POST routes.
-
-        Generates a token per session and stores on request.state for templates.
-        Validates the token on POST requests to /my/* via header or form field.
-        """
-        secret_key = request.app.state.settings.secret_key
-        session_token = request.cookies.get("session", "")
-        if session_token:
-            request.state.csrf_token = generate_csrf_token(secret_key, session_token)
-        else:
-            request.state.csrf_token = ""
-
-        if request.method == "POST" and request.url.path.startswith("/my/"):
-            # Skip CSRF for API key auth (programmatic access)
-            if request.headers.get("x-api-key"):
-                return await call_next(request)
-
-            if session_token:
-                # Check header first (HTMX / fetch), then parse raw body for form field.
-                # We parse the raw body manually instead of calling request.form()
-                # to avoid consuming the body stream (which would break downstream handlers).
-                csrf_token = request.headers.get("x-csrf-token", "")
-                if not csrf_token:
-                    content_type = request.headers.get("content-type", "")
-                    if "application/x-www-form-urlencoded" in content_type:
-                        from urllib.parse import parse_qs
-
-                        body = await request.body()
-                        parsed = parse_qs(body.decode("utf-8", errors="replace"))
-                        csrf_values = parsed.get("_csrf", [])
-                        csrf_token = csrf_values[0] if csrf_values else ""
-
-                if not validate_csrf_token(csrf_token, secret_key, session_token):
-                    return HTMLResponse(
-                        "<h1>403 Forbidden</h1><p>CSRF validation failed. "
-                        '<a href="javascript:history.back()">Go back</a> and try again.</p>',
-                        status_code=403,
-                    )
-
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def security_headers_middleware(request: Request, call_next):
-        """Add security headers to all responses."""
-        response = await call_next(request)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        response.headers.setdefault("X-XSS-Protection", "1; mode=block")
-        if request.url.scheme == "https":
-            response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-        return response
-
-    @app.middleware("http")
-    async def access_log_middleware(request: Request, call_next):
-        """Log non-trivial HTTP requests for security monitoring."""
-        path = request.url.path
-        # Skip static, health, and glass polling to keep volume low
-        if path.startswith("/static") or path == "/health" or path.startswith("/glass/api/"):
-            return await call_next(request)
-
-        start = time.time()
-        response = await call_next(request)
-        elapsed_ms = (time.time() - start) * 1000
-
-        # Only log suspicious or non-200 requests to keep DB lean
-        is_suspicious = any(probe in path.lower() for probe in (".env", "/admin", "/wp-", "/phpmyadmin", "/.git"))
-        if is_suspicious or response.status_code >= 400:
-            try:
-                db = request.app.state.db
-                db.execute(
-                    "INSERT INTO access_logs (id, method, path, status_code, source_ip, user_agent, response_time_ms) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()),
-                        request.method,
-                        path[:500],
-                        response.status_code,
-                        request.client.host if request.client else "",
-                        (request.headers.get("user-agent") or "")[:500],
-                        elapsed_ms,
-                    ),
-                    commit=True,
-                )
-            except Exception:
-                pass  # Never let logging break a request
-
-        return response
-
-    # ---------------------------------------------------------------------------
-    # Toast notifications endpoint (polled by base.html on every page)
-    # ---------------------------------------------------------------------------
-
-    @app.get("/api/toasts", response_class=HTMLResponse)
-    async def api_toasts(request: Request):
-        """Return pending toast notifications as HTML fragments.
-
-        Reads recent pipeline events and returns unseen notifications.
-        Uses a simple cookie-based watermark so each browser session
-        only sees each event once.
-        """
-        db = app.state.db
-        last_seen = request.cookies.get("toast_watermark", "")
-
-        # Find recently completed/failed pipeline runs (last 2 minutes)
-        from datetime import datetime, timedelta, timezone
-
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
-        recent_events = db.fetchall(
-            "SELECT id, status, posts_published, completed_at, client_id"
-            " FROM pipeline_runs WHERE completed_at >= ? AND status IN ('completed', 'failed')"
-            " ORDER BY completed_at DESC LIMIT 5",
-            (cutoff,),
-        )
-
-        # Find recently published posts (last 2 minutes)
-        recent_posts = db.fetchall(
-            "SELECT id, text, platform, status FROM posts"
-            " WHERE published_at >= ? AND status='published'"
-            " ORDER BY published_at DESC LIMIT 5",
-            (cutoff,),
-        )
-
-        # Find recently approved/rejected posts (last 2 minutes)
-        recent_moderated = db.fetchall(
-            "SELECT id, text, status FROM posts"
-            " WHERE created_at >= ? AND status IN ('approved', 'rejected')"
-            " ORDER BY created_at DESC LIMIT 5",
-            (cutoff,),
-        )
-
-        toasts: list[str] = []
-
-        for event in recent_events:
-            eid = event["id"][:8]
-            if eid <= last_seen:
-                continue
-            if event["status"] == "completed":
-                count = event.get("posts_published") or 0
-                toasts.append(
-                    '<div class="toast toast-success">'
-                    f'<span class="toast-icon">&#10003;</span>'
-                    f"<span>Pipeline completed &mdash; {count} post(s) published</span>"
-                    '<button class="toast-close">&times;</button>'
-                    "</div>"
-                )
-            elif event["status"] == "failed":
-                toasts.append(
-                    '<div class="toast toast-error">'
-                    f'<span class="toast-icon">&#10007;</span>'
-                    f"<span>Pipeline run failed for {event.get('client_id', 'unknown')}</span>"
-                    '<button class="toast-close">&times;</button>'
-                    "</div>"
-                )
-
-        for post in recent_posts:
-            pid = post["id"][:8]
-            if pid <= last_seen:
-                continue
-            platform = post.get("platform") or "generic"
-            text_preview = (post.get("text") or "")[:50]
-            if len(post.get("text", "")) > 50:
-                text_preview += "..."
-            toasts.append(
-                '<div class="toast toast-info">'
-                f'<span class="toast-icon">&#9998;</span>'
-                f"<span>Published on {platform}: {text_preview}</span>"
-                '<button class="toast-close">&times;</button>'
-                "</div>"
-            )
-
-        for post in recent_moderated:
-            pid = post["id"][:8]
-            if pid <= last_seen:
-                continue
-            if post["status"] == "approved":
-                toasts.append(
-                    '<div class="toast toast-success">'
-                    '<span class="toast-icon">&#10003;</span>'
-                    "<span>Post approved</span>"
-                    '<button class="toast-close">&times;</button>'
-                    "</div>"
-                )
-            elif post["status"] == "rejected":
-                toasts.append(
-                    '<div class="toast toast-warning">'
-                    '<span class="toast-icon">&#9888;</span>'
-                    "<span>Post rejected</span>"
-                    '<button class="toast-close">&times;</button>'
-                    "</div>"
-                )
-
-        # Only show first 3 toasts to avoid overwhelming the user
-        html = "".join(toasts[:3])
-
-        # Set watermark cookie to prevent repeat toasts
-        from fastapi.responses import HTMLResponse as _HTML
-
-        response = _HTML(html)
-        if recent_events or recent_posts or recent_moderated:
-            new_watermark = datetime.now(timezone.utc).isoformat()
-            response.set_cookie(
-                "toast_watermark",
-                new_watermark,
-                max_age=300,
-                httponly=True,
-                samesite="lax",
-            )
-        return response
-
-    _logger = logging.getLogger("ortobahn.web")
-
-    @app.on_event("startup")
-    async def _startup_checks():
-        """Seed internal clients and log warnings for misconfigured settings."""
-        # Seed internal clients (idempotent) — ensures article_enabled, auto_publish, etc.
-        try:
-            from ortobahn.seed import seed_all
-
-            seed_all(app.state.db, settings=settings)
-            _logger.info("Seed completed")
-        except Exception as e:
-            _logger.warning(f"Seed failed (non-fatal): {e}")
-
-        issues = []
-        if not settings.secret_key:
-            issues.append("ORTOBAHN_SECRET_KEY not set")
-        if not settings.anthropic_api_key:
-            issues.append("ANTHROPIC_API_KEY not set")
-        if issues:
-            _logger.warning(f"Startup warnings: {'; '.join(issues)}")
-        else:
-            _logger.info("Startup checks passed")
-
-    @app.get("/")
-    async def root_redirect():
-        """Root redirects to tenant dashboard (auth handled by tenant route)."""
-        return RedirectResponse("/my/dashboard", status_code=302)
-
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-    from ortobahn.web.routes import (
-        auth,
-        chat,
-        clients,
-        content,
-        dashboard,
-        glass,
-        legal,
-        onboard,
-        payments,
-        pipeline,
-        slack_events,
-        sre,
-        tenant_activity,
-        tenant_articles,
-        tenant_billing,
-        tenant_calendar,
-        tenant_content,
-        tenant_dashboard,
-        tenant_engagement_queue,
-        tenant_images,
-        tenant_insights,
-        tenant_listening,
-        tenant_polling,
-        tenant_posts,
-        tenant_review,
-        tenant_search,
-        tenant_settings,
-        webhooks,
-    )
-
-    # Public routes (no auth required)
-    app.include_router(onboard.router, prefix="/api")
-    app.include_router(auth.router, prefix="/api/auth")
-    app.include_router(payments.router, prefix="/api/payments")
-    app.include_router(glass.router)
-    app.include_router(legal.router)
-    app.include_router(slack_events.router)
-
-    # Tenant self-service routes (per-client auth)
-    app.include_router(tenant_dashboard.router)
-    app.include_router(tenant_content.router)
-    app.include_router(tenant_settings.router)
-    app.include_router(tenant_articles.router)
-    app.include_router(tenant_billing.router)
-    app.include_router(tenant_calendar.router)
-    app.include_router(tenant_images.router)
-    app.include_router(tenant_polling.router)
-    app.include_router(tenant_insights.router)
-    app.include_router(tenant_search.router)
-    app.include_router(tenant_review.router)
-    app.include_router(tenant_posts.router)
-    app.include_router(tenant_activity.router)
-    app.include_router(tenant_listening.router)
-    app.include_router(tenant_engagement_queue.router)
-    app.include_router(chat.router)
-    app.include_router(webhooks.router)
-
-    # Protected routes (admin auth dependency on each router)
-    app.include_router(dashboard.router)
-    app.include_router(clients.router, prefix="/clients")
-    app.include_router(content.router, prefix="/content")
-    app.include_router(pipeline.router, prefix="/pipeline")
-    app.include_router(sre.router, prefix="/sre")
-
-    return app
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

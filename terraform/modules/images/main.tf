@@ -1,82 +1,108 @@
-# S3 bucket for AI-generated images
 resource "aws_s3_bucket" "images" {
-  bucket = "ortobahn-images"
+  bucket = var.bucket_name
+
+  tags = {
+    Name        = "Ortobahn Images"
+    Environment = var.environment
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "images" {
   bucket = aws_s3_bucket.images.id
 
-  # Allow public read via bucket policy (for serving images)
   block_public_acls       = true
+  block_public_policy     = true
   ignore_public_acls      = true
-  block_public_policy     = false
-  restrict_public_buckets = false
+  restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_policy" "images_public_read" {
-  bucket = aws_s3_bucket.images.id
-
-  depends_on = [aws_s3_bucket_public_access_block.images]
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "PublicReadImages"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.images.arn}/images/*"
-      }
-    ]
-  })
+resource "aws_cloudfront_origin_access_identity" "images_oai" {
+  comment = "OAI for ${var.bucket_name}"
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "images" {
-  bucket = aws_s3_bucket.images.id
+data "aws_iam_policy_document" "s3_policy" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.images.arn}/*"]
 
-  rule {
-    id     = "expire-old-images"
-    status = "Enabled"
-
-    filter {
-      prefix = "images/"
-    }
-
-    expiration {
-      days = 90
+    principals {
+      type        = "AWS"
+      identifiers = [aws_cloudfront_origin_access_identity.images_oai.iam_arn]
     }
   }
 }
 
-# IAM policy for Bedrock image generation + S3 storage
-resource "aws_iam_policy" "image_gen" {
-  name        = "ortobahn-image-gen"
-  description = "Allows ECS tasks to generate images via Bedrock and store them in S3"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "BedrockInvokeModel"
-        Effect   = "Allow"
-        Action   = "bedrock:InvokeModel"
-        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-image-generator-v2:0"
-      },
-      {
-        Sid    = "S3WriteImages"
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-        ]
-        Resource = "${aws_s3_bucket.images.arn}/images/*"
-      }
-    ]
-  })
+resource "aws_s3_bucket_policy" "images" {
+  bucket = aws_s3_bucket.images.id
+  policy = data.aws_iam_policy_document.s3_policy.json
 }
 
-resource "aws_iam_role_policy_attachment" "image_gen" {
-  role       = var.task_role_name
-  policy_arn = aws_iam_policy.image_gen.arn
+resource "aws_cloudfront_distribution" "images_distribution" {
+  origin {
+    domain_name = aws_s3_bucket.images.bucket_regional_domain_name
+    origin_id   = "S3-${var.bucket_name}"
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.images_oai.cloudfront_access_identity_path
+    }
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "CloudFront distribution for ${var.bucket_name}"
+  default_root_object = ""
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${var.bucket_name}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+
+    trusted_signers = ["self"]
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Environment = var.environment
+  }
+}
+
+output "bucket_name" {
+  value = aws_s3_bucket.images.id
+}
+
+output "bucket_arn" {
+  value = aws_s3_bucket.images.arn
+}
+
+output "cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.images_distribution.id
+}
+
+output "cloudfront_domain_name" {
+  value = aws_cloudfront_distribution.images_distribution.domain_name
+}
+
+output "cloudfront_key_pair_id" {
+  value = aws_cloudfront_distribution.images_distribution.trusted_signers[0]
 }

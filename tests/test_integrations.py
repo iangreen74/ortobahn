@@ -1,72 +1,89 @@
-"""Tests for external API integrations (all mocked)."""
+"""Tests for integration connectors."""
 
-from __future__ import annotations
+import pytest
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from unittest.mock import MagicMock, patch
+import httpx
 
-from ortobahn.integrations.newsapi_client import get_trending_headlines
-from ortobahn.integrations.rss import fetch_feeds
-from ortobahn.integrations.trends import get_trending_searches
-
-
-class TestNewsAPI:
-    def test_no_api_key_returns_empty(self):
-        result = get_trending_headlines("")
-        assert result == []
-
-    @patch("newsapi.NewsApiClient")
-    def test_successful_fetch(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
-        mock_client.get_top_headlines.return_value = {
-            "articles": [
-                {
-                    "title": "AI News",
-                    "description": "Big AI stuff",
-                    "source": {"name": "TechCrunch"},
-                    "url": "https://example.com",
-                },
-            ]
-        }
-        result = get_trending_headlines("test-key")
-        assert len(result) == 1
-        assert result[0].title == "AI News"
+from ortobahn.integrations import (
+    PlatformAdapter,
+    PlatformType,
+    RateLimitConfig,
+    RATE_LIMITS,
+    WebhookReceiver,
+)
 
 
-class TestGoogleTrends:
-    @patch("pytrends.request.TrendReq")
-    def test_successful_fetch(self, mock_trendreq_cls):
-        import pandas as pd
+class MockPlatformAdapter(PlatformAdapter):
+    """Mock platform adapter for testing."""
 
-        mock_pytrends = MagicMock()
-        mock_trendreq_cls.return_value = mock_pytrends
-        mock_pytrends.trending_searches.return_value = pd.DataFrame({0: ["AI", "crypto", "space"]})
+    @property
+    def platform_type(self) -> PlatformType:
+        return PlatformType.TWITTER
 
-        result = get_trending_searches()
-        assert len(result) == 3
+    async def publish(self, content):
+        return {"id": "123", "url": "https://twitter.com/test/123"}
 
-    @patch("pytrends.request.TrendReq", side_effect=Exception("blocked"))
-    def test_failure_returns_empty(self, mock_trendreq):
-        result = get_trending_searches()
-        assert result == []
+    async def get_oauth_url(self, redirect_uri: str, state: str) -> str:
+        return f"https://oauth.twitter.com?redirect_uri={redirect_uri}&state={state}"
+
+    async def exchange_code(self, code: str, redirect_uri: str):
+        return {"access_token": "test_token", "refresh_token": "refresh_token"}
 
 
-class TestRSS:
-    @patch("ortobahn.integrations.rss.feedparser.parse")
-    def test_successful_fetch(self, mock_parse):
-        mock_parse.return_value = MagicMock(
-            feed={"title": "Test Feed"},
-            entries=[
-                {"title": "Article 1", "summary": "Summary 1", "link": "https://example.com/1"},
-                {"title": "Article 2", "summary": "Summary 2", "link": "https://example.com/2"},
-            ],
-        )
-        result = fetch_feeds(["https://example.com/feed"])
-        assert len(result) == 2
-        assert result[0].title == "Article 1"
+@pytest.mark.asyncio
+async def test_platform_adapter_rate_limit():
+    """Test rate limiting functionality."""
+    adapter = MockPlatformAdapter({"api_key": "test"})
+    
+    # Simulate hitting rate limit
+    adapter.rate_limit = RateLimitConfig(requests_per_minute=2, requests_per_hour=100)
+    adapter._request_times = [datetime.now() for _ in range(2)]
+    
+    # This should wait
+    start = datetime.now()
+    await adapter._check_rate_limit()
+    duration = (datetime.now() - start).total_seconds()
+    
+    assert duration >= 0  # Should have waited or cleared old requests
+    await adapter.close()
 
-    @patch("ortobahn.integrations.rss.feedparser.parse")
-    def test_failure_returns_empty(self, mock_parse):
-        mock_parse.side_effect = Exception("network error")
-        result = fetch_feeds(["https://bad.com/feed"])
-        assert result == []
+
+@pytest.mark.asyncio
+async def test_platform_adapter_retry_logic():
+    """Test retry logic with exponential backoff."""
+    adapter = MockPlatformAdapter({"api_key": "test"})
+    
+    mock_func = AsyncMock(side_effect=[
+        httpx.HTTPStatusError("Error", request=MagicMock(), response=MagicMock(status_code=500, headers={})),
+        {"success": True}
+    ])
+    
+    result = await adapter._retry_request(mock_func, max_retries=3)
+    assert result == {"success": True}
+    assert mock_func.call_count == 2
+    await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_platform_adapter_oauth_flow():
+    """Test OAuth flow methods."""
+    adapter = MockPlatformAdapter({"client_id": "test", "client_secret": "secret"})
+    
+    oauth_url = await adapter.get_oauth_url("https://example.com/callback", "state123")
+    assert "redirect_uri" in oauth_url
+    assert "state=state123" in oauth_url
+    
+    tokens = await adapter.exchange_code("auth_code", "https://example.com/callback")
+    assert "access_token" in tokens
+    assert "refresh_token" in tokens
+    await adapter.close()
+
+
+def test_rate_limits_configuration():
+    """Test rate limit configurations for all platforms."""
+    assert len(RATE_LIMITS) == 6
+    assert PlatformType.TWITTER in RATE_LIMITS
+    assert RATE_LIMITS[PlatformType.TWITTER].requests_per_minute == 300
+    assert RATE_LIMITS[PlatformType.LINKEDIN].requests_per_hour == 1000

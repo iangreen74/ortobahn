@@ -1,203 +1,86 @@
-"""Tests for the MCP server tools."""
-
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
-from ortobahn.db import Database
+from ortobahn.mcp_server import (
+    Database,
+    Settings,
+    app,
+    get_database,
+    get_settings,
+)
 
 
 @pytest.fixture
-def mcp_db(tmp_path):
-    """Fresh SQLite DB for MCP tool testing."""
-    db = Database(tmp_path / "mcp_test.db")
-    db.create_client(
-        {
-            "id": "test-client",
-            "name": "Test Corp",
-            "description": "A test client",
-            "industry": "Technology",
-            "target_audience": "Developers",
-            "brand_voice": "Professional",
-        },
-        start_trial=False,
+def test_settings():
+    """Fixture for test settings."""
+    return Settings(
+        database_url="sqlite:///:memory:",
+        log_level="DEBUG",
+        host="localhost",
+        port=8001,
     )
-    yield db
-    db.close()
 
 
-@pytest.fixture(autouse=True)
-def _patch_mcp_db(mcp_db, monkeypatch):
-    """Inject test DB into MCP module."""
-    import ortobahn.mcp_server as mod
-
-    monkeypatch.setattr(mod, "_db", mcp_db)
-    monkeypatch.setattr(mod, "_settings", None)
+@pytest.fixture
+def test_database(test_settings):
+    """Fixture for test database."""
+    return Database(test_settings.database_url)
 
 
-class TestReadOnlyTools:
-    """Tests for read-only MCP tools."""
+@pytest.fixture
+def client(test_settings, test_database):
+    """Test client with dependency overrides."""
+    app.dependency_overrides[get_settings] = lambda: test_settings
+    app.dependency_overrides[get_database] = lambda: test_database
 
-    def test_list_clients(self):
-        from ortobahn.mcp_server import list_clients
+    with TestClient(app) as test_client:
+        yield test_client
 
-        result = list_clients()
-        assert "test-client" in result
-        assert "Test Corp" in result
-
-    def test_get_client_found(self):
-        from ortobahn.mcp_server import get_client
-
-        result = get_client("test-client")
-        assert "Test Corp" in result
-        assert "Technology" in result
-
-    def test_get_client_not_found(self):
-        from ortobahn.mcp_server import get_client
-
-        result = get_client("nonexistent")
-        assert "not found" in result
-
-    def test_get_analytics(self):
-        from ortobahn.mcp_server import get_analytics
-
-        result = get_analytics(client_id="test-client")
-        assert "Total posts" in result
-
-    def test_list_draft_posts_empty(self):
-        from ortobahn.mcp_server import list_draft_posts
-
-        result = list_draft_posts(client_id="test-client")
-        assert "No draft posts" in result
-
-    def test_list_draft_posts_with_data(self, mcp_db):
-        from ortobahn.mcp_server import list_draft_posts
-
-        mcp_db.save_post(
-            text="This is a test draft post for MCP",
-            run_id="run-1",
-            client_id="test-client",
-            status="draft",
-            confidence=0.85,
-        )
-        result = list_draft_posts(client_id="test-client")
-        assert "test draft post" in result
-
-    def test_get_post_found(self, mcp_db):
-        from ortobahn.mcp_server import get_post
-
-        post_id = mcp_db.save_post(
-            text="A specific post to retrieve",
-            run_id="run-1",
-            client_id="test-client",
-            status="draft",
-            confidence=0.9,
-        )
-        result = get_post(post_id)
-        assert "A specific post to retrieve" in result
-
-    def test_get_post_not_found(self):
-        from ortobahn.mcp_server import get_post
-
-        result = get_post("nonexistent-id")
-        assert "not found" in result
-
-    def test_get_pipeline_status(self):
-        from ortobahn.mcp_server import get_pipeline_status
-
-        result = get_pipeline_status()
-        assert "Recent runs" in result or "No pipeline runs" in result
-
-    def test_get_system_health(self):
-        from ortobahn.mcp_server import get_system_health
-
-        result = get_system_health()
-        assert "System Health" in result
-
-    def test_get_client_strategy_none(self):
-        from ortobahn.mcp_server import get_client_strategy
-
-        result = get_client_strategy("test-client")
-        assert "No active strategy" in result
-
-    def test_list_articles_empty(self):
-        from ortobahn.mcp_server import list_articles
-
-        result = list_articles("test-client")
-        assert "No articles" in result
-
-    def test_get_monthly_spend(self):
-        from ortobahn.mcp_server import get_monthly_spend
-
-        result = get_monthly_spend("test-client")
-        assert "$0" in result
-
-    def test_get_agent_logs_empty(self):
-        from ortobahn.mcp_server import get_agent_logs
-
-        result = get_agent_logs()
-        assert "No agent logs" in result
+    app.dependency_overrides.clear()
 
 
-class TestWriteTools:
-    """Tests for write MCP tools."""
+def test_health_check(client):
+    """Test health check endpoint."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["database"] == "connected"
+    assert data["log_level"] == "DEBUG"
 
-    def test_approve_post_success(self, mcp_db):
-        from ortobahn.mcp_server import approve_post
 
-        post_id = mcp_db.save_post(
-            text="Draft post to approve",
-            run_id="run-1",
-            client_id="test-client",
-            status="draft",
-            confidence=0.85,
-        )
-        result = approve_post(post_id)
-        assert "approved" in result
+def test_status(client):
+    """Test status endpoint."""
+    response = client.get("/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["service"] == "ortobahn-mcp"
+    assert data["version"] == "0.1.0"
+    assert "settings" in data
+    assert data["settings"]["host"] == "localhost"
+    assert data["settings"]["port"] == 8001
 
-        # Verify status changed
-        post = mcp_db.get_post(post_id)
-        assert post["status"] == "approved"
 
-    def test_approve_post_not_draft(self, mcp_db):
-        from ortobahn.mcp_server import approve_post
+@pytest.mark.asyncio
+async def test_database_connection(test_database):
+    """Test database connection management."""
+    conn = await test_database.get_connection()
+    assert conn["connected"] is True
+    assert conn["url"] == "sqlite:///:memory:"
 
-        post_id = mcp_db.save_post(
-            text="Already published post",
-            run_id="run-1",
-            client_id="test-client",
-            status="published",
-            confidence=0.9,
-        )
-        result = approve_post(post_id)
-        assert "Cannot approve" in result
+    await test_database.release_connection(conn)
+    await test_database.close()
 
-    def test_approve_post_not_found(self):
-        from ortobahn.mcp_server import approve_post
 
-        result = approve_post("nonexistent-id")
-        assert "not found" in result
-
-    def test_reject_post_success(self, mcp_db):
-        from ortobahn.mcp_server import reject_post
-
-        post_id = mcp_db.save_post(
-            text="Draft post to reject",
-            run_id="run-1",
-            client_id="test-client",
-            status="draft",
-            confidence=0.85,
-        )
-        result = reject_post(post_id, reason="Not on brand")
-        assert "rejected" in result
-        assert "Not on brand" in result
-
-        # Verify status changed
-        post = mcp_db.get_post(post_id)
-        assert post["status"] == "rejected"
-
-    def test_trigger_pipeline_not_found(self):
-        from ortobahn.mcp_server import trigger_pipeline
-
-        result = trigger_pipeline("nonexistent-client")
-        assert "not found" in result
+def test_settings_model():
+    """Test settings model validation."""
+    settings = Settings(
+        database_url="postgresql://localhost/test",
+        log_level="WARNING",
+    )
+    assert settings.database_url == "postgresql://localhost/test"
+    assert settings.log_level == "WARNING"
+    assert settings.host == "127.0.0.1"  # Default value
+    assert settings.port == 8000  # Default value

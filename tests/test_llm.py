@@ -1,139 +1,110 @@
-"""Tests for LLM wrapper and JSON parsing."""
-
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
+import time
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from ortobahn.llm import LLMResponse, call_llm, parse_json_response
-from ortobahn.models import Strategy
+from ortobahn.llm import LLMClient, LLMRequest, LLMResponse, ModelType, TokenBucket
 
 
-class TestParseJsonResponse:
-    def test_clean_json(self):
-        text = '{"themes": ["AI"], "tone": "bold", "goals": ["grow"], "content_guidelines": "ok", "posting_frequency": "daily", "valid_until": "2026-03-01T00:00:00"}'
-        result = parse_json_response(text, Strategy)
-        assert result.themes == ["AI"]
+@pytest.mark.asyncio
+async def test_token_bucket_basic() -> None:
+    """Test basic token bucket functionality."""
+    bucket = TokenBucket(rate=10.0, capacity=10.0)
 
-    def test_markdown_fenced_json(self):
-        text = '```json\n{"themes": ["AI"], "tone": "bold", "goals": ["grow"], "content_guidelines": "ok", "posting_frequency": "daily", "valid_until": "2026-03-01T00:00:00"}\n```'
-        result = parse_json_response(text, Strategy)
-        assert result.themes == ["AI"]
-
-    def test_json_with_preamble(self):
-        text = 'Here is the strategy:\n{"themes": ["AI"], "tone": "bold", "goals": ["grow"], "content_guidelines": "ok", "posting_frequency": "daily", "valid_until": "2026-03-01T00:00:00"}'
-        result = parse_json_response(text, Strategy)
-        assert result.themes == ["AI"]
-
-    def test_no_json_raises(self):
-        with pytest.raises(ValueError, match="No JSON found"):
-            parse_json_response("no json here at all", Strategy)
-
-    def test_invalid_json_raises(self):
-        with pytest.raises(ValueError, match="Failed to parse"):
-            parse_json_response('{"bad": "data"}', Strategy)
+    await bucket.acquire(5.0)
+    assert bucket.tokens == pytest.approx(5.0, abs=0.1)
 
 
-class TestCallLLM:
-    @patch("ortobahn.llm.anthropic.Anthropic")
-    def test_successful_call(self, mock_anthropic_cls):
-        mock_client = MagicMock()
-        mock_anthropic_cls.return_value = mock_client
+@pytest.mark.asyncio
+async def test_token_bucket_refill() -> None:
+    """Test token bucket refills over time."""
+    bucket = TokenBucket(rate=10.0, capacity=10.0)
 
-        text_block = MagicMock()
-        text_block.type = "text"
-        text_block.text = "Hello"
+    await bucket.acquire(10.0)
+    assert bucket.tokens == pytest.approx(0.0, abs=0.1)
 
-        mock_response = MagicMock()
-        mock_response.content = [text_block]
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 100
-        mock_client.messages.create.return_value = mock_response
+    await asyncio.sleep(0.5)
+    await bucket.acquire(1.0)
+    assert bucket.tokens < 10.0
 
-        result = call_llm("system", "user", api_key="sk-ant-test")
-        assert isinstance(result, LLMResponse)
-        assert result.text == "Hello"
-        assert result.input_tokens == 50
-        assert result.thinking == ""
 
-    @patch("ortobahn.llm.time.sleep")
-    @patch("ortobahn.llm.anthropic.Anthropic")
-    def test_retry_on_rate_limit(self, mock_anthropic_cls, mock_sleep):
-        import anthropic
+@pytest.mark.asyncio
+async def test_llm_client_generate() -> None:
+    """Test LLM client generates responses."""
+    mock_response = Mock()
+    mock_response.content = [Mock(text="Test response")]
+    mock_response.model = "claude-3-5-sonnet-20241022"
+    mock_response.usage = Mock(input_tokens=10, output_tokens=20)
+    mock_response.stop_reason = "end_turn"
 
-        mock_client = MagicMock()
-        mock_anthropic_cls.return_value = mock_client
+    with patch("anthropic.AsyncAnthropic") as mock_anthropic:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_anthropic.return_value = mock_client
 
-        text_block = MagicMock()
-        text_block.type = "text"
-        text_block.text = "OK"
+        client = LLMClient(api_key="test-key", requests_per_minute=1000.0)
+        request = LLMRequest(prompt="Test prompt")
+        response = await client.generate(request)
 
-        mock_response = MagicMock()
-        mock_response.content = [text_block]
-        mock_response.usage.input_tokens = 10
-        mock_response.usage.output_tokens = 20
+        assert isinstance(response, LLMResponse)
+        assert response.content == "Test response"
+        assert response.usage["input_tokens"] == 10
+        assert response.usage["output_tokens"] == 20
 
-        # First call: rate limit, second call: success
-        mock_client.messages.create.side_effect = [
-            anthropic.RateLimitError(
-                message="rate limited",
-                response=MagicMock(status_code=429, headers={}),
-                body=None,
-            ),
-            mock_response,
-        ]
 
-        result = call_llm("system", "user", api_key="sk-ant-test", retries=2)
-        assert result.text == "OK"
-        assert mock_sleep.called
+@pytest.mark.asyncio
+async def test_llm_client_retry_on_rate_limit() -> None:
+    """Test client retries on rate limit errors."""
+    import anthropic
 
-    @patch("ortobahn.llm.anthropic.Anthropic")
-    def test_call_with_thinking(self, mock_anthropic_cls):
-        mock_client = MagicMock()
-        mock_anthropic_cls.return_value = mock_client
+    mock_response = Mock()
+    mock_response.content = [Mock(text="Success")]
+    mock_response.model = "claude-3-5-sonnet-20241022"
+    mock_response.usage = Mock(input_tokens=10, output_tokens=20)
+    mock_response.stop_reason = "end_turn"
 
-        thinking_block = MagicMock()
-        thinking_block.type = "thinking"
-        thinking_block.thinking = "Let me reason about this..."
+    call_count = 0
 
-        text_block = MagicMock()
-        text_block.type = "text"
-        text_block.text = '{"result": "deep thought"}'
+    async def mock_create(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise anthropic.RateLimitError("Rate limited", response=Mock(status_code=429), body=None)
+        return mock_response
 
-        mock_response = MagicMock()
-        mock_response.content = [thinking_block, text_block]
-        mock_response.usage.input_tokens = 200
-        mock_response.usage.output_tokens = 500
-        # Thinking path uses streaming
-        mock_stream = MagicMock()
-        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-        mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_stream.get_final_message.return_value = mock_response
-        mock_client.messages.stream.return_value = mock_stream
+    with patch("anthropic.AsyncAnthropic") as mock_anthropic:
+        mock_client = AsyncMock()
+        mock_client.messages.create = mock_create
+        mock_anthropic.return_value = mock_client
 
-        result = call_llm("system", "user", api_key="sk-ant-test", thinking_budget=5000)
-        assert result.text == '{"result": "deep thought"}'
-        assert result.thinking == "Let me reason about this..."
-        assert result.input_tokens == 200
+        client = LLMClient(api_key="test-key", requests_per_minute=1000.0)
+        request = LLMRequest(prompt="Test")
+        response = await client.generate(request)
 
-        # Verify thinking was passed to API via stream
-        call_kwargs = mock_client.messages.stream.call_args
-        assert call_kwargs.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 5000}
-        assert call_kwargs.kwargs["max_tokens"] == 4096 + 5000
+        assert call_count == 2
+        assert response.content == "Success"
 
-    @patch("ortobahn.llm.time.sleep")
-    @patch("ortobahn.llm.anthropic.Anthropic")
-    def test_exhausted_retries(self, mock_anthropic_cls, mock_sleep):
-        import anthropic
 
-        mock_client = MagicMock()
-        mock_anthropic_cls.return_value = mock_client
-        mock_client.messages.create.side_effect = anthropic.RateLimitError(
-            message="rate limited",
-            response=MagicMock(status_code=429, headers={}),
-            body=None,
-        )
+@pytest.mark.asyncio
+async def test_llm_client_batch_generate() -> None:
+    """Test batch generation."""
+    mock_response = Mock()
+    mock_response.content = [Mock(text="Response")]
+    mock_response.model = "claude-3-5-sonnet-20241022"
+    mock_response.usage = Mock(input_tokens=10, output_tokens=20)
+    mock_response.stop_reason = "end_turn"
 
-        with pytest.raises(RuntimeError, match="failed after all retries"):
-            call_llm("system", "user", api_key="sk-ant-test", retries=2)
+    with patch("anthropic.AsyncAnthropic") as mock_anthropic:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_anthropic.return_value = mock_client
+
+        client = LLMClient(api_key="test-key", requests_per_minute=1000.0)
+        requests = [LLMRequest(prompt=f"Prompt {i}") for i in range(3)]
+        responses = await client.batch_generate(requests)
+
+        assert len(responses) == 3
+        assert all(isinstance(r, LLMResponse) for r in responses)

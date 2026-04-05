@@ -1,165 +1,149 @@
-"""Shared Claude API wrapper used by all agents."""
+from __future__ import annotations
 
-import logging
+import asyncio
 import time
-from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 import anthropic
-
-logger = logging.getLogger("ortobahn.llm")
-
-# Map direct API model IDs to Bedrock cross-region inference profile IDs.
-BEDROCK_MODEL_MAP = {
-    "claude-sonnet-4-5-20250929": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-    "claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "claude-sonnet-4-20250514": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-}
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class LLMResponse:
-    text: str
-    input_tokens: int
-    output_tokens: int
+class ModelType(str, Enum):
+    """Available Claude model types."""
+    CLAUDE_3_5_SONNET = "claude-3-5-sonnet-20241022"
+    CLAUDE_3_OPUS = "claude-3-opus-20240229"
+    CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
+    CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
+
+
+class LLMRequest(BaseModel):
+    """Data contract for LLM requests."""
+    prompt: str
+    model: ModelType = ModelType.CLAUDE_3_5_SONNET
+    max_tokens: int = Field(default=1024, ge=1, le=4096)
+    temperature: float = Field(default=1.0, ge=0.0, le=1.0)
+    system_prompt: str | None = None
+
+
+class LLMResponse(BaseModel):
+    """Data contract for LLM responses."""
+    content: str
     model: str
-    thinking: str = ""
-    cache_creation_input_tokens: int = 0
-    cache_read_input_tokens: int = 0
+    usage: dict[str, int]
+    stop_reason: str
 
 
-def call_llm(
-    system_prompt: str,
-    user_message: str,
-    model: str = "claude-sonnet-4-5-20250929",
-    max_tokens: int = 4096,
-    api_key: str = "",
-    retries: int = 3,
-    thinking_budget: int = 0,
-    use_bedrock: bool = False,
-    bedrock_region: str = "us-west-2",
-) -> LLMResponse:
-    """Call Claude and return the response with token usage.
+class TokenBucket:
+    """Token bucket for rate limiting API calls."""
 
-    When thinking_budget > 0, enables extended thinking which gives the model
-    a scratchpad for deeper reasoning before producing its final answer.
+    def __init__(self, rate: float, capacity: float) -> None:
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = capacity
+        self.last_update = time.monotonic()
+        self._lock = asyncio.Lock()
 
-    When use_bedrock is True, uses AWS Bedrock (IAM auth) instead of direct
-    Anthropic API. Model IDs are mapped automatically.
-    """
-    if use_bedrock:
-        client: anthropic.Anthropic | anthropic.AnthropicBedrock = anthropic.AnthropicBedrock(aws_region=bedrock_region)
-        model = BEDROCK_MODEL_MAP.get(model, model)
-    else:
-        client = anthropic.Anthropic(api_key=api_key)
+    async def acquire(self, tokens: float = 1.0) -> None:
+        """Acquire tokens, waiting if necessary."""
+        async with self._lock:
+            while True:
+                now = time.monotonic()
+                elapsed = now - self.last_update
+                self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+                self.last_update = now
 
-    kwargs: dict = {
-        "model": model,
-        "max_tokens": max_tokens + thinking_budget if thinking_budget else max_tokens,
-        "messages": [{"role": "user", "content": user_message}],
-    }
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return
 
-    if thinking_budget > 0:
-        kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": thinking_budget,
+                await asyncio.sleep((tokens - self.tokens) / self.rate)
+
+
+class LLMClient:
+    """Async LLM client with rate limiting and retry logic."""
+
+    def __init__(
+        self,
+        api_key: str,
+        max_concurrent_requests: int = 5,
+        requests_per_minute: float = 50.0,
+        max_retries: int = 3,
+    ) -> None:
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+        self.token_bucket = TokenBucket(rate=requests_per_minute / 60.0, capacity=requests_per_minute)
+        self.max_retries = max_retries
+
+    async def generate(
+        self,
+        request: LLMRequest,
+    ) -> LLMResponse:
+        """Generate completion with rate limiting and retry logic."""
+        async with self.semaphore:
+            await self.token_bucket.acquire()
+            return await self._generate_with_retry(request)
+
+    async def _generate_with_retry(
+        self,
+        request: LLMRequest,
+    ) -> LLMResponse:
+        """Execute generation with exponential backoff retry."""
+        last_exception = None
+
+        for attempt in range(self.max_retries):
+            try:
+                return await self._execute_request(request)
+            except anthropic.RateLimitError as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = (2 ** attempt) * 1.0
+                    await asyncio.sleep(wait_time)
+            except anthropic.APITimeoutError as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = (2 ** attempt) * 0.5
+                    await asyncio.sleep(wait_time)
+            except anthropic.APIConnectionError as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = (2 ** attempt) * 0.5
+                    await asyncio.sleep(wait_time)
+
+        raise last_exception or Exception("Max retries exceeded")
+
+    async def _execute_request(self, request: LLMRequest) -> LLMResponse:
+        """Execute the actual API request."""
+        kwargs: dict[str, Any] = {
+            "model": request.model.value,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "messages": [{"role": "user", "content": request.prompt}],
         }
-        # Extended thinking doesn't support system parameter; prepend to user message
-        if system_prompt:
-            kwargs["messages"] = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"<system>\n{system_prompt}\n</system>",
-                            "cache_control": {"type": "ephemeral"},
-                        },
-                        {"type": "text", "text": user_message},
-                    ],
-                },
-            ]
-    else:
-        # Use structured system prompt with cache_control for prompt caching
-        kwargs["system"] = [
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
 
-    # Use streaming for extended thinking (required for long requests)
-    use_stream = thinking_budget > 0
+        if request.system_prompt:
+            kwargs["system"] = request.system_prompt
 
-    for attempt in range(retries):
-        try:
-            if use_stream:
-                with client.messages.stream(**kwargs) as stream:
-                    response = stream.get_final_message()
-            else:
-                response = client.messages.create(**kwargs)
+        response = await self.client.messages.create(**kwargs)
 
-            # Parse response blocks
-            text_parts = []
-            thinking_parts = []
-            for block in response.content:
-                if block.type == "text":
-                    text_parts.append(block.text)
-                elif block.type == "thinking":
-                    thinking_parts.append(block.thinking)
+        return LLMResponse(
+            content=response.content[0].text,
+            model=response.model,
+            usage={
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            },
+            stop_reason=response.stop_reason,
+        )
 
-            return LLMResponse(
-                text="\n".join(text_parts),
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                model=model,
-                thinking="\n".join(thinking_parts),
-                cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
-                cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
-            )
-        except anthropic.RateLimitError:
-            wait = 2**attempt * 5
-            logger.warning(f"Rate limited, waiting {wait}s (attempt {attempt + 1}/{retries})")
-            time.sleep(wait)
-        except anthropic.APIError as e:
-            if attempt == retries - 1:
-                raise
-            logger.warning(f"API error: {e}, retrying ({attempt + 1}/{retries})")
-            time.sleep(2)
+    async def batch_generate(
+        self,
+        requests: list[LLMRequest],
+    ) -> list[LLMResponse]:
+        """Generate multiple completions concurrently."""
+        tasks = [self.generate(request) for request in requests]
+        return await asyncio.gather(*tasks)
 
-    raise RuntimeError("LLM call failed after all retries")
-
-
-def parse_json_response(text: str, model_class):
-    """Extract JSON from LLM response and parse into a Pydantic model."""
-    cleaned = text.strip()
-
-    # Strip markdown code fences
-    if "```json" in cleaned:
-        cleaned = cleaned.split("```json", 1)[1].split("```", 1)[0].strip()
-    elif "```" in cleaned:
-        cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
-
-    # Fallback: find JSON object/array boundaries if there's extra text
-    if cleaned and cleaned[0] not in ("{", "["):
-        start_obj = cleaned.find("{")
-        start_arr = cleaned.find("[")
-        if start_obj == -1 and start_arr == -1:
-            raise ValueError(f"No JSON found in LLM response. First 300 chars: {text[:300]}")
-        if start_arr != -1 and (start_obj == -1 or start_arr < start_obj):
-            start = start_arr
-            end = cleaned.rfind("]") + 1
-        else:
-            start = start_obj
-            end = cleaned.rfind("}") + 1
-        if end <= start:
-            raise ValueError(f"Incomplete JSON in LLM response. First 300 chars: {text[:300]}")
-        cleaned = cleaned[start:end]
-
-    try:
-        return model_class.model_validate_json(cleaned)
-    except Exception as e:
-        raise ValueError(
-            f"Failed to parse LLM response as {model_class.__name__}: {e}\n"
-            f"Cleaned text (first 300 chars): {cleaned[:300]}"
-        ) from e
+    async def close(self) -> None:
+        """Close the client and cleanup resources."""
+        await self.client.close()

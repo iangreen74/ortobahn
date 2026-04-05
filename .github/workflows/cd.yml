@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+name: Continuous Deployment
+
+on:
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ortobahn
+  ECS_CLUSTER: ortobahn-cluster
+  ECS_SERVICE: ortobahn-service
+  TERRAFORM_VERSION: 1.6.0
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "latest=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ steps.meta.outputs.latest }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -var="image_tag=${{ github.sha }}" \
+            -var="deployment_color=green"
+
+      - name: Get green target group ARN
+        id: green-tg
+        run: |
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --names ortobahn-green \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+          echo "arn=$TG_ARN" >> $GITHUB_OUTPUT
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+
+      - name: Run smoke tests (10% traffic)
+        id: smoke-10
+        run: |
+          python scripts/smoke_test.py --endpoint https://ortobahn-green.example.com
+
+      - name: Shift traffic to 10%
+        if: success()
+        run: |
+          python scripts/traffic_shift.py --target-group ${{ steps.green-tg.outputs.arn }} --weight 10
+
+      - name: Monitor metrics (10%)
+        run: |
+          python scripts/monitor_deployment.py --duration 300 --error-threshold 1.0
+
+      - name: Shift traffic to 50%
+        if: success()
+        run: |
+          python scripts/traffic_shift.py --target-group ${{ steps.green-tg.outputs.arn }} --weight 50
+
+      - name: Monitor metrics (50%)
+        run: |
+          python scripts/monitor_deployment.py --duration 300 --error-threshold 1.0
+
+      - name: Shift traffic to 100%
+        if: success()
+        run: |
+          python scripts/traffic_shift.py --target-group ${{ steps.green-tg.outputs.arn }} --weight 100
+
+      - name: Monitor metrics (100%)
+        run: |
+          python scripts/monitor_deployment.py --duration 180 --error-threshold 0.5
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, rolling back..."
+          python scripts/traffic_shift.py --target-group ${{ steps.green-tg.outputs.arn }} --weight 0
+          terraform apply -auto-approve \
+            -var="image_tag=${{ github.event.workflow_run.head_sha }}" \
+            -var="deployment_color=blue"
+          exit 1
+
+      - name: Swap blue-green labels
+        if: success()
+        run: |
+          python scripts/swap_deployment_colors.py

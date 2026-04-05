@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ortobahn Dashboard</title>
+    <style>
+        :root {
+            --color-bg: #0f172a;
+            --color-surface: #1e293b;
+            --color-primary: #3b82f6;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-error: #ef4444;
+            --color-text: #f1f5f9;
+            --color-text-muted: #94a3b8;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --font-family: system-ui, -apple-system, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            background: var(--color-bg);
+            color: var(--color-text);
+            padding: var(--spacing-lg);
+        }
+        .header {
+            margin-bottom: var(--spacing-lg);
+            padding-bottom: var(--spacing-md);
+            border-bottom: 2px solid var(--color-surface);
+        }
+        .header h1 { color: var(--color-primary); }
+        .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.875rem; }
+        .status.connected { background: var(--color-success); }
+        .status.disconnected { background: var(--color-error); }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: var(--spacing-lg);
+        }
+        .card {
+            background: var(--color-surface);
+            padding: var(--spacing-lg);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .card h2 {
+            font-size: 1.25rem;
+            margin-bottom: var(--spacing-md);
+            color: var(--color-primary);
+        }
+        .metric { margin-bottom: var(--spacing-sm); }
+        .metric-label { color: var(--color-text-muted); font-size: 0.875rem; }
+        .metric-value { font-size: 1.5rem; font-weight: bold; }
+        .agent-item {
+            padding: var(--spacing-sm);
+            background: var(--color-bg);
+            border-radius: 4px;
+            margin-bottom: var(--spacing-sm);
+        }
+        .progress-bar {
+            height: 8px;
+            background: var(--color-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: var(--spacing-sm);
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--color-primary);
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Ortobahn Dashboard</h1>
+        <span id="ws-status" class="status disconnected">Disconnected</span>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>Campaign Metrics</h2>
+            <div id="campaign-metrics">
+                <div class="metric">
+                    <div class="metric-label">Active Agents</div>
+                    <div class="metric-value" id="active-agents">0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Completed Tasks</div>
+                    <div class="metric-value" id="completed-tasks">0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Success Rate</div>
+                    <div class="metric-value" id="success-rate">0%</div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Agent Status</h2>
+            <div id="agent-list"></div>
+        </div>
+        <div class="card">
+            <h2>Memory Visualization</h2>
+            <div id="memory-viz"></div>
+        </div>
+    </div>
+    <script>
+        const wsUrl = `ws://${window.location.host}/dashboard/ws`;
+        let ws;
+        function connect() {
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => {
+                document.getElementById('ws-status').textContent = 'Connected';
+                document.getElementById('ws-status').className = 'status connected';
+            };
+            ws.onclose = () => {
+                document.getElementById('ws-status').textContent = 'Disconnected';
+                document.getElementById('ws-status').className = 'status disconnected';
+                setTimeout(connect, 3000);
+            };
+            ws.onmessage = (event) => {
+                const update = JSON.parse(event.data);
+                handleUpdate(update);
+            };
+        }
+        function handleUpdate(update) {
+            if (update.update_type === 'campaign_metrics') {
+                const m = update.data;
+                document.getElementById('active-agents').textContent = m.active_agents;
+                document.getElementById('completed-tasks').textContent = m.completed_tasks;
+                document.getElementById('success-rate').textContent = (m.success_rate * 100).toFixed(1) + '%';
+                const progress = (m.completed_tasks / m.total_tasks) * 100;
+                document.getElementById('progress').style.width = progress + '%';
+            } else if (update.update_type === 'agent_status') {
+                updateAgentList(update.data);
+            } else if (update.update_type === 'memory_visualization') {
+                updateMemoryViz(update.data);
+            }
+        }
+        function updateAgentList(agent) {
+            const list = document.getElementById('agent-list');
+            const html = `<div class="agent-item"><strong>${agent.agent_id}</strong><br>
+                Status: ${agent.status} | Tokens: ${agent.tokens_used}</div>`;
+            list.innerHTML = html + list.innerHTML.substring(0, 500);
+        }
+        function updateMemoryViz(memory) {
+            const viz = document.getElementById('memory-viz');
+            const html = `<div class="agent-item"><strong>${memory.agent_id}</strong><br>
+                ${memory.memory_type}: ${JSON.stringify(memory.content).substring(0, 50)}...</div>`;
+            viz.innerHTML = html + viz.innerHTML.substring(0, 500);
+        }
+        connect();
+    </script>
+</body>
+</html>

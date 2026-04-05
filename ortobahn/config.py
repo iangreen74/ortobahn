@@ -1,415 +1,189 @@
-"""Configuration loaded from environment variables / .env file."""
-
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any
 
-from dotenv import load_dotenv
+import boto3
+from pydantic import BaseModel, Field
 
-from ortobahn.constants import DEFAULT_CLIENT_ID
+
+class Environment(str, Enum):
+    """Environment types."""
+
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
 
 
-@dataclass
-class Settings:
-    # Required
-    anthropic_api_key: str = ""
-    bluesky_handle: str = ""
-    bluesky_app_password: str = ""
+class SecretConfig(BaseModel):
+    """Configuration for a single secret."""
 
-    # Optional APIs
-    newsapi_key: str | None = None
+    key: str
+    value: str
+    cached_at: datetime
+    ttl_seconds: int = 300  # 5 minutes
 
-    # Twitter/X
-    twitter_api_key: str = ""
-    twitter_api_secret: str = ""
-    twitter_access_token: str = ""
-    twitter_access_token_secret: str = ""
+    def is_expired(self) -> bool:
+        """Check if secret cache is expired."""
+        return datetime.utcnow() > self.cached_at + timedelta(seconds=self.ttl_seconds)
 
-    # LinkedIn
-    linkedin_access_token: str = ""
-    linkedin_person_urn: str = ""
 
-    # Reddit
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-    reddit_username: str = ""
-    reddit_password: str = ""
+class SecretsManager:
+    """AWS Secrets Manager integration with caching."""
 
-    # Autonomous mode (auto-publish above confidence threshold)
-    autonomous_mode: bool = True
+    def __init__(self, region_name: str | None = None, cache_ttl: int = 300) -> None:
+        """Initialize secrets manager.
 
-    # Claude settings
-    claude_model: str = "claude-sonnet-4-5-20250929"
-    claude_max_tokens: int = 4096
-    thinking_budget_ceo: int = 10_000
-    thinking_budget_strategist: int = 8_000
-    thinking_budget_creator: int = 6_000
-    thinking_budget_legal: int = 10_000
-    thinking_budget_security: int = 8_000
+        Args:
+            region_name: AWS region name
+            cache_ttl: Cache time-to-live in seconds
+        """
+        self.region_name = region_name or os.environ.get("AWS_REGION", "us-east-1")
+        self.cache_ttl = cache_ttl
+        self._cache: dict[str, SecretConfig] = {}
+        self._client = None
 
-    # Bedrock (uses IAM auth instead of API key)
-    use_bedrock: bool = False
-    bedrock_region: str = "us-west-2"
+    @property
+    def client(self):
+        """Lazy initialize boto3 client."""
+        if self._client is None:
+            self._client = boto3.client("secretsmanager", region_name=self.region_name)
+        return self._client
 
-    # Image generation (Bedrock Titan Image Generator v2)
-    image_generation_enabled: bool = False
-    bedrock_image_model: str = "amazon.titan-image-generator-v2:0"
-    image_s3_bucket: str = ""
+    def get_secret(self, secret_name: str, force_refresh: bool = False) -> str:
+        """Get secret value with caching.
 
-    # Database
-    database_url: str = ""  # PostgreSQL: postgresql://user:pass@host:5432/dbname
-    db_path: Path = Path("data/ortobahn.db")  # SQLite fallback (ignored if database_url set)
-    db_pool_min: int = 2  # Minimum connections in PostgreSQL pool
-    db_pool_max: int = 10  # Maximum connections in PostgreSQL pool
+        Args:
+            secret_name: Name of the secret in AWS Secrets Manager
+            force_refresh: Force refresh from AWS, bypass cache
 
-    # Pipeline
-    post_confidence_threshold: float = 0.7
-    pipeline_interval_hours: int = 8
-    max_posts_per_cycle: int = 4
+        Returns:
+            Secret value as string
+        """
+        # Check cache first
+        if not force_refresh and secret_name in self._cache:
+            cached = self._cache[secret_name]
+            if not cached.is_expired():
+                return cached.value
 
-    # Default client
-    default_client_id: str = DEFAULT_CLIENT_ID
+        # Fetch from AWS
+        try:
+            response = self.client.get_secret_value(SecretId=secret_name)
+            secret_value = response["SecretString"]
 
-    # Web dashboard
-    web_host: str = "127.0.0.1"
-    web_port: int = 8000
+            # Try to parse as JSON and extract value
+            try:
+                parsed = json.loads(secret_value)
+                if isinstance(parsed, dict) and "value" in parsed:
+                    secret_value = parsed["value"]
+            except json.JSONDecodeError:
+                pass  # Use raw string value
 
-    # Logging
-    log_level: str = "INFO"
+            # Cache the secret
+            self._cache[secret_name] = SecretConfig(
+                key=secret_name,
+                value=secret_value,
+                cached_at=datetime.utcnow(),
+                ttl_seconds=self.cache_ttl,
+            )
 
-    # Budget enforcement
-    default_monthly_budget: float = 0.0  # 0 = unlimited
+            return secret_value
+        except Exception as e:
+            # Fallback to environment variable if AWS fails
+            fallback = os.environ.get(secret_name.upper().replace("-", "_"))
+            if fallback:
+                return fallback
+            raise RuntimeError(f"Failed to retrieve secret {secret_name}: {e}") from e
 
-    # Rate limiting
-    post_delay_seconds: int = 30
-    rate_limit_enabled: bool = True
-    rate_limit_default: int = 60
-    rate_limit_window_seconds: int = 60
+    def invalidate_cache(self, secret_name: str | None = None) -> None:
+        """Invalidate secret cache.
 
-    # Slack alerting
-    slack_webhook_url: str = ""
-    slack_signing_secret: str = ""
+        Args:
+            secret_name: Specific secret to invalidate, or None for all
+        """
+        if secret_name:
+            self._cache.pop(secret_name, None)
+        else:
+            self._cache.clear()
 
-    # Backups
-    backup_enabled: bool = True
-    backup_dir: Path = Path("data/backups")
-    backup_max_count: int = 10
 
-    # Authentication
-    secret_key: str = ""
-    admin_api_key: str = ""
+class Config(BaseModel):
+    """Application configuration."""
 
-    # Cognito
-    cognito_user_pool_id: str = ""
-    cognito_client_id: str = ""
-    cognito_region: str = "us-west-2"
+    environment: Environment = Field(default=Environment.DEVELOPMENT)
+    database_url: str
+    api_key: str
+    secret_key: str
+    aws_region: str = "us-east-1"
+    enable_secrets_manager: bool = True
 
-    # Intelligence system
-    thinking_budget_reflection: int = 8_000
-    enable_self_critique: bool = True
-    memory_max_per_agent: int = 100
-    memory_prune_days: int = 90
-    ab_testing_enabled: bool = True
-    min_ab_pairs: int = 5
-    creator_critique_threshold: float = 0.8
+    @classmethod
+    def from_secrets_manager(cls, secrets_manager: SecretsManager | None = None) -> Config:
+        """Load configuration from AWS Secrets Manager.
 
-    # Preflight intelligence
-    preflight_enabled: bool = True
+        Args:
+            secrets_manager: Optional SecretsManager instance
 
-    # CI/CD self-healing
-    cifix_enabled: bool = True
-    cifix_auto_pr: bool = True
-    cifix_max_llm_attempts: int = 2
+        Returns:
+            Config instance
+        """
+        sm = secrets_manager or SecretsManager()
 
-    # CTO Agent (autonomous engineering)
-    cto_enabled: bool = True
-    cto_max_tasks_per_cycle: int = 1
-    thinking_budget_cto: int = 16_000
+        # Determine environment
+        env_name = os.environ.get("ENVIRONMENT", "development")
+        environment = Environment(env_name)
 
-    # Ortobahn self-marketing Bluesky credentials
-    ortobahn_bluesky_handle: str = ""
-    ortobahn_bluesky_app_password: str = ""
+        # Load secrets based on environment
+        prefix = f"ortobahn/{environment.value}"
 
-    # Stripe
-    stripe_secret_key: str = ""
-    stripe_publishable_key: str = ""
-    stripe_webhook_secret: str = ""
-    stripe_price_id: str = ""
-
-    # Watchdog
-    watchdog_enabled: bool = True
-    watchdog_stale_run_minutes: int = 60
-    watchdog_post_verify_hours: int = 6
-    watchdog_credential_check: bool = True
-    watchdog_max_verify_posts: int = 5
-
-    # Auto-rollback
-    auto_rollback_enabled: bool = True
-    auto_rollback_window_minutes: int = 30  # Only rollback if deploy was within this window
-    auto_rollback_health_failures: int = 3  # Consecutive health failures before rollback
-
-    # Engagement agent
-    engagement_enabled: bool = True
-    engagement_max_replies: int = 3
-    engagement_confidence_threshold: float = 0.75
-
-    # Social listening
-    listening_enabled: bool = False
-    listening_max_conversations: int = 50
-    listening_relevance_threshold: float = 0.6
-    listening_twitter_daily_budget: int = 100
-
-    # Proactive engagement
-    proactive_engagement_enabled: bool = False
-    proactive_engagement_max_per_cycle: int = 5
-    proactive_engagement_confidence_threshold: float = 0.80
-
-    # Style evolution (A/B testing)
-    style_evolution_enabled: bool = True
-
-    # Predictive timing
-    predictive_timing_enabled: bool = True
-
-    # Content serialization
-    serialization_enabled: bool = True
-
-    # Post feedback loop (real-time learning)
-    post_feedback_enabled: bool = True
-    post_feedback_delay_seconds: int = 600
-
-    # Cross-client meta-learning
-    meta_learning_enabled: bool = True
-
-    # Publisher error recovery
-    publish_retry_enabled: bool = True
-    publish_max_retries: int = 2
-
-    # Dynamic posting cadence
-    dynamic_cadence_enabled: bool = True
-
-    # Article generation
-    thinking_budget_article_writer: int = 16_000
-    article_confidence_threshold: float = 0.8
-
-    # Email digest (AWS SES)
-    ses_region: str = "us-west-2"
-    ses_sender_email: str = ""
-    digest_enabled_global: bool = True
-
-    # RSS feeds
-    rss_feeds: list[str] = field(
-        default_factory=lambda: [
-            "https://feeds.arstechnica.com/arstechnica/technology-lab",
-            "https://news.ycombinator.com/rss",
-            "https://techcrunch.com/feed/",
-            "https://www.theverge.com/rss/index.xml",
-        ]
-    )
-
-    def validate(self, require_bluesky: bool = False) -> list[str]:
-        """Validate configuration. Returns list of error strings (empty = valid)."""
-        errors = []
-
-        if not self.anthropic_api_key:
-            errors.append("ANTHROPIC_API_KEY is not set")
-        elif not self.anthropic_api_key.startswith("sk-ant-"):
-            errors.append("ANTHROPIC_API_KEY does not look valid (should start with 'sk-ant-')")
-
-        if require_bluesky:
-            if not self.bluesky_handle:
-                errors.append("BLUESKY_HANDLE is not set")
-            elif "." not in self.bluesky_handle:
-                errors.append("BLUESKY_HANDLE format looks wrong (expected: user.bsky.social)")
-            if not self.bluesky_app_password:
-                errors.append("BLUESKY_APP_PASSWORD is not set")
-
-        if not (0.0 <= self.post_confidence_threshold <= 1.0):
-            errors.append(f"POST_CONFIDENCE_THRESHOLD must be 0-1, got {self.post_confidence_threshold}")
-
-        if self.pipeline_interval_hours < 1:
-            errors.append(f"PIPELINE_INTERVAL_HOURS must be >= 1, got {self.pipeline_interval_hours}")
-
-        if self.max_posts_per_cycle < 1:
-            errors.append(f"MAX_POSTS_PER_CYCLE must be >= 1, got {self.max_posts_per_cycle}")
-
-        # Thinking budgets
-        for name in (
-            "thinking_budget_reflection",
-            "thinking_budget_ceo",
-            "thinking_budget_strategist",
-            "thinking_budget_creator",
-            "thinking_budget_legal",
-            "thinking_budget_security",
-            "thinking_budget_cto",
-            "thinking_budget_article_writer",
-        ):
-            val = getattr(self, name)
-            if not (1024 <= val <= 128_000):
-                errors.append(f"{name} must be 1024-128000, got {val}")
-
-        # Pool sizes
-        if self.db_pool_min < 1:
-            errors.append(f"db_pool_min must be >= 1, got {self.db_pool_min}")
-        if self.db_pool_max < self.db_pool_min:
-            errors.append(f"db_pool_max ({self.db_pool_max}) must be >= db_pool_min ({self.db_pool_min})")
-
-        # Retry counts
-        if not (0 <= self.publish_max_retries <= 10):
-            errors.append(f"publish_max_retries must be 0-10, got {self.publish_max_retries}")
-        if not (0 <= self.cifix_max_llm_attempts <= 10):
-            errors.append(f"cifix_max_llm_attempts must be 0-10, got {self.cifix_max_llm_attempts}")
-
-        # Token limits
-        if self.claude_max_tokens < 1024:
-            errors.append(f"claude_max_tokens must be >= 1024, got {self.claude_max_tokens}")
-
-        # Rate limits
-        if self.rate_limit_default < 1:
-            errors.append(f"rate_limit_default must be >= 1, got {self.rate_limit_default}")
-        if self.rate_limit_window_seconds < 1:
-            errors.append(f"rate_limit_window_seconds must be >= 1, got {self.rate_limit_window_seconds}")
-
-        # Budget
-        if self.default_monthly_budget < 0:
-            errors.append(f"default_monthly_budget must be >= 0, got {self.default_monthly_budget}")
-
-        # Engagement/article thresholds (0-1)
-        if not (0.0 <= self.engagement_confidence_threshold <= 1.0):
-            errors.append(f"engagement_confidence_threshold must be 0-1, got {self.engagement_confidence_threshold}")
-        if not (0.0 <= self.creator_critique_threshold <= 1.0):
-            errors.append(f"creator_critique_threshold must be 0-1, got {self.creator_critique_threshold}")
-        if not (0.0 <= self.article_confidence_threshold <= 1.0):
-            errors.append(f"article_confidence_threshold must be 0-1, got {self.article_confidence_threshold}")
-
-        return errors
-
-    def has_twitter(self) -> bool:
-        return bool(
-            self.twitter_api_key
-            and self.twitter_api_secret
-            and self.twitter_access_token
-            and self.twitter_access_token_secret
+        return cls(
+            environment=environment,
+            database_url=sm.get_secret(f"{prefix}/database-url"),
+            api_key=sm.get_secret(f"{prefix}/api-key"),
+            secret_key=sm.get_secret(f"{prefix}/secret-key"),
+            aws_region=sm.region_name,
+            enable_secrets_manager=True,
         )
 
-    def has_linkedin(self) -> bool:
-        return bool(self.linkedin_access_token and self.linkedin_person_urn)
+    @classmethod
+    def from_env(cls) -> Config:
+        """Load configuration from environment variables (fallback).
 
-    def has_reddit(self) -> bool:
-        return bool(self.reddit_client_id and self.reddit_client_secret)
+        Returns:
+            Config instance
+        """
+        env_name = os.environ.get("ENVIRONMENT", "development")
+        return cls(
+            environment=Environment(env_name),
+            database_url=os.environ.get("DATABASE_URL", "sqlite:///ortobahn.db"),
+            api_key=os.environ.get("API_KEY", ""),
+            secret_key=os.environ.get("SECRET_KEY", ""),
+            aws_region=os.environ.get("AWS_REGION", "us-east-1"),
+            enable_secrets_manager=False,
+        )
 
 
-def load_settings() -> Settings:
-    load_dotenv()
+# Global configuration instance
+_config: Config | None = None
 
-    return Settings(
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        bluesky_handle=os.environ.get("BLUESKY_HANDLE", ""),
-        bluesky_app_password=os.environ.get("BLUESKY_APP_PASSWORD", ""),
-        newsapi_key=os.environ.get("NEWSAPI_KEY") or None,
-        twitter_api_key=os.environ.get("TWITTER_API_KEY", ""),
-        twitter_api_secret=os.environ.get("TWITTER_API_SECRET", ""),
-        twitter_access_token=os.environ.get("TWITTER_ACCESS_TOKEN", ""),
-        twitter_access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET", ""),
-        linkedin_access_token=os.environ.get("LINKEDIN_ACCESS_TOKEN", ""),
-        linkedin_person_urn=os.environ.get("LINKEDIN_PERSON_URN", ""),
-        reddit_client_id=os.environ.get("REDDIT_CLIENT_ID", ""),
-        reddit_client_secret=os.environ.get("REDDIT_CLIENT_SECRET", ""),
-        reddit_username=os.environ.get("REDDIT_USERNAME", ""),
-        reddit_password=os.environ.get("REDDIT_PASSWORD", ""),
-        autonomous_mode=os.environ.get("AUTONOMOUS_MODE", "true").lower() in ("true", "1", "yes"),
-        claude_model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
-        claude_max_tokens=int(os.environ.get("CLAUDE_MAX_TOKENS", "4096")),
-        thinking_budget_ceo=int(os.environ.get("THINKING_BUDGET_CEO", "10000")),
-        thinking_budget_strategist=int(os.environ.get("THINKING_BUDGET_STRATEGIST", "8000")),
-        thinking_budget_creator=int(os.environ.get("THINKING_BUDGET_CREATOR", "6000")),
-        thinking_budget_legal=int(os.environ.get("THINKING_BUDGET_LEGAL", "10000")),
-        thinking_budget_security=int(os.environ.get("THINKING_BUDGET_SECURITY", "8000")),
-        use_bedrock=os.environ.get("USE_BEDROCK", "false").lower() in ("true", "1", "yes"),
-        bedrock_region=os.environ.get("BEDROCK_REGION", "us-west-2"),
-        image_generation_enabled=os.environ.get("IMAGE_GENERATION_ENABLED", "false").lower() in ("true", "1", "yes"),
-        bedrock_image_model=os.environ.get("BEDROCK_IMAGE_MODEL", "amazon.titan-image-generator-v2:0"),
-        image_s3_bucket=os.environ.get("IMAGE_S3_BUCKET", ""),
-        database_url=os.environ.get("DATABASE_URL", ""),
-        db_path=Path(os.environ.get("DB_PATH", "data/ortobahn.db")),
-        db_pool_min=int(os.environ.get("DB_POOL_MIN", "2")),
-        db_pool_max=int(os.environ.get("DB_POOL_MAX", "10")),
-        post_confidence_threshold=float(os.environ.get("POST_CONFIDENCE_THRESHOLD", "0.7")),
-        pipeline_interval_hours=int(os.environ.get("PIPELINE_INTERVAL_HOURS", "8")),
-        max_posts_per_cycle=int(os.environ.get("MAX_POSTS_PER_CYCLE", "4")),
-        default_client_id=os.environ.get("DEFAULT_CLIENT_ID", DEFAULT_CLIENT_ID),
-        web_host=os.environ.get("WEB_HOST", "127.0.0.1"),
-        web_port=int(os.environ.get("WEB_PORT", "8000")),
-        log_level=os.environ.get("LOG_LEVEL", "INFO"),
-        default_monthly_budget=float(os.environ.get("DEFAULT_MONTHLY_BUDGET", "0")),
-        post_delay_seconds=int(os.environ.get("POST_DELAY_SECONDS", "30")),
-        rate_limit_enabled=os.environ.get("RATE_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes"),
-        rate_limit_default=int(os.environ.get("RATE_LIMIT_DEFAULT", "60")),
-        rate_limit_window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60")),
-        slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
-        slack_signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
-        backup_enabled=os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"),
-        backup_dir=Path(os.environ.get("BACKUP_DIR", "data/backups")),
-        backup_max_count=int(os.environ.get("BACKUP_MAX_COUNT", "10")),
-        secret_key=os.environ.get("ORTOBAHN_SECRET_KEY", ""),
-        admin_api_key=os.environ.get("ADMIN_API_KEY", ""),
-        thinking_budget_reflection=int(os.environ.get("THINKING_BUDGET_REFLECTION", "8000")),
-        enable_self_critique=os.environ.get("ENABLE_SELF_CRITIQUE", "true").lower() in ("true", "1", "yes"),
-        memory_max_per_agent=int(os.environ.get("MEMORY_MAX_PER_AGENT", "100")),
-        memory_prune_days=int(os.environ.get("MEMORY_PRUNE_DAYS", "90")),
-        ab_testing_enabled=os.environ.get("AB_TESTING_ENABLED", "true").lower() in ("true", "1", "yes"),
-        min_ab_pairs=int(os.environ.get("MIN_AB_PAIRS", "5")),
-        creator_critique_threshold=float(os.environ.get("CREATOR_CRITIQUE_THRESHOLD", "0.8")),
-        preflight_enabled=os.environ.get("PREFLIGHT_ENABLED", "true").lower() in ("true", "1", "yes"),
-        cifix_enabled=os.environ.get("CIFIX_ENABLED", "true").lower() in ("true", "1", "yes"),
-        cifix_auto_pr=os.environ.get("CIFIX_AUTO_PR", "true").lower() in ("true", "1", "yes"),
-        cifix_max_llm_attempts=int(os.environ.get("CIFIX_MAX_LLM_ATTEMPTS", "2")),
-        cto_enabled=os.environ.get("CTO_ENABLED", "true").lower() in ("true", "1", "yes"),
-        cto_max_tasks_per_cycle=int(os.environ.get("CTO_MAX_TASKS_PER_CYCLE", "1")),
-        thinking_budget_cto=int(os.environ.get("THINKING_BUDGET_CTO", "16000")),
-        stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
-        stripe_publishable_key=os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
-        stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
-        stripe_price_id=os.environ.get("STRIPE_PRICE_ID", ""),
-        cognito_user_pool_id=os.environ.get("COGNITO_USER_POOL_ID", ""),
-        cognito_client_id=os.environ.get("COGNITO_CLIENT_ID", ""),
-        cognito_region=os.environ.get("COGNITO_REGION", "us-west-2"),
-        ortobahn_bluesky_handle=os.environ.get("ORTOBAHN_BLUESKY_HANDLE", ""),
-        ortobahn_bluesky_app_password=os.environ.get("ORTOBAHN_BLUESKY_APP_PASSWORD", ""),
-        watchdog_enabled=os.environ.get("WATCHDOG_ENABLED", "true").lower() in ("true", "1", "yes"),
-        watchdog_stale_run_minutes=int(os.environ.get("WATCHDOG_STALE_RUN_MINUTES", "60")),
-        watchdog_post_verify_hours=int(os.environ.get("WATCHDOG_POST_VERIFY_HOURS", "6")),
-        watchdog_credential_check=os.environ.get("WATCHDOG_CREDENTIAL_CHECK", "true").lower() in ("true", "1", "yes"),
-        watchdog_max_verify_posts=int(os.environ.get("WATCHDOG_MAX_VERIFY_POSTS", "5")),
-        auto_rollback_enabled=os.environ.get("AUTO_ROLLBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
-        auto_rollback_window_minutes=int(os.environ.get("AUTO_ROLLBACK_WINDOW_MINUTES", "30")),
-        auto_rollback_health_failures=int(os.environ.get("AUTO_ROLLBACK_HEALTH_FAILURES", "3")),
-        engagement_enabled=os.environ.get("ENGAGEMENT_ENABLED", "true").lower() in ("true", "1", "yes"),
-        engagement_max_replies=int(os.environ.get("ENGAGEMENT_MAX_REPLIES", "3")),
-        engagement_confidence_threshold=float(os.environ.get("ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.75")),
-        listening_enabled=os.environ.get("LISTENING_ENABLED", "false").lower() in ("true", "1", "yes"),
-        listening_max_conversations=int(os.environ.get("LISTENING_MAX_CONVERSATIONS", "50")),
-        listening_relevance_threshold=float(os.environ.get("LISTENING_RELEVANCE_THRESHOLD", "0.6")),
-        listening_twitter_daily_budget=int(os.environ.get("LISTENING_TWITTER_DAILY_BUDGET", "100")),
-        proactive_engagement_enabled=os.environ.get("PROACTIVE_ENGAGEMENT_ENABLED", "false").lower()
-        in ("true", "1", "yes"),
-        proactive_engagement_max_per_cycle=int(os.environ.get("PROACTIVE_ENGAGEMENT_MAX_PER_CYCLE", "5")),
-        proactive_engagement_confidence_threshold=float(
-            os.environ.get("PROACTIVE_ENGAGEMENT_CONFIDENCE_THRESHOLD", "0.80")
-        ),
-        style_evolution_enabled=os.environ.get("STYLE_EVOLUTION_ENABLED", "true").lower() in ("true", "1", "yes"),
-        predictive_timing_enabled=os.environ.get("PREDICTIVE_TIMING_ENABLED", "true").lower() in ("true", "1", "yes"),
-        serialization_enabled=os.environ.get("SERIALIZATION_ENABLED", "true").lower() in ("true", "1", "yes"),
-        post_feedback_enabled=os.environ.get("POST_FEEDBACK_ENABLED", "true").lower() in ("true", "1", "yes"),
-        post_feedback_delay_seconds=int(os.environ.get("POST_FEEDBACK_DELAY_SECONDS", "600")),
-        meta_learning_enabled=os.environ.get("META_LEARNING_ENABLED", "true").lower() in ("true", "1", "yes"),
-        publish_retry_enabled=os.environ.get("PUBLISH_RETRY_ENABLED", "true").lower() in ("true", "1", "yes"),
-        publish_max_retries=int(os.environ.get("PUBLISH_MAX_RETRIES", "2")),
-        dynamic_cadence_enabled=os.environ.get("DYNAMIC_CADENCE_ENABLED", "true").lower() in ("true", "1", "yes"),
-        thinking_budget_article_writer=int(os.environ.get("THINKING_BUDGET_ARTICLE_WRITER", "16000")),
-        article_confidence_threshold=float(os.environ.get("ARTICLE_CONFIDENCE_THRESHOLD", "0.8")),
-        ses_region=os.environ.get("SES_REGION", "us-west-2"),
-        ses_sender_email=os.environ.get("SES_SENDER_EMAIL", ""),
-        digest_enabled_global=os.environ.get("DIGEST_ENABLED", "true").lower() in ("true", "1", "yes"),
-    )
+
+def get_config(force_refresh: bool = False) -> Config:
+    """Get application configuration.
+
+    Args:
+        force_refresh: Force reload configuration
+
+    Returns:
+        Config instance
+    """
+    global _config
+    if _config is None or force_refresh:
+        # Try AWS Secrets Manager first, fallback to env vars
+        try:
+            _config = Config.from_secrets_manager()
+        except Exception:
+            _config = Config.from_env()
+    return _config

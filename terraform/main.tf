@@ -1,139 +1,153 @@
 terraform {
-  required_version = ">= 1.5"
-
+  required_version = ">= 1.6.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
   }
-
   backend "s3" {
     bucket         = "ortobahn-terraform-state"
-    key            = "ortobahn/terraform.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "terraform-locks"
+    key            = "production/terraform.tfstate"
+    region         = "us-east-1"
     encrypt        = true
+    dynamodb_table = "ortobahn-terraform-locks"
   }
 }
 
 provider "aws" {
   region = var.aws_region
+}
 
-  default_tags {
-    tags = {
-      Project   = "ortobahn"
-      ManagedBy = "terraform"
+variable "aws_region" {
+  default = "us-east-1"
+}
+
+variable "image_tag" {
+  description = "Docker image tag to deploy"
+  type        = string
+}
+
+variable "deployment_color" {
+  description = "Blue or green deployment"
+  type        = string
+  default     = "blue"
+}
+
+resource "aws_ecs_cluster" "ortobahn" {
+  name = "ortobahn-cluster"
+}
+
+resource "aws_lb" "ortobahn" {
+  name               = "ortobahn-alb"
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = aws_subnet.public[*].id
+  security_groups    = [aws_security_group.alb.id]
+}
+
+resource "aws_lb_target_group" "blue" {
+  name        = "ortobahn-blue"
+  port        = 8000
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path                = "/health"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_target_group" "green" {
+  name        = "ortobahn-green"
+  port        = 8000
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path                = "/health"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener" "ortobahn" {
+  load_balancer_arn = aws_lb.ortobahn.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate.ortobahn.arn
+
+  default_action {
+    type = "forward"
+    forward {
+      target_group {
+        arn    = aws_lb_target_group.blue.arn
+        weight = var.deployment_color == "blue" ? 100 : 0
+      }
+      target_group {
+        arn    = aws_lb_target_group.green.arn
+        weight = var.deployment_color == "green" ? 100 : 0
+      }
     }
   }
 }
 
-# Alias provider for CloudFront ACM cert (must be in us-east-1)
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
+resource "aws_ecs_task_definition" "ortobahn" {
+  family                   = "ortobahn"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "512"
+  memory                   = "1024"
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
-  default_tags {
-    tags = {
-      Project   = "ortobahn"
-      ManagedBy = "terraform"
+  container_definitions = jsonencode([{
+    name  = "ortobahn"
+    image = "${data.aws_ecr_repository.ortobahn.repository_url}:${var.image_tag}"
+    portMappings = [{
+      containerPort = 8000
+      protocol      = "tcp"
+    }]
+    environment = [
+      { name = "DEPLOYMENT_COLOR", value = var.deployment_color }
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.ortobahn.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "ecs"
+      }
     }
+  }])
+}
+
+resource "aws_ecs_service" "ortobahn" {
+  name            = "ortobahn-service"
+  cluster         = aws_ecs_cluster.ortobahn.id
+  task_definition = aws_ecs_task_definition.ortobahn.arn
+  desired_count   = 2
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
   }
-}
 
-# --- Networking ---
-module "networking" {
-  source = "./modules/networking"
-
-  vpc_cidr           = var.vpc_cidr
-  availability_zones = var.availability_zones
-}
-
-# --- ECR ---
-module "ecr" {
-  source = "./modules/ecr"
-}
-
-# --- RDS ---
-module "rds" {
-  source = "./modules/rds"
-
-  subnet_ids         = module.networking.rds_subnet_ids
-  security_group_id  = module.networking.rds_security_group_id
-  instance_class     = var.db_instance_class
-  allocated_storage  = var.db_allocated_storage
-  db_master_password = var.db_master_password
-}
-
-# --- Secrets ---
-module "secrets" {
-  source = "./modules/secrets"
-}
-
-# --- ALB ---
-module "alb" {
-  source = "./modules/alb"
-
-  vpc_id            = module.networking.vpc_id
-  public_subnet_ids = module.networking.public_subnet_ids
-  security_group_id = module.networking.alb_security_group_id
-  certificate_arn   = var.certificate_arn
-}
-
-# --- ECS ---
-module "ecs" {
-  source = "./modules/ecs"
-
-  aws_region               = var.aws_region
-  ecr_repository_url       = module.ecr.repository_url
-  ecs_subnet_ids           = module.networking.ecs_subnet_ids
-  ecs_security_group_id    = module.networking.ecs_security_group_id
-  prod_target_group_arn    = module.alb.prod_target_group_arn
-  staging_target_group_arn = module.alb.staging_target_group_arn
-  prod_secret_arn          = module.secrets.prod_secret_arn
-  staging_secret_arn       = module.secrets.staging_secret_arn
-  web_cpu                  = var.web_cpu
-  web_memory               = var.web_memory
-  scheduler_cpu            = var.scheduler_cpu
-  scheduler_memory         = var.scheduler_memory
-  web_min_count            = var.web_min_count
-  web_max_count            = var.web_max_count
-}
-
-# --- Monitoring ---
-module "monitoring" {
-  source = "./modules/monitoring"
-
-  aws_region   = var.aws_region
-  alert_emails = var.alert_emails
-}
-
-# --- Cognito ---
-module "cognito" {
-  source = "./modules/cognito"
-}
-
-# --- DNS ---
-module "dns" {
-  source = "./modules/dns"
-
-  alb_dns_name   = module.alb.dns_name
-  alb_zone_id    = module.alb.zone_id
-  cf_domain_name = module.cdn.distribution_domain_name
-  cf_hosted_zone = module.cdn.distribution_hosted_zone_id
-}
-
-# --- CDN ---
-module "cdn" {
-  source = "./modules/cdn"
-
-  certificate_arn_us_east_1 = var.certificate_arn_us_east_1
-}
-
-# --- Images (new resources) ---
-module "images" {
-  source = "./modules/images"
-
-  aws_region     = var.aws_region
-  task_role_name = module.ecs.task_role_name
+  load_balancer {
+    target_group_arn = var.deployment_color == "blue" ? aws_lb_target_group.blue.arn : aws_lb_target_group.green.arn
+    container_name   = "ortobahn"
+    container_port   = 8000
+  }
 }

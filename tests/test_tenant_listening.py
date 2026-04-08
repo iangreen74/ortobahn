@@ -51,7 +51,9 @@ class TestTenantListening:
         _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/listening/rules",
-            data=_csrf(tok, sk, {"platform": "bluesky", "rule_type": "keyword", "value": "test_keyword", "priority": "2"}),
+            data=_csrf(
+                tok, sk, {"platform": "bluesky", "rule_type": "keyword", "value": "test_keyword", "priority": "2"}
+            ),
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -156,11 +158,15 @@ class TestListeningSettings:
         _app, client, cid, db, tok, sk = _make_authenticated(tmp_path)
         resp = client.post(
             "/my/settings/listening",
-            data=_csrf(tok, sk, {
-                "listening_enabled": "on",
-                "proactive_engagement_enabled": "on",
-                "listening_max_conversations_per_cycle": "100",
-            }),
+            data=_csrf(
+                tok,
+                sk,
+                {
+                    "listening_enabled": "on",
+                    "proactive_engagement_enabled": "on",
+                    "listening_max_conversations_per_cycle": "100",
+                },
+            ),
             follow_redirects=False,
         )
         assert resp.status_code == 303

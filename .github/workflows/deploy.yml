@@ -1,0 +1,117 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_type == 'tag' && 'production' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "ENV=production" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "ENV=staging" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=staging-${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_IMAGE }}:${{ steps.env.outputs.IMAGE_TAG }} .
+          docker tag ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_IMAGE }}:${{ steps.env.outputs.IMAGE_TAG }} \
+                     ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_IMAGE }}:${{ steps.env.outputs.ENV }}-latest
+
+      - name: Login to Docker registry
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login ${{ secrets.DOCKER_REGISTRY }} -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_IMAGE }}:${{ steps.env.outputs.IMAGE_TAG }}
+          docker push ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_IMAGE }}:${{ steps.env.outputs.ENV }}-latest
+
+      - name: Deploy to infrastructure
+        id: deploy
+        env:
+          TF_VAR_environment: ${{ steps.env.outputs.ENV }}
+          TF_VAR_image_tag: ${{ steps.env.outputs.IMAGE_TAG }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          cd terraform
+          terraform init
+          terraform workspace select ${{ steps.env.outputs.ENV }} || terraform workspace new ${{ steps.env.outputs.ENV }}
+          terraform apply -auto-approve
+          DEPLOY_URL=$(terraform output -raw app_url)
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+
+      - name: Health check
+        run: |
+          sleep 30
+          for i in {1..5}; do
+            if curl -f ${{ steps.deploy.outputs.url }}/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Health check attempt $i failed, retrying..."
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        env:
+          TF_VAR_environment: ${{ steps.env.outputs.ENV }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cd terraform
+          terraform workspace select ${{ steps.env.outputs.ENV }}
+          terraform apply -auto-approve -var="image_tag=${{ steps.env.outputs.ENV }}-previous"
+
+      - name: Notify deployment
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          ENV="${{ steps.env.outputs.ENV }}"
+          echo "Deployment to $ENV: $STATUS"
+          echo "URL: ${{ steps.deploy.outputs.url }}"

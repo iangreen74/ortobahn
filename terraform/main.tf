@@ -1,17 +1,17 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.0"
+  
+  backend "s3" {
+    bucket = "lighthouse-terraform-state"
+    key    = "lighthouse/terraform.tfstate"
+    region = "us-east-1"
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-  }
-  backend "s3" {
-    bucket         = "ortobahn-terraform-state"
-    key            = "production/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "ortobahn-terraform-locks"
   }
 }
 
@@ -19,8 +19,9 @@ provider "aws" {
   region = var.aws_region
 }
 
-variable "aws_region" {
-  default = "us-east-1"
+variable "environment" {
+  description = "Environment (staging or production)"
+  type        = string
 }
 
 variable "image_tag" {
@@ -28,126 +29,136 @@ variable "image_tag" {
   type        = string
 }
 
-variable "deployment_color" {
-  description = "Blue or green deployment"
+variable "aws_region" {
+  description = "AWS region"
   type        = string
-  default     = "blue"
+  default     = "us-east-1"
 }
 
-resource "aws_ecs_cluster" "ortobahn" {
-  name = "ortobahn-cluster"
-}
-
-resource "aws_lb" "ortobahn" {
-  name               = "ortobahn-alb"
-  internal           = false
-  load_balancer_type = "application"
-  subnets            = aws_subnet.public[*].id
-  security_groups    = [aws_security_group.alb.id]
-}
-
-resource "aws_lb_target_group" "blue" {
-  name        = "ortobahn-blue"
-  port        = 8000
-  protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
-  target_type = "ip"
-
-  health_check {
-    path                = "/health"
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
-    interval            = 30
-    matcher             = "200"
+locals {
+  app_name = "lighthouse"
+  common_tags = {
+    Project     = local.app_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
   }
 }
 
-resource "aws_lb_target_group" "green" {
-  name        = "ortobahn-green"
-  port        = 8000
-  protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
-  target_type = "ip"
-
-  health_check {
-    path                = "/health"
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
-    interval            = 30
-    matcher             = "200"
-  }
+resource "aws_ecs_cluster" "main" {
+  name = "${local.app_name}-${var.environment}"
+  tags = local.common_tags
 }
 
-resource "aws_lb_listener" "ortobahn" {
-  load_balancer_arn = aws_lb.ortobahn.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate.ortobahn.arn
-
-  default_action {
-    type = "forward"
-    forward {
-      target_group {
-        arn    = aws_lb_target_group.blue.arn
-        weight = var.deployment_color == "blue" ? 100 : 0
-      }
-      target_group {
-        arn    = aws_lb_target_group.green.arn
-        weight = var.deployment_color == "green" ? 100 : 0
-      }
-    }
-  }
-}
-
-resource "aws_ecs_task_definition" "ortobahn" {
-  family                   = "ortobahn"
+resource "aws_ecs_task_definition" "app" {
+  family                   = "${local.app_name}-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "512"
-  memory                   = "1024"
+  cpu                      = var.environment == "production" ? 1024 : 512
+  memory                   = var.environment == "production" ? 2048 : 1024
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([{
-    name  = "ortobahn"
-    image = "${data.aws_ecr_repository.ortobahn.repository_url}:${var.image_tag}"
+    name      = local.app_name
+    image     = "${data.aws_ssm_parameter.docker_registry.value}/${data.aws_ssm_parameter.docker_image.value}:${var.image_tag}"
+    essential = true
+
     portMappings = [{
       containerPort = 8000
       protocol      = "tcp"
     }]
+
     environment = [
-      { name = "DEPLOYMENT_COLOR", value = var.deployment_color }
+      { name = "ENVIRONMENT", value = var.environment },
+      { name = "LOG_LEVEL", value = var.environment == "production" ? "INFO" : "DEBUG" }
     ]
+
+    secrets = [
+      { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.database_url.arn },
+      { name = "JWT_SECRET", valueFrom = aws_ssm_parameter.jwt_secret.arn }
+    ]
+
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.ortobahn.name
+        "awslogs-group"         = aws_cloudwatch_log_group.app.name
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "ecs"
       }
     }
+
+    healthCheck = {
+      command     = ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 60
+    }
   }])
+
+  tags = local.common_tags
 }
 
-resource "aws_ecs_service" "ortobahn" {
-  name            = "ortobahn-service"
-  cluster         = aws_ecs_cluster.ortobahn.id
-  task_definition = aws_ecs_task_definition.ortobahn.arn
-  desired_count   = 2
-  launch_type     = "FARGATE"
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/ecs/${local.app_name}-${var.environment}"
+  retention_in_days = var.environment == "production" ? 30 : 7
+  tags              = local.common_tags
+}
 
-  network_configuration {
-    subnets          = aws_subnet.private[*].id
-    security_groups  = [aws_security_group.ecs.id]
-    assign_public_ip = false
-  }
+data "aws_ssm_parameter" "docker_registry" {
+  name = "/lighthouse/docker/registry"
+}
 
-  load_balancer {
-    target_group_arn = var.deployment_color == "blue" ? aws_lb_target_group.blue.arn : aws_lb_target_group.green.arn
-    container_name   = "ortobahn"
-    container_port   = 8000
+data "aws_ssm_parameter" "docker_image" {
+  name = "/lighthouse/docker/image"
+}
+
+resource "aws_ssm_parameter" "database_url" {
+  name  = "/lighthouse/${var.environment}/database_url"
+  type  = "SecureString"
+  value = "placeholder"
+  lifecycle {
+    ignore_changes = [value]
   }
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "jwt_secret" {
+  name  = "/lighthouse/${var.environment}/jwt_secret"
+  type  = "SecureString"
+  value = "placeholder"
+  lifecycle {
+    ignore_changes = [value]
+  }
+  tags = local.common_tags
+}
+
+resource "aws_iam_role" "ecs_execution" {
+  name = "${local.app_name}-${var.environment}-ecs-execution"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+  tags = local.common_tags
+}
+
+resource "aws_iam_role" "ecs_task" {
+  name = "${local.app_name}-${var.environment}-ecs-task"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+  tags = local.common_tags
+}
+
+output "app_url" {
+  value = "https://${var.environment == "production" ? "app" : "staging"}.lighthouse.example.com"
 }
